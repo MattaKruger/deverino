@@ -130,7 +130,9 @@ def build_model(
 ) -> Model:
     resolved_settings = settings or DeepSeekSettings.load()
     if resolved_settings.api_key is None:
-        logger.info("No provider API key configured; using fallback PydanticAI model")
+        logger.info(
+            "No provider API key configured; using fallback PydanticAI model"
+        )
         return fallback_model or TestModel(call_tools=[])
 
     if resolved_settings.base_url == "https://api.deepseek.com":
@@ -171,6 +173,7 @@ def build_primary_agent(
         deps_type=AgentDeps,
         tools=build_skill_tools(skill_runner) if enable_tools else [],
         system_prompt=_with_tool_policy(system_prompt),
+        end_strategy="exhaustive",
     )
 
 
@@ -206,15 +209,25 @@ def build_skill_tools(skill_runner: SkillRunner) -> list[Tool[AgentDeps]]:
     tools: list[Tool[AgentDeps]] = []
     for discovered_skill in skill_runner.discover_skills():
         function = discovered_skill.get("function", {})
+
         if not isinstance(function, dict):
             continue
+
         name = function.get("name")
         description = function.get("description")
         parameters = function.get("parameters")
+        auto_invokable = function.get("auto_invokable", False)
+
         if not isinstance(name, str) or not isinstance(description, str):
             continue
         if not isinstance(parameters, dict):
             parameters = {"type": "object", "properties": {}}
+        if not auto_invokable:
+            logger.debug(
+                "Skipping non-auto-invokable skill",
+                extra={"skill_name": name},
+            )
+            continue
 
         tools.append(
             Tool.from_schema(
@@ -243,6 +256,7 @@ def _make_skill_tool(
         )
 
     execute_skill_tool.__name__ = f"execute_{skill_name}_tool"
+
     return execute_skill_tool
 
 
@@ -259,6 +273,10 @@ def execute_skill_as_tool(
             "arguments": arguments,
         },
     )
+    # Stream progress so the user sees tool activity during execution.
+    _emit_tool_progress(
+        ctx, f"  {skill_name}: {_summarise_args(arguments)} ..."
+    )
     try:
         result = ctx.deps.skill_runner.execute_skill(
             tool_name=skill_name,
@@ -267,6 +285,7 @@ def execute_skill_as_tool(
             on_text=ctx.deps.stream_text,
         )
     except Exception:
+        _emit_tool_progress(ctx, f"  {skill_name}: FAILED")
         logger.exception(
             "PydanticAI tool adapter skill execution raised",
             extra={
@@ -275,6 +294,11 @@ def execute_skill_as_tool(
             },
         )
         raise
+
+    if result.status == "success":
+        _emit_tool_progress(ctx, f"  {skill_name}: done")
+    else:
+        _emit_tool_progress(ctx, f"  {skill_name}: {result.status}")
 
     payload: dict[str, Any] = {
         "status": result.status,
@@ -334,5 +358,33 @@ def _usage_to_dict(usage: RunUsage) -> Usage:
     return {
         "prompt_tokens": int(usage.input_tokens or 0),
         "completion_tokens": int(usage.output_tokens or 0),
-        "total_tokens": int((usage.input_tokens or 0) + (usage.output_tokens or 0)),
+        "total_tokens": int(
+            (usage.input_tokens or 0) + (usage.output_tokens or 0)
+        ),
     }
+
+
+def _emit_tool_progress(ctx: RunContext[AgentDeps], message: str) -> None:
+    """Stream a progress line through the agent's text callback if available."""
+    stream = ctx.deps.stream_text
+    if stream is not None:
+        stream(f"\n  {message}\n")
+
+
+ARG_SUMMARY_MAX_LEN = 60
+
+
+def _summarise_args(arguments: dict[str, Any]) -> str:
+    """Return a compact summary of skill arguments for progress display."""
+    parts: list[str] = []
+    for key, value in arguments.items():
+        if key in {"query", "objective", "description"}:
+            val = str(value)
+            truncated = val[:ARG_SUMMARY_MAX_LEN]
+            suffix = "..." if len(val) > ARG_SUMMARY_MAX_LEN else ""
+            parts.append(f"{truncated}{suffix}")
+        elif key in {"action", "mode", "status"}:
+            parts.append(str(value))
+    if not parts:
+        parts.append("...")
+    return ", ".join(parts)

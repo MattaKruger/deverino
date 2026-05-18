@@ -41,10 +41,7 @@ def test_skill_command_completion_includes_executable_skill_names() -> None:
 
 def _completion_texts(text: str) -> set[str]:
     completer = HarnessCompleter(cast("AppState", _FakeAppState()))
-    return {
-        completion.text
-        for completion in completer.get_completions(Document(text), object())
-    }
+    return {completion.text for completion in completer.get_completions(Document(text), object())}
 
 
 @dataclass(frozen=True, slots=True)

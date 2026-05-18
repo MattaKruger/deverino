@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai.messages import ModelResponse, TextPart
@@ -14,7 +13,7 @@ from typer.testing import CliRunner
 
 from harness_poc.app_factory import AppState, build_app_state
 from harness_poc.cli import app
-from harness_poc.core.database import BlackboardDatabase
+from harness_poc.core.events import AgentStarted, LLMTextEmitted, SkillCompleted
 from harness_poc.core.goal_runner import GoalRunner, count_tokens
 from harness_poc.core.llm_client import LLMClient, LLMResponse, Message
 
@@ -55,7 +54,10 @@ def _evaluate_goal_response(
     reasoning: str = "",
     final_answer: str = "",
 ) -> LLMResponse:
-    arguments: dict[str, Any] = {"is_complete": is_complete, "reasoning": reasoning}
+    arguments: dict[str, Any] = {
+        "is_complete": is_complete,
+        "reasoning": reasoning,
+    }
     if final_answer:
         arguments["final_answer"] = final_answer
     return LLMResponse(
@@ -78,7 +80,8 @@ def _tool_call_response(name: str, arguments: dict[str, Any]) -> LLMResponse:
 
 def _make_app_state(
     mock: (
-        Callable[[list[Message], list[dict[str, Any]] | None], LLMResponse] | None
+        Callable[[list[Message], list[dict[str, Any]] | None], LLMResponse]
+        | None
     ) = None,
 ) -> AppState:
     """Build an AppState with an in-memory database and optional mock LLM."""
@@ -127,84 +130,6 @@ def _response_to_goal_action(response: LLMResponse) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Database event recording + retrieval
-# ---------------------------------------------------------------------------
-
-
-def _temp_db() -> BlackboardDatabase:
-    """Create a BlackboardDatabase backed by a temporary file.
-
-    Uses a file path (not :memory:) so that multiple connections
-    within the database class share the same database.
-    """
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
-        db_path = tf.name
-    db = BlackboardDatabase(db_path)
-    db.create_tables()
-    return db
-
-
-def test_record_and_retrieve_events() -> None:
-    db = _temp_db()
-    sid = db.start_session("test")
-
-    db.record_llm_action(sid, "read_memory", {"memory_key": "x"})
-    db.record_tool_observation(sid, "read_memory", "success", "result content")
-
-    events = db.get_recent_events(sid, limit=10)
-    assert len(events) == 2
-    assert events[0].event_type == "llm_action"
-    assert events[1].event_type == "tool_observation"
-
-
-def test_get_recent_events_respects_limit() -> None:
-    db = _temp_db()
-    sid = db.start_session("test")
-
-    for i in range(5):
-        db.record_llm_action(sid, "skill", {"n": i})
-
-    events = db.get_recent_events(sid, limit=3)
-    assert len(events) == 3
-    # Should be most recent 3 in chronological order
-    assert events[0].payload["arguments"]["n"] == 2
-    assert events[2].payload["arguments"]["n"] == 4
-
-
-def test_get_recent_events_returns_chronological() -> None:
-    db = _temp_db()
-    sid = db.start_session("test")
-
-    db.record_llm_action(sid, "first", {})
-    db.record_tool_observation(sid, "first", "success", "ok")
-    db.record_llm_action(sid, "second", {})
-
-    events = db.get_recent_events(sid, limit=10)
-    assert len(events) == 3
-    # Chronological order: first llm_action, first observation, second llm_action
-    assert events[0].event_type == "llm_action"
-    assert events[0].payload["tool_name"] == "first"
-    assert events[2].payload["tool_name"] == "second"
-
-
-def test_get_recent_events_filters_non_goal_events() -> None:
-    """Only llm_action and tool_observation should be returned."""
-    db = _temp_db()
-    sid = db.start_session("test")
-
-    db.record_llm_action(sid, "skill", {})
-    # Insert a non-goal event (like append_notes) via the public append method
-    db.append_session_state(sid, "notes", "some note")  # type: ignore[arg-type]
-    db.record_tool_observation(sid, "skill", "success", "ok")
-
-    events = db.get_recent_events(sid, limit=10)
-    assert len(events) == 2
-    assert all(
-        e.event_type in ("llm_action", "tool_observation") for e in events
-    )
-
-
-# ---------------------------------------------------------------------------
 # evaluate_goal skill
 # ---------------------------------------------------------------------------
 
@@ -233,7 +158,9 @@ def test_evaluate_goal_stub_execute() -> None:
 
 def test_review_work_skill_executes() -> None:
     state = _make_app_state()
-    state.database.write_memory(state.session_id, "candidate", {"summary": "ok"})
+    state.database.write_memory(
+        state.session_id, "candidate", {"summary": "ok"}
+    )
 
     result = state.skill_runner.execute_skill(
         tool_name="review_work",
@@ -282,10 +209,14 @@ def test_completed_generation_goal_prefers_final_answer() -> None:
     assert result.content == "feat: migrate goal runner to pydantic-ai"
 
 
-def test_completed_generation_goal_uses_latest_artifact_for_meta_reasoning() -> None:
+def test_completed_generation_goal_uses_latest_artifact_for_meta_reasoning() -> (
+    None
+):
     mock = _mock_response_factory(
         [
-            _tool_call_response("read_memory", {"memory_key": "commit_message"}),
+            _tool_call_response(
+                "read_memory", {"memory_key": "commit_message"}
+            ),
             _evaluate_goal_response(
                 True,
                 "The delegate_task skill returned a comprehensive commit message.",
@@ -322,7 +253,7 @@ def test_continues_on_evaluate_goal_false() -> None:
 
 
 def test_text_response_without_tool_call() -> None:
-    """Text responses should be recorded and loop continues."""
+    """Text responses should be recorded as LLMTextEmitted and loop continues."""
     mock = _mock_response_factory(
         [
             LLMResponse(kind="text", content="Let me think about this..."),
@@ -335,12 +266,9 @@ def test_text_response_without_tool_call() -> None:
     result = runner.run("Test goal", state)
     assert result.status == "completed"
     assert result.iterations == 2
-    # Verify text was recorded as observation
-    events = state.database.get_recent_events(state.session_id, limit=10)
-    text_observations = [
-        e for e in events if e.payload.get("tool_name") == "_llm_text"
-    ]
-    assert len(text_observations) == 1
+    events = state.event_bus.get_recent_events(state.session_id)
+    text_events = [e for e in events if isinstance(e, LLMTextEmitted)]
+    assert len(text_events) == 1
 
 
 def test_iteration_budget_exhausted() -> None:
@@ -379,22 +307,18 @@ def test_stuck_detection_blocks_fourth_identical_action() -> None:
     runner = GoalRunner(max_iterations=10, stuck_threshold=3)
 
     result = runner.run("Test goal", state)
-    # Should have hit stuck detection and eventually exhausted budget
     assert result.status == "budget_exhausted"
-    # Verify stuck detection blocked at least once
-    events = state.database.get_recent_events(state.session_id, limit=30)
+    events = state.event_bus.get_recent_events(state.session_id)
     blocked = [
         e
         for e in events
-        if e.event_type == "tool_observation"
-        and e.payload.get("status") == "blocked"
+        if isinstance(e, SkillCompleted) and e.status == "blocked"
     ]
     assert len(blocked) >= 1
 
 
 def test_skill_execution_error_handled() -> None:
-    """Skill errors should be recorded and loop continues."""
-    # Use a non-existent skill name — this raises ValueError in _find_skill_file.
+    """Skill errors should be recorded as SkillCompleted(error) and loop continues."""
     mock = _mock_response_factory(
         [
             _tool_call_response("nonexistent_skill", {}),
@@ -405,22 +329,18 @@ def test_skill_execution_error_handled() -> None:
     runner = GoalRunner(max_iterations=10)
 
     result = runner.run("Test goal", state)
-    # Should complete after the error handling
     assert result.status == "completed"
-    events = state.database.get_recent_events(state.session_id, limit=20)
+    events = state.event_bus.get_recent_events(state.session_id)
     errors = [
         e
         for e in events
-        if e.event_type == "tool_observation"
-        and e.payload.get("status") == "error"
+        if isinstance(e, SkillCompleted) and e.status == "error"
     ]
     assert len(errors) >= 1
 
 
 def test_context_window_builds_from_events() -> None:
-    """Verify that the message builder uses recent events correctly."""
-    # We test this indirectly: run a few iterations, then check that
-    # events are being recorded and the loop reads them back.
+    """Verify that the context window is populated from bus events."""
     mock = _mock_response_factory(
         [
             _tool_call_response("read_memory", {"memory_key": "test"}),
@@ -432,14 +352,14 @@ def test_context_window_builds_from_events() -> None:
 
     result = runner.run("Test", state)
     assert result.status == "completed"
-    events = state.database.get_recent_events(state.session_id, limit=20)
-    assert len(events) >= 4
+    all_events = state.event_bus.get_recent_events(state.session_id)
+    # AgentStarted + SkillCalled + SkillCompleted + GoalEvaluated = 4
+    assert len(all_events) >= 4
+    assert any(isinstance(e, AgentStarted) for e in all_events)
 
 
 def test_goal_runner_streams_progress() -> None:
-    mock = _mock_response_factory(
-        [_evaluate_goal_response(True, "Done.")]
-    )
+    mock = _mock_response_factory([_evaluate_goal_response(True, "Done.")])
     state = _make_app_state(mock)
     runner = GoalRunner(max_iterations=10)
     chunks: list[str] = []
@@ -476,7 +396,9 @@ def test_count_tokens_scales_with_length() -> None:
 def test_goal_cli_command_help() -> None:
     result = runner.invoke(app, ["goal", "--help"])
     assert result.exit_code == 0
-    assert "autonomous ReAct" in result.output.lower() or "goal" in result.output
+    assert (
+        "autonomous ReAct" in result.output.lower() or "goal" in result.output
+    )
 
 
 def test_goal_cli_executes_with_mock(monkeypatch: pytest.MonkeyPatch) -> None:

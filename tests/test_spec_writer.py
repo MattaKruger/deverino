@@ -1,4 +1,4 @@
-# ruff: noqa: E501, PLC0415, TC001
+# ruff: noqa: PLC0415, TC001
 
 from __future__ import annotations
 
@@ -12,7 +12,9 @@ from harness_poc.core.skill_runner import SkillRunner
 MAX_QUESTIONS = 3
 
 
-def test_spec_writer_questions_mode_returns_focused_questions(tmp_path: Path) -> None:
+def test_spec_writer_questions_mode_returns_focused_questions(
+    tmp_path: Path,
+) -> None:
     runner, session_id, _database = _runner(tmp_path)
 
     result = runner.execute_skill(
@@ -130,7 +132,11 @@ def test_gather_state_round_trips_through_blackboard(tmp_path: Path) -> None:
     _runner_obj, session_id, database = _runner(tmp_path)
     config = _test_config(tmp_path)
     from harness_poc.core.skill_context import SkillContext
-    from skills.spec_writer.skill import GatherState, _load_gather_state, _save_gather_state
+    from skills.spec_writer.skill import (
+        GatherState,
+        _load_gather_state,
+        _save_gather_state,
+    )
 
     ctx = SkillContext(
         session_id=session_id,
@@ -166,36 +172,46 @@ def test_load_gather_state_returns_none_when_missing(tmp_path: Path) -> None:
     from harness_poc.core.skill_context import SkillContext
     from skills.spec_writer.skill import _load_gather_state
 
-    ctx = SkillContext(session_id=session_id, skill_name="spec_writer", database=database, config=config)
+    ctx = SkillContext(
+        session_id=session_id,
+        skill_name="spec_writer",
+        database=database,
+        config=config,
+    )
     assert _load_gather_state(ctx, "nonexistent_key") is None
 
 
 def test_parse_component_names_handles_comma_separated() -> None:
     from skills.spec_writer.skill import _parse_component_names
+
     result = _parse_component_names("GoalRunner, EvalSkill, LoopGuard")
     assert result == ["GoalRunner", "EvalSkill", "LoopGuard"]
 
 
 def test_parse_component_names_handles_bullet_list() -> None:
     from skills.spec_writer.skill import _parse_component_names
+
     result = _parse_component_names("- GoalRunner\n- EvalSkill\n- LoopGuard")
     assert result == ["GoalRunner", "EvalSkill", "LoopGuard"]
 
 
 def test_parse_component_names_handles_mixed_format() -> None:
     from skills.spec_writer.skill import _parse_component_names
+
     result = _parse_component_names("GoalRunner\nEvalSkill, LoopGuard")
     assert result == ["GoalRunner", "EvalSkill", "LoopGuard"]
 
 
 def test_parse_component_names_strips_empty_lines() -> None:
     from skills.spec_writer.skill import _parse_component_names
+
     result = _parse_component_names("\n- Alpha\n\n- Beta\n")
     assert result == ["Alpha", "Beta"]
 
 
 def test_question_for_phase_project_overview() -> None:
     from skills.spec_writer.skill import GatherState, _question_for_phase
+
     state = GatherState(phase="awaiting_project_overview")
     q = _question_for_phase(state)
     assert "project" in q.lower()
@@ -204,6 +220,7 @@ def test_question_for_phase_project_overview() -> None:
 
 def test_question_for_phase_components_list() -> None:
     from skills.spec_writer.skill import GatherState, _question_for_phase
+
     state = GatherState(phase="awaiting_components_list")
     q = _question_for_phase(state)
     assert "component" in q.lower()
@@ -211,6 +228,7 @@ def test_question_for_phase_components_list() -> None:
 
 def test_question_for_phase_component_detail_names_component() -> None:
     from skills.spec_writer.skill import GatherState, _question_for_phase
+
     state = GatherState(
         phase="awaiting_component_detail",
         component_names=["GoalRunner", "EvalSkill"],
@@ -223,6 +241,7 @@ def test_question_for_phase_component_detail_names_component() -> None:
 
 def test_question_for_phase_component_detail_second_component() -> None:
     from skills.spec_writer.skill import GatherState, _question_for_phase
+
     state = GatherState(
         phase="awaiting_component_detail",
         component_names=["GoalRunner", "EvalSkill"],
@@ -235,15 +254,21 @@ def test_question_for_phase_component_detail_second_component() -> None:
 
 def test_apply_answer_project_overview_advances_to_feature_request() -> None:
     from skills.spec_writer.skill import GatherState, _apply_answer_and_advance
+
     state = GatherState(phase="awaiting_project_overview")
-    result = _apply_answer_and_advance(state, "A Python harness for LLM agents.")
+    result = _apply_answer_and_advance(
+        state, "A Python harness for LLM agents."
+    )
     assert result.phase == "awaiting_feature_request"
     assert result.project_overview == "A Python harness for LLM agents."
 
 
 def test_apply_answer_feature_request_advances_to_components_list() -> None:
     from skills.spec_writer.skill import GatherState, _apply_answer_and_advance
-    state = GatherState(phase="awaiting_feature_request", project_overview="...")
+
+    state = GatherState(
+        phase="awaiting_feature_request", project_overview="..."
+    )
     result = _apply_answer_and_advance(state, "Add an autonomous goal loop.")
     assert result.phase == "awaiting_components_list"
     assert result.feature_request == "Add an autonomous goal loop."
@@ -251,6 +276,7 @@ def test_apply_answer_feature_request_advances_to_components_list() -> None:
 
 def test_apply_answer_components_list_advances_to_component_detail() -> None:
     from skills.spec_writer.skill import GatherState, _apply_answer_and_advance
+
     state = GatherState(phase="awaiting_components_list")
     result = _apply_answer_and_advance(state, "GoalRunner, EvalSkill")
     assert result.phase == "awaiting_component_detail"
@@ -260,6 +286,7 @@ def test_apply_answer_components_list_advances_to_component_detail() -> None:
 
 def test_apply_answer_component_detail_loops_to_next_component() -> None:
     from skills.spec_writer.skill import GatherState, _apply_answer_and_advance
+
     state = GatherState(
         phase="awaiting_component_detail",
         component_names=["GoalRunner", "EvalSkill"],
@@ -273,6 +300,7 @@ def test_apply_answer_component_detail_loops_to_next_component() -> None:
 
 def test_apply_answer_last_component_detail_advances_to_constraints() -> None:
     from skills.spec_writer.skill import GatherState, _apply_answer_and_advance
+
     state = GatherState(
         phase="awaiting_component_detail",
         component_names=["GoalRunner", "EvalSkill"],
@@ -280,11 +308,14 @@ def test_apply_answer_last_component_detail_advances_to_constraints() -> None:
     )
     result = _apply_answer_and_advance(state, "Acts as the exit mechanism.")
     assert result.phase == "awaiting_constraints"
-    assert result.component_details["EvalSkill"] == "Acts as the exit mechanism."
+    assert (
+        result.component_details["EvalSkill"] == "Acts as the exit mechanism."
+    )
 
 
 def test_apply_answer_constraints_advances_to_complete() -> None:
     from skills.spec_writer.skill import GatherState, _apply_answer_and_advance
+
     state = GatherState(phase="awaiting_constraints")
     result = _apply_answer_and_advance(state, "No external frameworks.")
     assert result.phase == "complete"
@@ -293,6 +324,7 @@ def test_apply_answer_constraints_advances_to_complete() -> None:
 
 def test_apply_answer_empty_answer_does_not_advance() -> None:
     from skills.spec_writer.skill import GatherState, _apply_answer_and_advance
+
     state = GatherState(phase="awaiting_project_overview")
     result = _apply_answer_and_advance(state, "")
     assert result.phase == "awaiting_project_overview"
@@ -301,6 +333,7 @@ def test_apply_answer_empty_answer_does_not_advance() -> None:
 
 def test_generate_xml_context_includes_all_sections() -> None:
     from skills.spec_writer.skill import GatherState, _generate_xml_context
+
     state = GatherState(
         phase="complete",
         project_overview="A Python harness.",
@@ -331,6 +364,7 @@ def test_generate_xml_context_includes_all_sections() -> None:
 
 def test_write_xml_context_file_creates_file(tmp_path: Path) -> None:
     from skills.spec_writer.skill import _write_xml_context_file
+
     xml = "<context><project_overview>Test</project_overview></context>"
     path = _write_xml_context_file(tmp_path, xml)
     assert path.exists()
@@ -384,15 +418,19 @@ def test_gather_full_flow_produces_xml(tmp_path: Path) -> None:
             session_id=session_id,
         )
 
-    call()                                          # ask project overview
-    call("A Python LLM harness.")                   # answer project overview → feature_request
-    call("Add an autonomous goal loop.")            # answer feature request → components_list
-    call("GoalRunner, EvalSkill")                   # answer components list → component_detail[0]
-    call("Manages the while loop.")                 # answer GoalRunner → component_detail[1]
-    result = call("Acts as exit mechanism.")        # answer EvalSkill → constraints
+    call()  # ask project overview
+    call("A Python LLM harness.")  # answer project overview → feature_request
+    call(
+        "Add an autonomous goal loop."
+    )  # answer feature request → components_list
+    call(
+        "GoalRunner, EvalSkill"
+    )  # answer components list → component_detail[0]
+    call("Manages the while loop.")  # answer GoalRunner → component_detail[1]
+    result = call("Acts as exit mechanism.")  # answer EvalSkill → constraints
     assert result.artifacts["phase"] == "awaiting_constraints"
 
-    result = call("No external frameworks.")        # answer constraints → complete
+    result = call("No external frameworks.")  # answer constraints → complete
     assert result.status == "success"
     assert "<context>" in result.content
     assert "A Python LLM harness." in result.content
@@ -405,7 +443,9 @@ def test_gather_full_flow_produces_xml(tmp_path: Path) -> None:
     assert (tmp_path / xml_path).exists()
 
 
-def test_gather_uses_default_gather_key_when_not_provided(tmp_path: Path) -> None:
+def test_gather_uses_default_gather_key_when_not_provided(
+    tmp_path: Path,
+) -> None:
     runner, session_id, _ = _runner(tmp_path)
     result = runner.execute_skill(
         tool_name="spec_writer",
@@ -415,7 +455,9 @@ def test_gather_uses_default_gather_key_when_not_provided(tmp_path: Path) -> Non
     assert result.artifacts["gather_key"] == "spec_gather_state"
 
 
-def test_draft_with_gather_key_reads_completed_xml_from_blackboard(tmp_path: Path) -> None:
+def test_draft_with_gather_key_reads_completed_xml_from_blackboard(
+    tmp_path: Path,
+) -> None:
     runner, session_id, database = _runner(tmp_path)
     config = _test_config(tmp_path)
     from harness_poc.core.skill_context import SkillContext

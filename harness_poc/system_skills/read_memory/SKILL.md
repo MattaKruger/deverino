@@ -2,6 +2,7 @@
 name: read_memory
 description: Retrieves data stored in the shared SQLite blackboard for the current session.
 version: "1.0"
+auto_invokable: true
 parameters:
   type: object
   properties:

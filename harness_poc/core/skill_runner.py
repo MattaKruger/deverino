@@ -24,6 +24,7 @@ class SkillMetadata(TypedDict):
     name: str
     description: str
     parameters: dict[str, Any]
+    auto_invokable: bool
 
 
 class ToolSchema(TypedDict):
@@ -63,6 +64,7 @@ class SkillRunner:
                 if skill_name in seen:
                     continue
                 seen.add(skill_name)
+
                 tools.append(
                     {
                         "type": "function",
@@ -70,11 +72,15 @@ class SkillRunner:
                             "name": skill_name,
                             "description": skill["metadata"]["description"],
                             "parameters": skill["metadata"]["parameters"],
+                            "auto_invokable": skill["metadata"][
+                                "auto_invokable"
+                            ],
                         },
                     },
                 )
 
         logger.debug("Discovered skills", extra={"count": len(tools)})
+
         return tools
 
     def execute_tool(
@@ -246,6 +252,7 @@ class SkillRunner:
         entrypoint = frontmatter.get(
             "entrypoint", {"module": "skill", "function": "execute"}
         )
+        auto_invokable = bool(frontmatter.get("auto_invokable", False))
         if not isinstance(name, str) or not isinstance(description, str):
             msg = f"Skill {skill_file} must define string name and description"
             raise TypeError(msg)
@@ -269,6 +276,7 @@ class SkillRunner:
                 "name": name,
                 "description": description,
                 "parameters": cast("dict[str, Any]", parameters),
+                "auto_invokable": auto_invokable,
             },
             "body": body,
             "path": skill_file,

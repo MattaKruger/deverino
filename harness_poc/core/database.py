@@ -28,15 +28,6 @@ class MemoryRow:
     created_at: str
 
 
-@dataclass(frozen=True, slots=True)
-class StateEvent:
-    scope: str
-    scope_id: str
-    event_type: str
-    payload: dict[str, Any]
-    created_at: str
-
-
 class BlackboardDatabase:
     def __init__(self, database_path: Path | str = "blackboard.db") -> None:
         self.database_path = Path(database_path)
@@ -277,14 +268,17 @@ class BlackboardDatabase:
                 """,
                 (self._encode_state(next_state), now, session_id),
             )
-            self._insert_state_event(
-                connection=connection,
-                event=StateEvent(
-                    scope="session",
-                    scope_id=session_id,
-                    event_type=f"append_{section}",
-                    payload={"text": text},
-                    created_at=now,
+            connection.execute(
+                """
+                INSERT INTO state_events (scope, scope_id, event_type, payload, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    "session",
+                    session_id,
+                    f"append_{section}",
+                    json.dumps({"text": text}, sort_keys=True),
+                    now,
                 ),
             )
         return next_state
@@ -320,14 +314,19 @@ class BlackboardDatabase:
                     now,
                 ),
             )
-            self._insert_state_event(
-                connection=connection,
-                event=StateEvent(
-                    scope="session",
-                    scope_id=session_id,
-                    event_type="proposal_created",
-                    payload={"proposal_id": proposal.proposal_id},
-                    created_at=now,
+            connection.execute(
+                """
+                INSERT INTO state_events (scope, scope_id, event_type, payload, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    "session",
+                    session_id,
+                    "proposal_created",
+                    json.dumps(
+                        {"proposal_id": proposal.proposal_id}, sort_keys=True
+                    ),
+                    now,
                 ),
             )
         return proposal
@@ -396,17 +395,23 @@ class BlackboardDatabase:
                 """,
                 (now, proposal.session_id),
             )
-            self._insert_state_event(
-                connection=connection,
-                event=StateEvent(
-                    scope="project",
-                    scope_id=project_id,
-                    event_type="proposal_approved",
-                    payload={
-                        "proposal_id": proposal_id,
-                        "session_id": proposal.session_id,
-                    },
-                    created_at=now,
+            connection.execute(
+                """
+                INSERT INTO state_events (scope, scope_id, event_type, payload, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    "project",
+                    project_id,
+                    "proposal_approved",
+                    json.dumps(
+                        {
+                            "proposal_id": proposal_id,
+                            "session_id": proposal.session_id,
+                        },
+                        sort_keys=True,
+                    ),
+                    now,
                 ),
             )
         return next_project_state
@@ -452,94 +457,19 @@ class BlackboardDatabase:
                 """,
                 ("rejected", now, proposal_id),
             )
-            self._insert_state_event(
-                connection=connection,
-                event=StateEvent(
-                    scope="session",
-                    scope_id=proposal.session_id,
-                    event_type="proposal_rejected",
-                    payload={"proposal_id": proposal_id},
-                    created_at=now,
-                ),
-            )
-
-    def record_llm_action(
-        self,
-        session_id: str,
-        tool_name: str,
-        arguments: dict[str, Any],
-    ) -> None:
-        now = self._utc_now()
-        with self._connect() as connection:
-            self._insert_state_event(
-                connection=connection,
-                event=StateEvent(
-                    scope="session",
-                    scope_id=session_id,
-                    event_type="llm_action",
-                    payload={
-                        "tool_name": tool_name,
-                        "arguments": arguments,
-                    },
-                    created_at=now,
-                ),
-            )
-
-    def record_tool_observation(
-        self,
-        session_id: str,
-        tool_name: str,
-        status: str,
-        content: str,
-    ) -> None:
-        now = self._utc_now()
-        with self._connect() as connection:
-            self._insert_state_event(
-                connection=connection,
-                event=StateEvent(
-                    scope="session",
-                    scope_id=session_id,
-                    event_type="tool_observation",
-                    payload={
-                        "tool_name": tool_name,
-                        "status": status,
-                        "content": content,
-                    },
-                    created_at=now,
-                ),
-            )
-
-    def get_recent_events(
-        self, session_id: str, limit: int = 20
-    ) -> list[StateEvent]:
-        with self._connect() as connection:
-            cursor = connection.execute(
+            connection.execute(
                 """
-                SELECT scope, scope_id, event_type, payload, created_at
-                FROM state_events
-                WHERE scope = 'session'
-                  AND scope_id = ?
-                  AND event_type IN ('llm_action', 'tool_observation')
-                ORDER BY id DESC
-                LIMIT ?
+                INSERT INTO state_events (scope, scope_id, event_type, payload, created_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (session_id, limit),
+                (
+                    "session",
+                    proposal.session_id,
+                    "proposal_rejected",
+                    json.dumps({"proposal_id": proposal_id}, sort_keys=True),
+                    now,
+                ),
             )
-            rows = cursor.fetchall()
-
-        events = [
-            StateEvent(
-                scope=str(row["scope"]),
-                scope_id=str(row["scope_id"]),
-                event_type=str(row["event_type"]),
-                payload=json.loads(str(row["payload"])),
-                created_at=str(row["created_at"]),
-            )
-            for row in rows
-        ]
-        # Reverse to chronological order
-        events.reverse()
-        return events
 
     def _connect(self) -> sqlite3.Connection:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -572,23 +502,3 @@ class BlackboardDatabase:
             msg = "Stored state payload must be a JSON object"
             raise TypeError(msg)
         return StatePayload.from_dict(decoded)
-
-    @staticmethod
-    def _insert_state_event(
-        *,
-        connection: sqlite3.Connection,
-        event: StateEvent,
-    ) -> None:
-        connection.execute(
-            """
-            INSERT INTO state_events (scope, scope_id, event_type, payload, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                event.scope,
-                event.scope_id,
-                event.event_type,
-                json.dumps(event.payload, sort_keys=True),
-                event.created_at,
-            ),
-        )

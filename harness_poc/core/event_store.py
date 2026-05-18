@@ -16,7 +16,10 @@ class EventStore:
 
     def persist(self, event: BaseEvent) -> None:
         payload = json.dumps(
-            {"event_type": event.event_type, "payload": event.model_dump(mode="json")},
+            {
+                "event_type": event.event_type,
+                "payload": event.model_dump(mode="json"),
+            },
             sort_keys=True,
         )
         with self._connect() as conn:
@@ -40,7 +43,11 @@ class EventStore:
         limit: int = 20,
         event_types: list[type[BaseEvent]] | None = None,
     ) -> list[BaseEvent]:
-        type_names = [t.__name__ for t in event_types] if event_types is not None else None
+        type_names = (
+            [t.__name__ for t in event_types]
+            if event_types is not None
+            else None
+        )
         with self._connect() as conn:
             if type_names:
                 placeholders = ",".join("?" * len(type_names))
@@ -75,7 +82,10 @@ class EventStore:
                 event_type_name = outer.get("event_type", "")
                 event_cls = EVENT_REGISTRY.get(event_type_name)
                 if event_cls is None:
-                    logger.warning("Unknown event_type in store, skipping: %s", event_type_name)
+                    logger.warning(
+                        "Unknown event_type in store, skipping: %s",
+                        event_type_name,
+                    )
                     continue
                 events.append(event_cls.model_validate(outer["payload"]))
             except (json.JSONDecodeError, ValueError, KeyError):

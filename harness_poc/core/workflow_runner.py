@@ -75,9 +75,7 @@ class WorkflowRunner:
         current_state = _first_state_name(states)
         outputs: list[WorkflowStateOutput] = []
         state_context: dict[str, Any] = {}
-        container_config = _optional_mapping(
-            workflow.get("container"), "container"
-        )
+        container_config = _optional_mapping(workflow.get("container"), "container")
         container_name: str | None = None
 
         # Auto-spawn container if workflow declares one
@@ -90,30 +88,20 @@ class WorkflowRunner:
             if spawn_result is not None:
                 outputs.append(spawn_result)
                 state_context["_spawn"] = spawn_result.result.to_dict()
-                container_name = str(
-                    spawn_result.result.artifacts.get("container_name", "")
-                )
+                container_name = str(spawn_result.result.artifacts.get("container_name", ""))
 
         result_status = "completed"
         try:
             for _ in range(100):
-                state = _mapping(
-                    states[current_state], f"states.{current_state}"
-                )
+                state = _mapping(states[current_state], f"states.{current_state}")
                 if bool(state.get("terminal", False)):
                     break
 
-                skill_name = _required_str(
-                    state.get("skill"), f"states.{current_state}.skill"
-                )
-                raw_args = _mapping(
-                    state.get("args", {}), f"states.{current_state}.args"
-                )
+                skill_name = _required_str(state.get("skill"), f"states.{current_state}.skill")
+                raw_args = _mapping(state.get("args", {}), f"states.{current_state}.args")
                 rendered_args = cast(
                     "dict[str, Any]",
-                    self._render_value(
-                        raw_args, inputs=inputs, states=state_context
-                    ),
+                    self._render_value(raw_args, inputs=inputs, states=state_context),
                 )
                 result = self.skill_runner.execute_skill(
                     tool_name=skill_name,
@@ -137,9 +125,7 @@ class WorkflowRunner:
                 if next_state is None:
                     result_status = result.status
                     break
-                current_state = _required_str(
-                    next_state, f"states.{current_state}.next"
-                )
+                current_state = _required_str(next_state, f"states.{current_state}.next")
             else:
                 msg = f"Workflow {workflow_name} exceeded 100 states"
                 raise RuntimeError(msg)
@@ -187,10 +173,7 @@ class WorkflowRunner:
             }
 
         if isinstance(value, list):
-            return [
-                self._render_value(item, inputs=inputs, states=states)
-                for item in value
-            ]
+            return [self._render_value(item, inputs=inputs, states=states) for item in value]
 
         return value
 
@@ -203,9 +186,7 @@ class WorkflowRunner:
     ) -> str:
         def replace(match: re.Match[str]) -> str:
             expression = match.group(1).strip()
-            resolved = _resolve_expression(
-                expression, inputs=inputs, states=states
-            )
+            resolved = _resolve_expression(expression, inputs=inputs, states=states)
             return str(resolved)
 
         return TEMPLATE_PATTERN.sub(replace, value)
@@ -216,13 +197,9 @@ class WorkflowRunner:
         workflow_id: str,
         session_id: str,
     ) -> WorkflowStateOutput | None:
-        image = str(
-            container_config.get("image")
-            or self.config.runtime.default_container_image
-        )
+        image = str(container_config.get("image") or self.config.runtime.default_container_image)
         container_name = str(
-            container_config.get("container_name")
-            or f"harness-{workflow_id[:12]}"
+            container_config.get("container_name") or f"harness-{workflow_id[:12]}"
         )
         spawn_args: dict[str, Any] = {
             "image": image,

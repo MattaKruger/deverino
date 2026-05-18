@@ -64,9 +64,7 @@ class HarnessCompleter(Completer):
     def __init__(self, app_state: AppState) -> None:
         self.app_state = app_state
 
-    def get_completions(
-        self, document: Document, complete_event: object
-    ) -> Iterable[Completion]:
+    def get_completions(self, document: Document, complete_event: object) -> Iterable[Completion]:
         del complete_event
         catalog = ReplCommandCatalog.from_app_state(self.app_state)
         text = document.text_before_cursor
@@ -98,8 +96,7 @@ def _state_completions(
     tokens: list[str], current: str, text_before_cursor: str
 ) -> Iterable[Completion]:
     if len(tokens) == ROOT_TOKEN_COUNT or (
-        len(tokens) == SUBCOMMAND_TOKEN_COUNT
-        and not text_before_cursor.endswith(" ")
+        len(tokens) == SUBCOMMAND_TOKEN_COUNT and not text_before_cursor.endswith(" ")
     ):
         yield from _word_completions(STATE_COMMANDS, current)
         return
@@ -119,8 +116,7 @@ def _skill_completions(
     catalog: ReplCommandCatalog,
 ) -> Iterable[Completion]:
     if len(tokens) == ROOT_TOKEN_COUNT or (
-        len(tokens) == SUBCOMMAND_TOKEN_COUNT
-        and not text_before_cursor.endswith(" ")
+        len(tokens) == SUBCOMMAND_TOKEN_COUNT and not text_before_cursor.endswith(" ")
     ):
         yield from _word_completions((*SKILL_COMMANDS, *catalog.skills), current)
         return

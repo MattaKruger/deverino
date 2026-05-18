@@ -140,9 +140,7 @@ Non-slash forms still work: goal, workflow, state, skill, exit, quit.""",
     )
 
 
-def run_workflow(
-    app_state: AppState, workflow_name: str, objective: str
-) -> bool:
+def run_workflow(app_state: AppState, workflow_name: str, objective: str) -> bool:
     if not workflow_name or not objective:
         console.print("Usage: workflow <name> <objective>")
         return False
@@ -238,9 +236,7 @@ def handle_state_command(app_state: AppState, user_input: str) -> None:
         print_state_help()
 
 
-def dispatch_state_command(
-    app_state: AppState, command: str, argument: str
-) -> bool:
+def dispatch_state_command(app_state: AppState, command: str, argument: str) -> bool:
     if command in {"", "help"}:
         print_state_help()
     elif command == "show":
@@ -272,9 +268,7 @@ def _parse_state_command(user_input: str) -> tuple[str, str]:
 
 def show_state(app_state: AppState, scope: str) -> None:
     project_state = app_state.database.ensure_project_state()
-    session_state = app_state.database.ensure_session_state(
-        app_state.session_id
-    )
+    session_state = app_state.database.ensure_session_state(app_state.session_id)
     normalized_scope = scope.strip() or "all"
     if normalized_scope == "project":
         print_markdown(project_state.to_markdown("Project State"))
@@ -288,9 +282,7 @@ def show_state(app_state: AppState, scope: str) -> None:
     print_markdown(build_state_context(project_state, session_state))
 
 
-def append_session_state(
-    app_state: AppState, command: str, argument: str
-) -> None:
+def append_session_state(app_state: AppState, command: str, argument: str) -> None:
     if not argument:
         msg = f"state {command} requires text"
         raise ValueError(msg)
@@ -404,9 +396,7 @@ def _parse_skill_command(user_input: str) -> tuple[str, str]:
     return command, argument
 
 
-def dispatch_skill_command(
-    app_state: AppState, command: str, argument: str
-) -> bool:
+def dispatch_skill_command(app_state: AppState, command: str, argument: str) -> bool:
     if command in {"", "help"}:
         print_skill_help()
     elif command == "list":
@@ -441,14 +431,11 @@ def is_skill_name(app_state: AppState, skill_name: str) -> bool:
     return skill_name in {
         tool["function"]["name"]
         for tool in app_state.skill_runner.discover_skills()
-        if isinstance(tool.get("function"), dict)
-        and isinstance(tool["function"].get("name"), str)
+        if isinstance(tool.get("function"), dict) and isinstance(tool["function"].get("name"), str)
     }
 
 
-def execute_named_skill(
-    app_state: AppState, skill_name: str, argument: str
-) -> None:
+def execute_named_skill(app_state: AppState, skill_name: str, argument: str) -> None:
     result = app_state.skill_runner.execute_skill(
         tool_name=skill_name,
         arguments=_parse_skill_arguments(app_state, skill_name, argument),
@@ -479,9 +466,7 @@ def show_skill(app_state: AppState, skill_name: str) -> None:
 
 def create_skill(app_state: AppState, argument: str) -> None:
     skill_name, description = _parse_create_skill_args(argument)
-    scaffolded = app_state.skill_scaffolder.create_skill(
-        skill_name, description
-    )
+    scaffolded = app_state.skill_scaffolder.create_skill(skill_name, description)
     app_state.tools = app_state.skill_runner.discover_skills()
     console.print(f"Created skill: [cyan]{scaffolded.skill_name}[/cyan]")
     for path in scaffolded.created_files:
@@ -496,9 +481,7 @@ def _parse_create_skill_args(argument: str) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
-def _parse_skill_arguments(
-    app_state: AppState, skill_name: str, argument: str
-) -> dict[str, Any]:
+def _parse_skill_arguments(app_state: AppState, skill_name: str, argument: str) -> dict[str, Any]:
     normalized = argument.strip()
     if not normalized:
         return {}
@@ -579,6 +562,7 @@ def _finish_stream_line(content: str) -> None:
 # ------------------------------------------------------------------
 # /goal command
 # ------------------------------------------------------------------
+
 
 def _is_goal_command(user_input: str) -> bool:
     return user_input.startswith(("/goal ", "goal "))
@@ -676,10 +660,12 @@ def _build_prompt_bar(app_state: AppState) -> FormattedText:
     llm = app_state.llm_client
 
     if llm.use_mock:
-        return FormattedText([
-            ("fg:ansimagenta", "[mock]"),
-            ("", " > "),
-        ])
+        return FormattedText(
+            [
+                ("fg:ansimagenta", "[mock]"),
+                ("", " > "),
+            ]
+        )
 
     model = llm.model
     reasoning = llm.reasoning_effort

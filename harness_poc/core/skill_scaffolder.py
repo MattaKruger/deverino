@@ -24,9 +24,7 @@ class SkillScaffolder:
     def __init__(self, config: HarnessConfig) -> None:
         self.config = config
 
-    def create_skill(
-        self, skill_name: str, description: str
-    ) -> ScaffoldedSkill:
+    def create_skill(self, skill_name: str, description: str) -> ScaffoldedSkill:
         normalized_name = skill_name.strip()
         normalized_description = description.strip()
         if not SKILL_NAME_PATTERN.fullmatch(normalized_name):
@@ -43,11 +41,8 @@ class SkillScaffolder:
 
         skill_dir.mkdir(parents=True)
         files = {
-            skill_dir
-            / "__init__.py": f'"""Generated {normalized_name} skill plugin."""\n',
-            skill_dir / "SKILL.md": _render_skill_markdown(
-                normalized_name, normalized_description
-            ),
+            skill_dir / "__init__.py": f'"""Generated {normalized_name} skill plugin."""\n',
+            skill_dir / "SKILL.md": _render_skill_markdown(normalized_name, normalized_description),
             skill_dir / "skill.py": _render_skill_python(normalized_name),
         }
         for path, content in files.items():

@@ -2,6 +2,7 @@
 name: summarize_memory
 description: Summarizes a memory key into a compact result
 version: "1.0"
+auto_invokable: true
 parameters:
   type: object
   properties:

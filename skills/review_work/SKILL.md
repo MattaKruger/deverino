@@ -2,6 +2,7 @@
 name: review_work
 description: Review current working tree
 version: "1.0"
+auto_invokable: true
 parameters:
   type: object
   properties:

@@ -41,10 +41,7 @@ def test_build_skill_tools_reuses_discovered_skill_schema(tmp_path: Path) -> Non
     assert read_memory_tool.description is not None
     assert read_memory_tool.description.startswith("Retrieves data")
     assert (
-        read_memory_tool.function_schema.json_schema["properties"]["memory_key"][
-            "type"
-        ]
-        == "string"
+        read_memory_tool.function_schema.json_schema["properties"]["memory_key"]["type"] == "string"
     )
 
 

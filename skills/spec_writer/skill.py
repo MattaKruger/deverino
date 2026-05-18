@@ -172,35 +172,37 @@ def _generate_xml_context(state: GatherState) -> str:
 
     components_block = "\n".join(components_lines)
 
-    return "\n".join([
-        "<context>",
-        "  <project_overview>",
-        f"    {state.project_overview}",
-        "  </project_overview>",
-        "",
-        "  <feature_request>",
-        f"    {state.feature_request}",
-        "  </feature_request>",
-        "",
-        "  <architectural_requirements>",
-        components_block,
-        "  </architectural_requirements>",
-        "",
-        "  <constraints>",
-        f"    {state.constraints}",
-        "  </constraints>",
-        "",
-        "  <output_instructions>",
-        "    Act as a senior software architect. Write a comprehensive Technical",
-        "    Specification for this feature. Include:",
-        "    1. System architecture flow (how the components interact).",
-        "    2. Data schema modifications.",
-        "    3. Interface definitions (class signatures and skill schemas).",
-        "    4. Edge cases and failure modes.",
-        "    5. Step-by-step implementation plan.",
-        "  </output_instructions>",
-        "</context>",
-    ])
+    return "\n".join(
+        [
+            "<context>",
+            "  <project_overview>",
+            f"    {state.project_overview}",
+            "  </project_overview>",
+            "",
+            "  <feature_request>",
+            f"    {state.feature_request}",
+            "  </feature_request>",
+            "",
+            "  <architectural_requirements>",
+            components_block,
+            "  </architectural_requirements>",
+            "",
+            "  <constraints>",
+            f"    {state.constraints}",
+            "  </constraints>",
+            "",
+            "  <output_instructions>",
+            "    Act as a senior software architect. Write a comprehensive Technical",
+            "    Specification for this feature. Include:",
+            "    1. System architecture flow (how the components interact).",
+            "    2. Data schema modifications.",
+            "    3. Interface definitions (class signatures and skill schemas).",
+            "    4. Edge cases and failure modes.",
+            "    5. Step-by-step implementation plan.",
+            "  </output_instructions>",
+            "</context>",
+        ]
+    )
 
 
 def _write_xml_context_file(project_root: Path, xml: str) -> Path:
@@ -224,8 +226,8 @@ class SpecInputs:
     non_goals: str
     open_questions: str
     use_llm: bool
-    gather_key: str   # blackboard key for gather state
-    answer: str       # user's answer to the previous gather question
+    gather_key: str  # blackboard key for gather state
+    answer: str  # user's answer to the previous gather question
 
 
 def _execute_gather(ctx: SkillContext, inputs: SpecInputs) -> SkillResult:
@@ -369,9 +371,7 @@ def _clarifying_questions(inputs: SpecInputs) -> list[str]:
             "What existing behavior, code area, or user workflow should the spec account for?"
         )
     if not inputs.requirements:
-        questions.append(
-            "What must be true for the implementation to be accepted?"
-        )
+        questions.append("What must be true for the implementation to be accepted?")
     return questions[:MAX_QUESTIONS]
 
 
@@ -474,9 +474,7 @@ def _llm_messages(inputs: SpecInputs, previous_spec: str) -> list[Message]:
 
 
 def _is_valid_spec(spec: str) -> bool:
-    return bool(spec.startswith("# ")) and all(
-        heading in spec for heading in SPEC_HEADINGS
-    )
+    return bool(spec.startswith("# ")) and all(heading in spec for heading in SPEC_HEADINGS)
 
 
 def _deterministic_spec(inputs: SpecInputs, previous_spec: str) -> str:
@@ -495,9 +493,7 @@ def _deterministic_spec(inputs: SpecInputs, previous_spec: str) -> str:
         "No open questions recorded.",
     )
     refinement_note = (
-        f"\n\nPrevious draft considered:\n\n{previous_spec.strip()}"
-        if previous_spec
-        else ""
+        f"\n\nPrevious draft considered:\n\n{previous_spec.strip()}" if previous_spec else ""
     )
 
     return "\n".join(

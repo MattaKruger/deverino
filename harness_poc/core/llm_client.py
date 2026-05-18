@@ -182,7 +182,9 @@ class LLMClient:
                 usage=usage,
             )
 
-        return LLMResponse(kind="text", content=message.content or "", usage=usage)
+        return LLMResponse(
+            kind="text", content=message.content or "", usage=usage
+        )
 
     def _deepseek_stream_chat(
         self,

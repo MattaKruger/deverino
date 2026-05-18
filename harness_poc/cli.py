@@ -204,9 +204,7 @@ def skill_create(
 
 @app.command()
 def goal(
-    objective: Annotated[
-        str, typer.Argument(help="The goal to pursue autonomously.")
-    ],
+    objective: Annotated[str, typer.Argument(help="The goal to pursue autonomously.")],
     max_iterations: Annotated[
         int,
         typer.Option(
