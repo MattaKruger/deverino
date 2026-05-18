@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -12,6 +13,14 @@ import tiktoken
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, PromptedOutput
 
+from harness_poc.core.events import (
+    AgentStarted,
+    BaseEvent,
+    GoalEvaluated,
+    LLMTextEmitted,
+    SkillCalled,
+    SkillCompleted,
+)
 from harness_poc.core.pydantic_runtime import build_model
 
 if TYPE_CHECKING:
@@ -20,7 +29,6 @@ if TYPE_CHECKING:
     from pydantic_ai.models import Model
 
     from harness_poc.app_factory import AppState
-    from harness_poc.core.database import StateEvent
     from harness_poc.core.llm_client import Message
 
 _encoder_cache: dict[str, tiktoken.Encoding] = {}
@@ -60,38 +68,68 @@ def _emit_goal_progress(
         on_text(content)
 
 
+def _event_to_message(event: BaseEvent) -> Message | None:
+    if isinstance(event, SkillCalled):
+        return {
+            "role": "assistant",
+            "content": (
+                f"[Action] Called {event.tool_name}"
+                f"({json.dumps(event.arguments, sort_keys=True)})"
+            ),
+        }
+    if isinstance(event, SkillCompleted):
+        prefix = f"[Observation from {event.tool_name} — {event.status}]"
+        return {"role": "user", "content": f"{prefix}\n{event.content}"}
+    if isinstance(event, LLMTextEmitted):
+        return {"role": "user", "content": f"[LLM text]\n{event.content}"}
+    if isinstance(event, GoalEvaluated):
+        return {
+            "role": "user",
+            "content": (
+                f"[evaluate_goal: is_complete={event.is_complete}] {event.reasoning}"
+            ),
+        }
+    return None
+
+
 def _completion_content(
     *,
     goal: str,
     reasoning: str,
     final_answer: str,
-    recent_events: list[StateEvent],
+    recent_events: list[BaseEvent],
 ) -> str:
+    # --- Pick the primary content ---
     if final_answer:
-        return final_answer
+        content = final_answer
+    else:
+        generated_result = _latest_generated_result(recent_events)
+        if generated_result and _looks_like_meta_completion(reasoning):
+            content = generated_result
+        elif reasoning:
+            content = reasoning
+        elif generated_result and _looks_like_generation_goal(goal):
+            content = generated_result
+        else:
+            # Safety net: surface the last successful skill's output
+            # when the LLM didn't provide any answer at all.
+            content = _last_skill_output(recent_events) or "Goal completed."
 
-    generated_result = _latest_generated_result(recent_events)
-    if generated_result and _looks_like_meta_completion(reasoning):
-        return generated_result
+    # --- Append source file references so they're always clickable ---
+    refs = _extract_file_refs(recent_events)
+    if refs:
+        content += "\n\n**Source files:**\n" + refs
 
-    if reasoning:
-        return reasoning
-    if generated_result and _looks_like_generation_goal(goal):
-        return generated_result
-    return "Goal completed."
+    return content
 
 
-def _latest_generated_result(recent_events: list[StateEvent]) -> str:
+def _latest_generated_result(recent_events: list[BaseEvent]) -> str:
     for event in reversed(recent_events):
-        payload = event.payload
-        if not isinstance(payload, dict):
+        if not isinstance(event, SkillCompleted):
             continue
-        if event.event_type != "tool_observation":
+        if event.status != "success":
             continue
-        if payload.get("status") != "success":
-            continue
-        content = str(payload.get("content") or "").strip()
-        extracted = _extract_generated_result(content)
+        extracted = _extract_generated_result(event.content)
         if extracted:
             return extracted
     return ""
@@ -120,6 +158,45 @@ def _extract_generated_result(content: str) -> str:
     return content
 
 
+# Semble outputs file references like:
+#   ## 1. path/to/file.py:123-456  [score=0.027]
+# This regex captures the path and start line.
+_FILE_REF_RE = re.compile(
+    r"##\s*\d+\.\s+([^\s\[\]]+):(\d+)(?:-\d+)?",
+)
+
+
+def _extract_file_refs(recent_events: list[BaseEvent]) -> str:
+    """Extract clickable `file:line` references from SkillCompleted events."""
+    seen: set[str] = set()
+    lines: list[str] = []
+    for event in recent_events:
+        if not isinstance(event, SkillCompleted):
+            continue
+        if event.status != "success":
+            continue
+        for match in _FILE_REF_RE.finditer(event.content):
+            path = match.group(1)
+            line_num = match.group(2)
+            ref = f"{path}:{line_num}"
+            if ref not in seen:
+                seen.add(ref)
+                lines.append(f"- `{ref}`")
+    return "\n".join(lines)
+
+
+def _last_skill_output(recent_events: list[BaseEvent]) -> str:
+    """Return the content of the most recent successful SkillCompleted event."""
+    for event in reversed(recent_events):
+        if not isinstance(event, SkillCompleted):
+            continue
+        if event.status != "success":
+            continue
+        if event.content.strip():
+            return event.content.strip()
+    return ""
+
+
 def _looks_like_meta_completion(reasoning: str) -> bool:
     normalized = reasoning.lower()
     meta_markers = (
@@ -146,7 +223,7 @@ def _looks_like_generation_goal(goal: str) -> bool:
 @dataclass
 class GoalRunResult:
     status: str  # "completed" | "budget_exhausted" | "error"
-    content: str  # final summary for the user
+    content: str
     iterations: int
     total_tokens: int
     events: list[dict[str, Any]] = field(default_factory=list)
@@ -174,10 +251,9 @@ class GoalRunner:
     max_seconds: float | None = None
     max_tokens: int | None = None
     context_window: int = 20
-    stuck_threshold: int = 3  # block on 4th identical consecutive action
+    stuck_threshold: int = 3
     decision_model: Model | None = None
 
-    # Internal state (per run)
     _stuck_hashes: deque[str] = field(default_factory=lambda: deque(maxlen=3))
 
     def run(  # noqa: PLR0915
@@ -201,6 +277,10 @@ class GoalRunner:
         self._stuck_hashes.clear()
         total_tokens = 0
         events: list[dict[str, Any]] = []
+
+        app_state.event_bus.publish(
+            AgentStarted(session_id=app_state.session_id, goal=goal)
+        )
 
         for iteration in range(1, self.max_iterations + 1):
             # --- Budget: time ---
@@ -228,8 +308,15 @@ class GoalRunner:
                     )
 
             # --- Build context window ---
-            recent_events = app_state.database.get_recent_events(
-                app_state.session_id, limit=self.context_window
+            recent_events = app_state.event_bus.get_recent_events(
+                app_state.session_id,
+                limit=self.context_window,
+                event_types=[
+                    SkillCalled,
+                    SkillCompleted,
+                    GoalEvaluated,
+                    LLMTextEmitted,
+                ],
             )
 
             # --- Build messages for LLM ---
@@ -269,13 +356,13 @@ class GoalRunner:
             if self.max_tokens is not None:
                 total_tokens += token_count + response_tokens
 
+            # --- _llm_text path ---
             if action.tool_name == "_llm_text":
-                # Structured fallback for a model text response with no concrete action.
-                app_state.database.record_tool_observation(
-                    session_id=app_state.session_id,
-                    tool_name="_llm_text",
-                    status="success",
-                    content=action.content,
+                app_state.event_bus.publish(
+                    LLMTextEmitted(
+                        session_id=app_state.session_id,
+                        content=action.content,
+                    )
                 )
                 events.append(
                     {
@@ -286,7 +373,6 @@ class GoalRunner:
                 )
                 continue
 
-            # --- Tool call path ---
             tool_name = action.tool_name
             arguments = action.arguments
             _emit_goal_progress(
@@ -302,20 +388,6 @@ class GoalRunner:
                     "tool_name": tool_name,
                     "arguments": arguments,
                 },
-            )
-
-            # --- Record llm_action ---
-            app_state.database.record_llm_action(
-                session_id=app_state.session_id,
-                tool_name=tool_name,
-                arguments=arguments,
-            )
-            events.append(
-                {
-                    "type": "llm_action",
-                    "tool": tool_name,
-                    "arguments": arguments,
-                }
             )
 
             # --- Stuck detection ---
@@ -334,14 +406,15 @@ class GoalRunner:
                         "goal": goal,
                         "iteration": iteration,
                         "tool_name": tool_name,
-                        "arguments": arguments,
                     },
                 )
-                app_state.database.record_tool_observation(
-                    session_id=app_state.session_id,
-                    tool_name=tool_name,
-                    status="blocked",
-                    content=error_msg,
+                app_state.event_bus.publish(
+                    SkillCompleted(
+                        session_id=app_state.session_id,
+                        tool_name=tool_name,
+                        status="blocked",
+                        content=error_msg,
+                    )
                 )
                 events.append(
                     {
@@ -361,16 +434,17 @@ class GoalRunner:
                 reasoning: str = arguments.get("reasoning", "")
                 final_answer = str(arguments.get("final_answer") or "").strip()
                 if reasoning:
-                    _emit_goal_progress(on_text, f"[goal] reasoning: {reasoning}\n")
+                    _emit_goal_progress(
+                        on_text, f"[goal] reasoning: {reasoning}\n"
+                    )
 
-                app_state.database.record_tool_observation(
-                    session_id=app_state.session_id,
-                    tool_name="evaluate_goal",
-                    status="success",
-                    content=(
-                        f"is_complete={is_complete}, reasoning={reasoning}, "
-                        f"final_answer={final_answer}"
-                    ),
+                app_state.event_bus.publish(
+                    GoalEvaluated(
+                        session_id=app_state.session_id,
+                        is_complete=is_complete,
+                        reasoning=reasoning,
+                        final_answer=final_answer,
+                    )
                 )
 
                 if is_complete:
@@ -397,17 +471,6 @@ class GoalRunner:
                         events=events,
                     )
 
-                # Not complete — inject reasoning as observation, continue
-                feedback = (
-                    f"Goal not yet complete. Your reasoning: {reasoning}\n\n"
-                    "Continue working. Try a different approach if stuck."
-                )
-                app_state.database.record_tool_observation(
-                    session_id=app_state.session_id,
-                    tool_name="_evaluate_goal_feedback",
-                    status="success",
-                    content=feedback,
-                )
                 events.append(
                     {
                         "type": "tool_observation",
@@ -418,6 +481,20 @@ class GoalRunner:
                 continue
 
             # --- Execute normal skill ---
+            app_state.event_bus.publish(
+                SkillCalled(
+                    session_id=app_state.session_id,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                )
+            )
+            events.append(
+                {
+                    "type": "llm_action",
+                    "tool": tool_name,
+                    "arguments": arguments,
+                }
+            )
             try:
                 result = app_state.skill_runner.execute_skill(
                     tool_name=tool_name,
@@ -425,11 +502,14 @@ class GoalRunner:
                     session_id=app_state.session_id,
                     on_text=on_text,
                 )
-                app_state.database.record_tool_observation(
-                    session_id=app_state.session_id,
-                    tool_name=tool_name,
-                    status=result.status,
-                    content=result.content,
+                app_state.event_bus.publish(
+                    SkillCompleted(
+                        session_id=app_state.session_id,
+                        tool_name=tool_name,
+                        status=result.status,
+                        content=result.content,
+                        artifacts=result.artifacts,
+                    )
                 )
                 events.append(
                     {
@@ -448,14 +528,15 @@ class GoalRunner:
                         "goal": goal,
                         "iteration": iteration,
                         "tool_name": tool_name,
-                        "arguments": arguments,
                     },
                 )
-                app_state.database.record_tool_observation(
-                    session_id=app_state.session_id,
-                    tool_name=tool_name,
-                    status="error",
-                    content=error_msg,
+                app_state.event_bus.publish(
+                    SkillCompleted(
+                        session_id=app_state.session_id,
+                        tool_name=tool_name,
+                        status="error",
+                        content=error_msg,
+                    )
                 )
                 events.append(
                     {
@@ -479,61 +560,28 @@ class GoalRunner:
         return GoalRunResult(
             status="budget_exhausted",
             content=(
-                f"Iteration budget ({self.max_iterations}) exhausted. "
-                "Goal may be incomplete."
+                f"Iteration budget ({self.max_iterations}) exhausted. Goal may be incomplete."
             ),
             iterations=self.max_iterations,
             total_tokens=total_tokens,
             events=events,
         )
 
-    # ------------------------------------------------------------------
-    # Context window building
-    # ------------------------------------------------------------------
-
     def _build_messages(
         self,
         goal: str,
-        recent_events: list[StateEvent],
+        recent_events: list[BaseEvent],
     ) -> list[Message]:
         """Build message list: system prompt + formatted event history + continue prompt."""
         system_prompt = self._goal_system_prompt(goal)
-
         messages: list[Message] = [
             {"role": "system", "content": system_prompt},
         ]
 
         for event in recent_events:
-            payload = event.payload
-            if not isinstance(payload, dict):
-                continue
-
-            if event.event_type == "llm_action":
-                tool_name = str(payload.get("tool_name", "unknown"))
-                args = payload.get("arguments", {})
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": (
-                            f"[Action] Called {tool_name}"
-                            f"({json.dumps(args, sort_keys=True)})"
-                        ),
-                    }
-                )
-            elif event.event_type == "tool_observation":
-                tool_name = str(payload.get("tool_name", "unknown"))
-                content = str(payload.get("content", ""))
-                status = str(payload.get("status", ""))
-                prefix = f"[Observation from {tool_name}"
-                if status:
-                    prefix += f" — {status}"
-                prefix += "]"
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": f"{prefix}\n{content}",
-                    }
-                )
+            msg = _event_to_message(event)
+            if msg is not None:
+                messages.append(msg)
 
         messages.append(
             {
@@ -547,7 +595,6 @@ class GoalRunner:
                 ),
             }
         )
-
         return messages
 
     def _decide_next_action(
@@ -555,7 +602,7 @@ class GoalRunner:
         *,
         goal: str,
         app_state: AppState,
-        recent_events: list[StateEvent],
+        recent_events: list[BaseEvent],
     ) -> tuple[GoalAction, int]:
         model = (
             self.decision_model
@@ -597,12 +644,11 @@ class GoalRunner:
                 "response_tokens": response_tokens,
             },
         )
-
         return action, response_tokens
 
     @staticmethod
     def _build_decision_prompt(
-        recent_events: list[StateEvent],
+        recent_events: list[BaseEvent],
         tools: list[dict[str, Any]],
     ) -> str:
         parts = [
@@ -615,7 +661,10 @@ class GoalRunner:
         ]
 
         if recent_events:
-            parts.extend(_format_event_for_prompt(event) for event in recent_events)
+            parts.extend(
+                f"- {event.event_type}: {event.model_dump_json()}"
+                for event in recent_events
+            )
         else:
             parts.append("No prior events.")
 
@@ -638,7 +687,6 @@ class GoalRunner:
                 "Use evaluate_goal with is_complete=false when progress is incomplete or blocked.",
             ],
         )
-
         return "\n".join(parts)
 
     @staticmethod
@@ -651,10 +699,13 @@ class GoalRunner:
             "- Work step by step. Call tools to take actions.\n"
             "- After each tool result, decide on your next action.\n"
             "- When the goal is fully achieved, call `evaluate_goal` with "
-            "`is_complete: true` and explain what was accomplished. If the goal "
-            "asked you to generate, draft, write, or produce text, include that "
-            "generated text verbatim in `final_answer`; do not only describe where "
-            "it was produced.\n"
+            "`is_complete: true` and explain what was accomplished in `reasoning`. "
+            "**Always include the complete, polished answer to the user in "
+            "`final_answer`** — this is the only text the user will see. "
+            "For research/information goals, synthesize the results into a "
+            "coherent answer. For generation goals, include the generated "
+            "text verbatim. Never leave `final_answer` empty or just state "
+            "that the goal is complete.\n"
             "- If you are stuck or cannot proceed, call `evaluate_goal` with "
             "`is_complete: false` and explain what is blocking you.\n"
             "- Do not repeat the same action with identical arguments — the system "
@@ -662,28 +713,14 @@ class GoalRunner:
             "- Be concise. Focus on actions, not conversation.\n"
         )
 
-    # ------------------------------------------------------------------
-    # Stuck detection
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _hash_action(tool_name: str, arguments: dict[str, Any]) -> str:
-        """Deterministic hash of a (tool_name, arguments) pair."""
         canonical = json.dumps(
             {"tool": tool_name, "args": arguments}, sort_keys=True
         )
         return hashlib.sha256(canonical.encode()).hexdigest()
 
     def _is_stuck(self, action_hash: str) -> bool:
-        """Return True if this action_hash matches all last stuck_threshold hashes."""
         if len(self._stuck_hashes) < self.stuck_threshold:
             return False
         return all(h == action_hash for h in self._stuck_hashes)
-
-
-def _format_event_for_prompt(event: StateEvent) -> str:
-    payload = event.payload
-    if not isinstance(payload, dict):
-        return f"- {event.event_type}: {payload}"
-
-    return f"- {event.event_type}: {json.dumps(payload, sort_keys=True)}"
