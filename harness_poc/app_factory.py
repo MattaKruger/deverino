@@ -8,9 +8,14 @@ import yaml
 
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.database import BlackboardDatabase
+from harness_poc.core.event_bus import EventBus
+from harness_poc.core.event_store import EventStore
 from harness_poc.core.llm_client import LLMClient
 from harness_poc.core.logging import configure_logging
-from harness_poc.core.pydantic_runtime import PydanticAgentRuntime, build_runtime
+from harness_poc.core.pydantic_runtime import (
+    PydanticAgentRuntime,
+    build_runtime,
+)
 from harness_poc.core.skill_runner import SkillRunner
 from harness_poc.core.skill_scaffolder import SkillScaffolder
 from harness_poc.core.state import build_state_context
@@ -47,6 +52,7 @@ class AppState:
     goal_decision_model: Model | None
     messages: list[Message]
     tools: list[dict[str, Any]]
+    event_bus: EventBus
 
 
 def build_app_state() -> AppState:
@@ -78,6 +84,8 @@ def build_app_state() -> AppState:
             build_state_context(project_state, session_state),
         ],
     )
+    event_store = EventStore(config.runtime.database_path)
+    event_bus = EventBus(event_store)
 
     return AppState(
         session_id=session_id,
@@ -93,10 +101,11 @@ def build_app_state() -> AppState:
             config=config,
             skill_runner=skill_runner,
             system_prompt=full_system_prompt,
-            enable_tools=False,
+            enable_tools=True,
         ),
         pydantic_messages=[],
         goal_decision_model=None,
         messages=messages,
         tools=tools,
+        event_bus=event_bus,
     )
