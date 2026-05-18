@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+import sqlite3
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+import yaml
+
+from harness_poc.core.config import HarnessConfig
+from harness_poc.core.database import BlackboardDatabase
+from harness_poc.core.llm_client import LLMClient
+from harness_poc.core.skill_runner import SkillRunner
+from harness_poc.core.skill_scaffolder import SkillScaffolder
+from harness_poc.core.state import build_state_context
+from harness_poc.core.workflow_runner import WorkflowRunner
+
+if TYPE_CHECKING:
+    from harness_poc.core.llm_client import Message
+
+
+STARTUP_ERRORS = (
+    OSError,
+    RuntimeError,
+    sqlite3.OperationalError,
+    TypeError,
+    ValueError,
+    yaml.YAMLError,
+)
+
+
+@dataclass(slots=True)
+class AppState:
+    session_id: str
+    database: BlackboardDatabase
+    config: HarnessConfig
+    skill_runner: SkillRunner
+    skill_scaffolder: SkillScaffolder
+    workflow_runner: WorkflowRunner
+    llm_client: LLMClient
+    messages: list[Message]
+    tools: list[dict[str, Any]]
+
+
+def build_app_state() -> AppState:
+    config = HarnessConfig.load()
+    database = BlackboardDatabase(config.runtime.database_path)
+    database.create_tables()
+    system_prompt = config.paths.soul.read_text(encoding="utf-8")
+    session_id = database.start_session("Interactive proof of concept session.")
+    project_state = database.ensure_project_state()
+    session_state = database.ensure_session_state(session_id)
+    skill_runner = SkillRunner(database=database, config=config)
+    workflow_runner = WorkflowRunner(skill_runner)
+    messages: list[Message] = [
+        {
+            "role": "system",
+            "content": "\n\n".join(
+                [
+                    system_prompt,
+                    build_state_context(project_state, session_state),
+                ],
+            ),
+        },
+    ]
+    tools = skill_runner.discover_skills()
+
+    return AppState(
+        session_id=session_id,
+        database=database,
+        config=config,
+        skill_runner=skill_runner,
+        skill_scaffolder=SkillScaffolder(config),
+        workflow_runner=workflow_runner,
+        llm_client=LLMClient(),
+        messages=messages,
+        tools=tools,
+    )

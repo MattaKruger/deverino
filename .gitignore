@@ -1,0 +1,9 @@
+.venv/
+.ruff_cache/
+.DS_Store
+__pycache__/
+*.py[cod]
+harness_poc/blackboard.db
+.env
+.harness_repl_history
+repomix-output.xml

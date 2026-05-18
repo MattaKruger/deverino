@@ -1,0 +1,23 @@
+name: test_container_exec
+description: Quick smoke test for the container_exec skill. Auto-spawns a container.
+
+container:
+  image: python:3.12-slim
+
+states:
+  exec_hello:
+    skill: container_exec
+    args:
+      command: "python --version && echo 'hello from container'"
+      container: "{{ states._spawn.artifacts.container_name }}"
+    next: exec_workdir
+
+  exec_workdir:
+    skill: container_exec
+    args:
+      command: "pwd && ls -la"
+      container: "{{ states._spawn.artifacts.container_name }}"
+    next: done
+
+  done:
+    terminal: true

@@ -1,0 +1,15 @@
+version: 1.1
+
+paths:
+  # Engine Paths
+  soul: harness_poc/system_prompts/SOUL.md
+  system_skills: harness_poc/system_skills
+
+  # Workspace Paths
+  project_skills: skills
+  personas: personas
+  workflows: workflows
+
+runtime:
+  database_path: harness_poc/blackboard.db
+  default_container_image: python:3.12-slim

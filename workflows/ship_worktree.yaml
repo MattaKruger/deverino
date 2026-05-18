@@ -1,0 +1,12 @@
+name: ship_worktree
+description: Review and commmit current worktree, update user about what was shipped.
+
+
+states:
+  review:
+    skill: review_work
+    args:
+      persona: code_reviewer
+      objective: "{{ inputs.objective }}"
+      memory_key: review_result
+    next: commit

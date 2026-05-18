@@ -1,0 +1,1 @@
+"""Spec writer skill plugin."""

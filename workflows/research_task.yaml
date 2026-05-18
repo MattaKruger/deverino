@@ -1,0 +1,33 @@
+name: research_task
+description: Delegate read-only research, reflect on the result, and return the reflection.
+
+inputs:
+  objective:
+    type: string
+    required: true
+
+states:
+  delegate:
+    skill: delegate_task
+    args:
+      persona: web_researcher
+      objective: "{{ inputs.objective }}"
+      memory_key: research_result
+    next: reflect
+
+  reflect:
+    skill: reflect_on_result
+    args:
+      objective: "{{ inputs.objective }}"
+      memory_key: "{{ states.delegate.artifacts.memory_key }}"
+      output_key: research_reflection
+    next: summarize
+
+  summarize:
+    skill: read_memory
+    args:
+      memory_key: "{{ states.reflect.artifacts.memory_key }}"
+    next: done
+
+  done:
+    terminal: true
