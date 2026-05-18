@@ -12,6 +12,7 @@ dependencies = [
     "tiktoken>=0.7.0",
     "rich>=15.0.0",
     "typer>=0.25.1",
+    "pydantic-ai>=1.97.0",
 ]
 
 [dependency-groups]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shlex
 import sqlite3
 from typing import TYPE_CHECKING, Any
@@ -9,21 +10,26 @@ import yaml
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import FileHistory
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 from harness_poc.console import console, print_error, print_markdown, print_skill_table
 from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
-from harness_poc.core.llm_client import Usage
 from harness_poc.core.state import StateSection, build_state_context
 from harness_poc.repl_completion import HarnessCompleter
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from harness_poc.app_factory import AppState
+    from harness_poc.core.llm_client import Usage
 
 
 MIN_WORKFLOW_PARTS = 2
 WORKFLOW_OBJECTIVE_PARTS = 2
+TOKEN_MILLION = 1_000_000
+TOKEN_THOUSAND = 1_000
 
 _session_token_count: int = 0
 _session_cache_hit_tokens: int = 0
@@ -35,7 +41,7 @@ def _track_tokens(usage: Usage | None) -> None:
     Falls back to 0 when usage is unavailable (mock mode).
     Uses total_tokens from the API, which already accounts for cache discounts.
     """
-    global _session_token_count, _session_cache_hit_tokens
+    global _session_token_count, _session_cache_hit_tokens  # noqa: PLW0603
     if usage is not None:
         _session_token_count += usage.get("total_tokens", 0)
         _session_cache_hit_tokens += usage.get("cache_hit_tokens", 0)
@@ -70,7 +76,7 @@ def run_repl(app_state: AppState) -> None:
         handle_repl_input(app_state, user_input)
 
 
-def handle_repl_input(app_state: AppState, user_input: str) -> None:
+def handle_repl_input(app_state: AppState, user_input: str) -> None:  # noqa: PLR0911
     if _is_repl_help_command(user_input):
         print_repl_help()
         return
@@ -173,56 +179,22 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
     app_state.messages.append({"role": "user", "content": user_input})
 
     try:
-        response = app_state.llm_client.stream_chat(
-            messages=app_state.messages,
-            tools=app_state.tools,
+        response = app_state.pydantic_runtime.stream_text(
+            user_input,
+            message_history=app_state.pydantic_messages,
             on_text=_print_stream_chunk,
         )
         _track_tokens(response.usage)
-        if response.kind == "tool_call" and response.tool_call is not None:
-            _finish_stream_line(response.content)
-            handle_tool_call(
-                app_state,
-                response.tool_call["name"],
-                response.tool_call["arguments"],
-            )
-            return
-
-        app_state.messages.append(
-            {"role": "assistant", "content": response.content}
-        )
+        if response.messages:
+            app_state.pydantic_messages.extend(response.messages)
+        else:
+            _append_pydantic_chat_exchange(app_state, user_input, response.content)
+        app_state.messages.append({"role": "assistant", "content": response.content})
         _finish_stream_line(response.content)
     except sqlite3.OperationalError as exc:
         print_error(f"Database operation failed: {exc}")
     except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
         print_error(f"Tool execution failed: {exc}")
-
-
-def handle_tool_call(
-    app_state: AppState, tool_name: str, arguments: dict[str, Any]
-) -> None:
-    result = app_state.skill_runner.execute_skill(
-        tool_name=tool_name,
-        arguments=arguments,
-        session_id=app_state.session_id,
-    )
-    app_state.messages.append({"role": "tool", "content": result.content})
-
-    if result.status == "needs_orchestrator_action":
-        # Surface the skill's question/prompt directly; next user turn picks up with tools.
-        print_markdown(result.content)
-        return
-
-    final_response = app_state.llm_client.stream_chat(
-        messages=app_state.messages,
-        tools=None,
-        on_text=_print_stream_chunk,
-    )
-    _track_tokens(final_response.usage)
-    app_state.messages.append(
-        {"role": "assistant", "content": final_response.content}
-    )
-    _finish_stream_line(final_response.content)
 
 
 def _is_workflow_command(user_input: str) -> bool:
@@ -624,12 +596,21 @@ def handle_goal_command(app_state: AppState, user_input: str) -> None:
 
     runner = GoalRunner()
     try:
-        result = runner.run(goal=objective, app_state=app_state)
+        result = runner.run(
+            goal=objective,
+            app_state=app_state,
+            on_text=_print_stream_chunk,
+        )
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        logger.exception(
+            "REPL goal command failed",
+            extra={"session_id": app_state.session_id, "objective": objective},
+        )
         print_error(f"Goal loop failed: {exc}")
         return
 
     _print_goal_result(result)
+    _append_goal_result_to_chat_history(app_state, user_input, result)
 
 
 def _print_goal_result(result: object) -> None:
@@ -659,6 +640,35 @@ def _print_goal_result(result: object) -> None:
             status = event.get("status", "")
             extra = f" ({status})" if status else ""
             console.print(f"[dim]{i}. [{event_type}] {tool}{extra}[/dim]")
+
+
+def _append_goal_result_to_chat_history(
+    app_state: AppState,
+    user_input: str,
+    result: GoalRunResult,
+) -> None:
+    assistant_content = (
+        f"Goal status: {result.status}\n"
+        f"Iterations: {result.iterations}\n"
+        f"Total tokens: {result.total_tokens}\n\n"
+        f"{result.content}"
+    )
+    app_state.messages.append({"role": "user", "content": user_input})
+    app_state.messages.append({"role": "assistant", "content": assistant_content})
+    _append_pydantic_chat_exchange(app_state, user_input, assistant_content)
+
+
+def _append_pydantic_chat_exchange(
+    app_state: AppState,
+    user_content: str,
+    assistant_content: str,
+) -> None:
+    app_state.pydantic_messages.extend(
+        [
+            ModelRequest(parts=[UserPromptPart(content=user_content)]),
+            ModelResponse(parts=[TextPart(content=assistant_content)]),
+        ],
+    )
 
 
 def _build_prompt_bar(app_state: AppState) -> FormattedText:
@@ -698,8 +708,8 @@ def _build_prompt_bar(app_state: AppState) -> FormattedText:
 
 def _format_tokens(count: int) -> str:
     """Format a token count for compact display: 1200 -> '1.2k', 350 -> '350'."""
-    if count >= 1_000_000:
-        return f"{count / 1_000_000:.1f}M"
-    if count >= 1_000:
-        return f"{count / 1_000:.1f}k"
+    if count >= TOKEN_MILLION:
+        return f"{count / TOKEN_MILLION:.1f}M"
+    if count >= TOKEN_THOUSAND:
+        return f"{count / TOKEN_THOUSAND:.1f}k"
     return str(count)

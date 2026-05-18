@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from harness_poc.core.config import HarnessConfig
@@ -51,6 +52,7 @@ class SkillContext:
     skill_name: str
     database: BlackboardDatabase
     config: HarnessConfig
+    stream_text: Callable[[str], None] | None = None
 
     @property
     def project_root(self) -> Path:
@@ -68,3 +70,7 @@ class SkillContext:
         msg = f"Subagent persona template not found: {persona}"
 
         raise FileNotFoundError(msg)
+
+    def emit_text(self, chunk: str) -> None:
+        if self.stream_text is not None and chunk:
+            self.stream_text(chunk)

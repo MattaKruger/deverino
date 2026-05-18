@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-from harness_poc.core.llm_client import LLMClient, Message
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent
+from pydantic_ai.models.test import TestModel
+
+from harness_poc.core.pydantic_runtime import build_model
 from harness_poc.core.skill_context import SkillContext, SkillResult
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+class DelegatedTaskOutput(BaseModel):
+    status: Literal["completed", "failed", "blocked"] = "completed"
+    summary: str
+    artifacts: dict[str, Any] = Field(default_factory=dict)
+
+
+DelegatedTaskOutput.model_rebuild(_types_namespace={"Any": Any, "Literal": Literal})
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
@@ -12,6 +28,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     objective = str(arguments.get("objective") or "")
     memory_key = str(arguments.get("memory_key") or f"{persona}_result")
     context = str(arguments.get("context") or "")
+    use_mock = bool(arguments.get("use_mock", False))
 
     if not persona:
         msg = "delegate_task requires persona"
@@ -21,24 +38,19 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         raise ValueError(msg)
 
     template = ctx.read_subagent_template(persona)
-    response = LLMClient().chat(
-        messages=_build_subagent_messages(
-            persona_template=template,
-            objective=objective,
-            context=context,
-        ),
-        tools=None,
+    output = _run_subagent(
+        persona_template=template,
+        objective=objective,
+        context=context,
+        use_mock=use_mock,
+        on_text=ctx.emit_text,
     )
-    raw_content = response.content.strip()
-    parsed_content = _parse_json_object(raw_content)
-    status = str(parsed_content.get("status") or "completed")
-    summary = str(parsed_content.get("summary") or raw_content)
     result = {
-        "status": status,
-        "summary": summary,
+        "status": output.status,
+        "summary": output.summary,
         "artifacts": {
             "persona": persona,
-            "model_output": parsed_content or raw_content,
+            "model_output": output.model_dump(),
             "objective": objective,
             "received_context": context,
         },
@@ -46,7 +58,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     ctx.database.write_memory(ctx.session_id, memory_key, result)
 
     return SkillResult(
-        status="success" if status not in {"failed", "blocked"} else "failed",
+        status="success" if output.status not in {"failed", "blocked"} else "failed",
         content=json.dumps(result, indent=2, sort_keys=True),
         artifacts={
             "memory_key": memory_key,
@@ -56,47 +68,91 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     )
 
 
-def _build_subagent_messages(
-    *, persona_template: str, objective: str, context: str
-) -> list[Message]:
-    context_section = context or "No additional context was provided."
-    return [
-        {
-            "role": "system",
-            "content": persona_template,
-        },
-        {
-            "role": "user",
-            "content": (
-                "Execute this delegated read-only research task.\n\n"
-                f"Objective:\n{objective}\n\n"
-                f"Context:\n{context_section}\n\n"
-                "Return a concise JSON object with keys: status, summary, artifacts. "
-                "Use artifacts for important findings, caveats, and suggested next steps."
+def _run_subagent(
+    *,
+    persona_template: str,
+    objective: str,
+    context: str,
+    use_mock: bool = False,
+    on_text: Callable[[str], None] | None = None,
+) -> DelegatedTaskOutput:
+    agent = Agent(
+        _fallback_model(objective)
+        if use_mock
+        else build_model(fallback_model=_fallback_model(objective)),
+        output_type=DelegatedTaskOutput,
+        system_prompt=persona_template,
+        output_retries=2,
+    )
+
+    if on_text is not None:
+        return _stream_subagent_output(
+            agent=agent,
+            prompt=_build_subagent_prompt(objective=objective, context=context),
+            on_text=on_text,
+        )
+
+    return cast(
+        "DelegatedTaskOutput",
+        agent.run_sync(_build_subagent_prompt(objective=objective, context=context)).output,
+    )
+
+
+def _stream_subagent_output(
+    *,
+    agent: Agent[None, Any],
+    prompt: str,
+    on_text: Callable[[str], None],
+) -> DelegatedTaskOutput:
+    emitted_summary = ""
+    result = agent.run_stream_sync(prompt)
+    for partial_output in result.stream_output():
+        summary = _summary_from_partial_output(partial_output)
+        if not summary or summary == emitted_summary:
+            continue
+        if summary.startswith(emitted_summary):
+            on_text(summary[len(emitted_summary) :])
+        else:
+            on_text(summary)
+        emitted_summary = summary
+
+    output = cast("DelegatedTaskOutput", result.get_output())
+    if output.summary and output.summary != emitted_summary:
+        if output.summary.startswith(emitted_summary):
+            on_text(output.summary[len(emitted_summary) :])
+        else:
+            on_text(output.summary)
+    return output
+
+
+def _summary_from_partial_output(output: DelegatedTaskOutput | dict[str, Any]) -> str:
+    if isinstance(output, DelegatedTaskOutput):
+        return output.summary
+    summary = output.get("summary")
+    return summary if isinstance(summary, str) else ""
+
+
+def _fallback_model(objective: str) -> TestModel:
+    return TestModel(
+        custom_output_args={
+            "status": "completed",
+            "summary": (
+                f"Mock research synthesis for: {objective}. "
+                "In production this response is generated by the configured model."
             ),
+            "artifacts": {
+                "limitations": "Mock mode uses deterministic PydanticAI TestModel output.",
+            },
         },
-    ]
+    )
 
 
-def _parse_json_object(content: str) -> dict[str, Any]:
-    normalized = _strip_json_fence(content)
-    try:
-        decoded = json.loads(normalized)
-    except json.JSONDecodeError:
-        return {}
-    if not isinstance(decoded, dict):
-        return {}
-    return decoded
-
-
-def _strip_json_fence(content: str) -> str:
-    stripped = content.strip()
-    if not stripped.startswith("```"):
-        return stripped
-    lines = stripped.splitlines()
-    if len(lines) < MIN_FENCED_JSON_LINES or not lines[-1].strip().startswith("```"):
-        return stripped
-    return "\n".join(lines[1:-1]).strip()
-
-
-MIN_FENCED_JSON_LINES = 3
+def _build_subagent_prompt(*, objective: str, context: str) -> str:
+    context_section = context or "No additional context was provided."
+    return (
+        "Execute this delegated read-only research task.\n\n"
+        f"Objective:\n{objective}\n\n"
+        f"Context:\n{context_section}\n\n"
+        "Return a concise structured result with status, summary, and artifacts. "
+        "Use artifacts for important findings, caveats, and suggested next steps."
+    )

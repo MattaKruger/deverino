@@ -163,7 +163,11 @@ class LLMClient:
             ),
         )
         message = response.choices[0].message
-        usage = _extract_usage(response.usage) if hasattr(response, "usage") and response.usage else None
+        usage = (
+            _extract_usage(response.usage)
+            if hasattr(response, "usage") and response.usage
+            else None
+        )
 
         if message.tool_calls:
             tool_call = message.tool_calls[0]
@@ -253,7 +257,7 @@ class LLMClient:
             kind="text", content="".join(content_parts), usage=usage
         )
 
-    def _mock_chat(
+    def _mock_chat(  # noqa: PLR0911
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
@@ -465,7 +469,7 @@ def _extract_prompt_section(prompt: str, heading: str) -> str:
     return after_marker.split("\n\n", maxsplit=1)[0].strip()
 
 
-def _extract_usage(raw: Any) -> Usage:
+def _extract_usage(raw: object) -> Usage:
     """Convert API usage object into our Usage TypedDict, capturing cache details."""
     usage: Usage = {
         "prompt_tokens": _safe_int(raw, "prompt_tokens"),
@@ -493,6 +497,6 @@ def _extract_usage(raw: Any) -> Usage:
     return usage
 
 
-def _safe_int(obj: Any, attr: str) -> int:
+def _safe_int(obj: object, attr: str) -> int:
     val = getattr(obj, attr, 0)
     return int(val) if val else 0

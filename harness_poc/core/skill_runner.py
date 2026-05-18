@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import yaml
@@ -15,6 +16,8 @@ if TYPE_CHECKING:
     from harness_poc.core.skill_context import SkillResult
 
 from harness_poc.core.skill_context import SkillContext
+
+logger = logging.getLogger(__name__)
 
 
 class SkillMetadata(TypedDict):
@@ -71,6 +74,7 @@ class SkillRunner:
                     },
                 )
 
+        logger.debug("Discovered skills", extra={"count": len(tools)})
         return tools
 
     def execute_tool(
@@ -92,23 +96,68 @@ class SkillRunner:
         tool_name: str,
         arguments: dict[str, Any],
         session_id: str,
+        on_text: Callable[[str], None] | None = None,
     ) -> SkillResult:
         resolved_tool_name = self._resolve_alias(tool_name)
-        skill_file = self._find_skill_file(resolved_tool_name)
-        skill = self.parse_skill_document(skill_file)
-        execute = self._load_entrypoint(skill)
-
-        context = SkillContext(
-            session_id=session_id,
-            skill_name=resolved_tool_name,
-            database=self.database,
-            config=self.config,
+        logger.debug(
+            "Executing skill",
+            extra={
+                "tool_name": tool_name,
+                "resolved_tool_name": resolved_tool_name,
+                "session_id": session_id,
+                "arguments": arguments,
+            },
         )
-        normalized_arguments = self._normalize_arguments(
-            resolved_tool_name, arguments
-        )
+        try:
+            skill_file = self._find_skill_file(resolved_tool_name)
+            skill = self.parse_skill_document(skill_file)
+            execute = self._load_entrypoint(skill)
 
-        return execute(context, normalized_arguments)
+            context = SkillContext(
+                session_id=session_id,
+                skill_name=resolved_tool_name,
+                database=self.database,
+                config=self.config,
+                stream_text=on_text,
+            )
+            normalized_arguments = self._normalize_arguments(
+                resolved_tool_name, arguments
+            )
+
+            result = execute(context, normalized_arguments)
+        except Exception:
+            logger.exception(
+                "Skill execution raised",
+                extra={
+                    "tool_name": tool_name,
+                    "resolved_tool_name": resolved_tool_name,
+                    "session_id": session_id,
+                },
+            )
+            raise
+
+        if result.status == "success":
+            logger.debug(
+                "Skill execution completed",
+                extra={
+                    "tool_name": resolved_tool_name,
+                    "session_id": session_id,
+                    "status": result.status,
+                },
+            )
+        else:
+            logger.error(
+                "Skill execution returned non-success status",
+                extra={
+                    "tool_name": resolved_tool_name,
+                    "session_id": session_id,
+                    "status": result.status,
+                    "content": result.content,
+                    "artifacts": result.artifacts,
+                },
+            )
+
+        return result
 
     def _find_skill_file(self, tool_name: str) -> Path:
         for skills_dir in self.skills_dirs:

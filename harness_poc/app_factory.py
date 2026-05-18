@@ -9,12 +9,17 @@ import yaml
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.llm_client import LLMClient
+from harness_poc.core.logging import configure_logging
+from harness_poc.core.pydantic_runtime import PydanticAgentRuntime, build_runtime
 from harness_poc.core.skill_runner import SkillRunner
 from harness_poc.core.skill_scaffolder import SkillScaffolder
 from harness_poc.core.state import build_state_context
 from harness_poc.core.workflow_runner import WorkflowRunner
 
 if TYPE_CHECKING:
+    from pydantic_ai.messages import ModelMessage
+    from pydantic_ai.models import Model
+
     from harness_poc.core.llm_client import Message
 
 
@@ -37,12 +42,16 @@ class AppState:
     skill_scaffolder: SkillScaffolder
     workflow_runner: WorkflowRunner
     llm_client: LLMClient
+    pydantic_runtime: PydanticAgentRuntime
+    pydantic_messages: list[ModelMessage]
+    goal_decision_model: Model | None
     messages: list[Message]
     tools: list[dict[str, Any]]
 
 
 def build_app_state() -> AppState:
     config = HarnessConfig.load()
+    configure_logging(config.project_root)
     database = BlackboardDatabase(config.runtime.database_path)
     database.create_tables()
     system_prompt = config.paths.soul.read_text(encoding="utf-8")
@@ -63,6 +72,12 @@ def build_app_state() -> AppState:
         },
     ]
     tools = skill_runner.discover_skills()
+    full_system_prompt = "\n\n".join(
+        [
+            system_prompt,
+            build_state_context(project_state, session_state),
+        ],
+    )
 
     return AppState(
         session_id=session_id,
@@ -72,6 +87,16 @@ def build_app_state() -> AppState:
         skill_scaffolder=SkillScaffolder(config),
         workflow_runner=workflow_runner,
         llm_client=LLMClient(),
+        pydantic_runtime=build_runtime(
+            session_id=session_id,
+            database=database,
+            config=config,
+            skill_runner=skill_runner,
+            system_prompt=full_system_prompt,
+            enable_tools=False,
+        ),
+        pydantic_messages=[],
+        goal_decision_model=None,
         messages=messages,
         tools=tools,
     )

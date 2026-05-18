@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import subprocess
 import time
@@ -10,6 +11,7 @@ from harness_poc.core.skill_context import SkillContext, SkillResult
 
 BACKENDS = ("podman", "docker")
 KEEPALIVE_CMD: list[str] = ["sleep", "infinity"]
+logger = logging.getLogger(__name__)
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noqa: PLR0911
@@ -24,12 +26,30 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
 
     error = _validate_inputs(image, backend)
     if error:
+        logger.error(
+            "Container spawn input validation failed",
+            extra={
+                "session_id": session_id,
+                "image": image,
+                "container_name": container_name,
+                "backend": backend,
+                "error": error,
+            },
+        )
         return SkillResult(status="failed", content=error)
     backend = cast("str", backend)  # validated above
 
     # Idempotent: check if container already exists
     existing = _inspect_container(backend, container_name)
     if existing:
+        logger.info(
+            "Container already exists",
+            extra={
+                "session_id": session_id,
+                "container_name": container_name,
+                "backend": backend,
+            },
+        )
         ctx.database.write_memory(session_id, f"container.{container_name}", existing)
         return SkillResult(
             status="success",
@@ -52,6 +72,15 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         image,
     ]
     create_cmd.extend(KEEPALIVE_CMD)
+    logger.info(
+        "Creating container",
+        extra={
+            "session_id": session_id,
+            "backend": backend,
+            "image": image,
+            "container_name": container_name,
+        },
+    )
 
     try:
         result = subprocess.run(  # noqa: S603
@@ -62,6 +91,15 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
             check=False,
         )
     except subprocess.TimeoutExpired:
+        logger.exception(
+            "Container creation timed out",
+            extra={
+                "session_id": session_id,
+                "backend": backend,
+                "image": image,
+                "container_name": container_name,
+            },
+        )
         return SkillResult(
             status="failed",
             content=f"Container creation timed out for image '{image}'.",
@@ -72,6 +110,15 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
             },
         )
     except OSError as exc:
+        logger.exception(
+            "Container runtime invocation failed",
+            extra={
+                "session_id": session_id,
+                "backend": backend,
+                "image": image,
+                "container_name": container_name,
+            },
+        )
         return SkillResult(
             status="failed",
             content=f"Failed to invoke {backend}: {exc}",
@@ -83,6 +130,17 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
 
     if result.returncode != 0:
+        logger.error(
+            "Container creation failed",
+            extra={
+                "session_id": session_id,
+                "backend": backend,
+                "image": image,
+                "container_name": container_name,
+                "exit_code": result.returncode,
+                "stderr": result.stderr.strip(),
+            },
+        )
         return SkillResult(
             status="failed",
             content=(
@@ -106,6 +164,16 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
             break
         time.sleep(0.5)
     else:
+        logger.error(
+            "Container created but did not start",
+            extra={
+                "session_id": session_id,
+                "backend": backend,
+                "image": image,
+                "container_name": container_name,
+                "container_id": container_id,
+            },
+        )
         return SkillResult(
             status="failed",
             content=(f"Container '{container_name}' created but did not start."),
@@ -126,6 +194,15 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
     }
 
     ctx.database.write_memory(session_id, f"container.{container_name}", output)
+    logger.info(
+        "Container created",
+        extra={
+            "session_id": session_id,
+            "backend": backend,
+            "container_name": container_name,
+            "container_id": container_id,
+        },
+    )
 
     return SkillResult(
         status="success",

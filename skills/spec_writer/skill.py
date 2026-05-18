@@ -81,13 +81,13 @@ def _save_gather_state(ctx: SkillContext, gather_key: str, state: GatherState) -
 def _parse_component_names(answer: str) -> list[str]:
     names: list[str] = []
     for line in answer.splitlines():
-        line = line.strip(" \t-•*")
-        if not line:
+        stripped_line = line.strip(" \t-•*")
+        if not stripped_line:
             continue
-        for part in line.split(","):
-            part = part.strip()
-            if part:
-                names.append(part)
+        for part in stripped_line.split(","):
+            stripped_part = part.strip()
+            if stripped_part:
+                names.append(stripped_part)
     return names
 
 

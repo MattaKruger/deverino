@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Annotated
 
 import typer
@@ -20,6 +21,8 @@ from harness_poc.repl import (
     show_skill,
     show_state,
 )
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -239,6 +242,10 @@ def goal(
     try:
         result = runner.run(goal=objective, app_state=app_state)
     except Exception as exc:
+        logger.exception(
+            "CLI goal command failed",
+            extra={"session_id": app_state.session_id, "objective": objective},
+        )
         print_error(f"Goal loop failed: {exc}")
         raise typer.Exit(1) from exc
 
@@ -258,6 +265,7 @@ def _new_app_state() -> AppState:
     try:
         return build_app_state()
     except STARTUP_ERRORS as exc:
+        logger.exception("Harness startup failed")
         print_error(f"Could not start harness: {exc}")
         raise typer.Exit(1) from exc
 
@@ -266,6 +274,7 @@ def _run_command(command: Callable[[], None]) -> None:
     try:
         command()
     except Exception as exc:
+        logger.exception("CLI command failed")
         print_error(str(exc))
         raise typer.Exit(1) from exc
 

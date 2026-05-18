@@ -6,4 +6,5 @@ __pycache__/
 harness_poc/blackboard.db
 .env
 .harness_repl_history
+.harness/
 repomix-output.xml

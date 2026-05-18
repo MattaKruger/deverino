@@ -1,3 +1,5 @@
+# ruff: noqa: E501, PLC0415, TC001
+
 from __future__ import annotations
 
 from pathlib import Path
