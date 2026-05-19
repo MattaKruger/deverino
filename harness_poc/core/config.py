@@ -13,6 +13,7 @@ class HarnessPaths:
     system_skills: Path
     project_skills: Path
     workflows: Path
+    pipelines: Path
     personas: Path
 
 
@@ -23,11 +24,17 @@ class RuntimeConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ObservabilityConfig:
+    logfire_enabled: bool
+
+
+@dataclass(frozen=True, slots=True)
 class HarnessConfig:
     project_root: Path
     config_path: Path
     paths: HarnessPaths
     runtime: RuntimeConfig
+    observability: ObservabilityConfig
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> HarnessConfig:
@@ -40,6 +47,7 @@ class HarnessConfig:
 
         paths_raw = _mapping(raw.get("paths"), "paths")
         runtime_raw = _mapping(raw.get("runtime"), "runtime")
+        observability_raw = _mapping(raw.get("observability"), "observability")
 
         paths = HarnessPaths(
             soul=_resolve_path(
@@ -56,6 +64,9 @@ class HarnessConfig:
             workflows=_resolve_path(
                 project_root, paths_raw.get("workflows", "workflows")
             ),
+            pipelines=_resolve_path(
+                project_root, paths_raw.get("pipelines", "pipelines")
+            ),
             personas=_resolve_path(
                 project_root, paths_raw.get("personas", "personas")
             ),
@@ -69,12 +80,16 @@ class HarnessConfig:
                 runtime_raw.get("default_container_image", "python:3.12-slim")
             ),
         )
+        observability = ObservabilityConfig(
+            logfire_enabled=bool(observability_raw.get("logfire", False)),
+        )
 
         return cls(
             project_root=project_root,
             config_path=resolved_config_path,
             paths=paths,
             runtime=runtime,
+            observability=observability,
         )
 
 
