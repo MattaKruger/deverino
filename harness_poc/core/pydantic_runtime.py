@@ -6,8 +6,7 @@ import logging
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
-from pydantic_ai import Agent, RunContext, Tool
-from pydantic_ai.messages import TextPart, ToolCallPart
+from pydantic_ai import Agent, PartDeltaEvent, RunContext, TextPartDelta, Tool, ToolCallPartDelta
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
@@ -104,7 +103,7 @@ class PydanticAgentRuntime:
             ),
         )
 
-    async def _stream_text_async(
+    async def _stream_text_async(  # noqa: PLR0912
         self,
         prompt: str,
         *,
@@ -112,21 +111,14 @@ class PydanticAgentRuntime:
         on_text: Callable[[str], None] | None,
         on_tool_event: Callable[[str], None] | None = None,
     ) -> AgentRunResult:
-        # Use agent.iter() instead of run_stream() because run_stream()
-        # stops at the first text output matching the output type.
-        # With tools, the model may produce text BEFORE tool calls — with
-        # run_stream() that pre-tool text becomes the "final output" and
-        # post-tool text is lost.  agent.iter() runs the full agent graph
-        # to completion, giving us all model responses including those
-        # after tool calls.
         max_consecutive_tool_rounds = 10
 
         deps = replace(self.deps, stream_text=on_text, on_tool_event=on_tool_event)
         all_output_parts: list[str] = []
-        seen_text: str = ""
         usage: Usage | None = None
         consecutive_tool_rounds = 0
         capped = False
+        model_turn_index = 0
 
         async with self.agent.iter(
             prompt,
@@ -135,34 +127,42 @@ class PydanticAgentRuntime:
             conversation_id="new",
         ) as agent_run:
             async for node in agent_run:
-                mr = getattr(node, "model_response", None)
-                if mr is None:
-                    continue
-                # Collect text parts from this model response
-                new_text = "".join(part.content for part in mr.parts if isinstance(part, TextPart))
-                consecutive_tool_rounds = _next_consecutive_tool_rounds(
-                    mr.parts,
-                    consecutive_tool_rounds,
-                )
-                if consecutive_tool_rounds > max_consecutive_tool_rounds:
-                    capped = True
-                    logger.warning(
-                        "Consecutive tool call limit (%d) reached, stopping agent loop",
-                        max_consecutive_tool_rounds,
-                        extra={"session_id": self.deps.session_id},
-                    )
-                    break
-                # Stream only the NEW portion (diff against seen)
-                if new_text and on_text is not None:
-                    if new_text.startswith(seen_text):
-                        delta = new_text[len(seen_text) :]
-                        if delta:
-                            on_text(delta)
-                    else:
-                        # New turn text (after tool calls, etc.) — separate from prior
-                        on_text("\n\n" + new_text)
-                seen_text = new_text
-                all_output_parts.append(new_text)
+                if Agent.is_model_request_node(node):
+                    turn_chunks: list[str] = []
+                    had_tool_call = False
+
+                    # Emit separator between model turns (after tool calls)
+                    if model_turn_index > 0 and on_text is not None:
+                        on_text("\n\n")
+
+                    async with node.stream(agent_run.ctx) as request_stream:
+                        async for event in request_stream:
+                            if isinstance(event, PartDeltaEvent):
+                                if isinstance(event.delta, TextPartDelta):
+                                    delta = event.delta.content_delta
+                                    if delta:
+                                        if on_text is not None:
+                                            on_text(delta)
+                                        turn_chunks.append(delta)
+                                elif isinstance(event.delta, ToolCallPartDelta):
+                                    had_tool_call = True
+
+                    if not had_tool_call:
+                        consecutive_tool_rounds = 0
+                    if turn_chunks:
+                        all_output_parts.append("".join(turn_chunks))
+                    model_turn_index += 1
+
+                elif Agent.is_call_tools_node(node):
+                    consecutive_tool_rounds += 1
+                    if consecutive_tool_rounds > max_consecutive_tool_rounds:
+                        capped = True
+                        logger.warning(
+                            "Consecutive tool call limit (%d) reached, stopping agent loop",
+                            max_consecutive_tool_rounds,
+                            extra={"session_id": self.deps.session_id},
+                        )
+                        break
 
             if capped and on_text is not None:
                 on_text(
@@ -175,14 +175,8 @@ class PydanticAgentRuntime:
 
             if not capped and agent_run.result is not None:
                 usage = _usage_to_dict(agent_run.result.usage)
-                # Only trust new_messages() when the graph completed
-                # cleanly.  Capped runs produce incomplete tool messages
-                # that corrupt the next turn's context.
                 all_new_messages = agent_run.result.new_messages()
             else:
-                # Capped or no result — return empty messages so the
-                # REPL uses _append_pydantic_chat_exchange (clean
-                # user/assistant pair, no tool pollution).
                 all_new_messages = []
 
         return AgentRunResult(
@@ -355,12 +349,6 @@ def _make_skill_tool(
     execute_skill_tool.__name__ = f"execute_{skill_name}_tool"
 
     return execute_skill_tool
-
-
-def _next_consecutive_tool_rounds(parts: list[object], current_count: int) -> int:
-    if any(isinstance(part, ToolCallPart) for part in parts):
-        return current_count + 1
-    return 0
 
 
 def execute_skill_as_tool(

@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from pydantic_ai.messages import TextPart, ToolCallPart
 from pydantic_ai.models.test import TestModel
 
 from harness_poc.core.config import (
@@ -17,7 +16,6 @@ from harness_poc.core.config import (
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.pydantic_runtime import (
     AgentDeps,
-    _next_consecutive_tool_rounds,
     build_model,
     build_runtime,
     build_skill_tools,
@@ -28,9 +26,6 @@ from harness_poc.core.skill_runner import SkillRunner
 if TYPE_CHECKING:
     import pytest
     from pydantic_ai import RunContext
-
-
-EXPECTED_CONSECUTIVE_TOOL_ROUNDS = 2
 
 
 def test_build_model_uses_test_model_without_api_key(
@@ -128,30 +123,22 @@ def test_runtime_can_run_with_test_model(tmp_path: Path) -> None:
     assert result.messages
 
 
-def test_tool_round_counter_only_tracks_consecutive_tool_calls() -> None:
-    count = _next_consecutive_tool_rounds(
-        [ToolCallPart(tool_name="read_memory", args={})],
-        current_count=0,
+def test_stream_text_calls_on_text_callback(tmp_path: Path) -> None:
+    skill_runner, database, config, session_id = _runtime_parts(tmp_path)
+    runtime = build_runtime(
+        session_id=session_id,
+        database=database,
+        config=config,
+        skill_runner=skill_runner,
+        system_prompt="You are a test agent.",
+        model=TestModel(call_tools=[]),
     )
-    assert count == 1
 
-    count = _next_consecutive_tool_rounds(
-        [ToolCallPart(tool_name="web_search", args={})],
-        current_count=count,
-    )
-    assert count == EXPECTED_CONSECUTIVE_TOOL_ROUNDS
+    chunks: list[str] = []
+    result = runtime.stream_text("hello", on_text=chunks.append)
 
-    count = _next_consecutive_tool_rounds(
-        [TextPart(content="final answer")],
-        current_count=count,
-    )
-    assert count == 0
-
-    count = _next_consecutive_tool_rounds(
-        [ToolCallPart(tool_name="read_memory", args={})],
-        current_count=count,
-    )
-    assert count == 1
+    assert chunks, "on_text callback must be called at least once"
+    assert result.content  # content non-empty
 
 
 def _runtime_parts(
