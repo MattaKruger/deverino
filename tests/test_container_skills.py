@@ -149,7 +149,8 @@ def test_container_spawn_mounts_scratch_outside_read_only_workspace(
     result = container_spawn_skill.execute(ctx, {"container_name": "harness-python-test"})
 
     assert result.status == "success"
-    create_cmd = calls[0]
+    # Find the docker create/run call (skip the image-existence check)
+    create_cmd = next(cmd for cmd in calls if any("run" in arg for arg in cmd))
     assert any(mount.endswith(":/workspace:ro") for mount in create_cmd)
     assert any(mount.endswith(":/scratch:rw") for mount in create_cmd)
     # Verify read-only workspace is enforced

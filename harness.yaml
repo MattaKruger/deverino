@@ -17,7 +17,7 @@ paths:
 
 runtime:
   database_path: harness_poc/blackboard.db
-  default_container_image: python:3.12-slim
+  default_container_image: deverino-python:latest
   container_ttl_seconds: 14400
   max_harness_containers: 5
   chat_history_max_tokens: 24000

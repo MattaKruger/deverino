@@ -1,6 +1,6 @@
 ---
 name: execute_python
-description: Executes Python code inside a session-scoped container for scratchpad analysis, hypothesis testing, and data inspection.
+description: "Executes Python code inside a session-scoped container. CRITICAL: /workspace is READ-ONLY — write output files (images, charts, CSVs) to /scratch/, never to /workspace or the current directory."
 version: "1.0"
 auto_invokable: true
 parameters:
@@ -8,7 +8,7 @@ parameters:
   properties:
     code:
       type: string
-      description: Python source code to execute inside the container.
+      description: Python source code to execute. Use /scratch/ for any file output (savefig, to_csv, open for writing) — /workspace is read-only.
     container:
       type: string
       description: Optional existing container name or ID. If omitted, a session-scoped container is created or reused.

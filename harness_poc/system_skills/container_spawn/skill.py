@@ -7,9 +7,12 @@ import shutil
 import subprocess
 import time
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from harness_poc.core.skill_context import SkillContext, SkillResult
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 BACKENDS = ("podman", "docker")
 KEEPALIVE_CMD: list[str] = ["sleep", "infinity"]
@@ -20,8 +23,14 @@ logger = logging.getLogger(__name__)
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noqa: PLR0911
     session_id = ctx.session_id
-    image = str(arguments.get("image") or ctx.config.runtime.default_container_image or "").strip()
-    container_name = str(arguments.get("container_name") or f"harness-{session_id[:12]}").strip()
+    image = str(
+        arguments.get("image")
+        or ctx.config.runtime.default_container_image
+        or ""
+    ).strip()
+    container_name = str(
+        arguments.get("container_name") or f"harness-{session_id[:12]}"
+    ).strip()
     backend = _resolve_backend()
 
     error = _validate_inputs(image, backend)
@@ -46,6 +55,15 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         max_containers=ctx.config.runtime.max_harness_containers,
     )
 
+    # Auto-build: if image not found locally and a Dockerfile exists, build it
+    project_root = str(ctx.config.project_root.resolve())
+    dockerfile_path = ctx.config.project_root / "Dockerfile"
+    build_result = _ensure_image_available(
+        backend, image, project_root, dockerfile_path
+    )
+    if build_result is not None:
+        return build_result
+
     # Idempotent: check if container already exists
     existing = _inspect_container(backend, container_name)
     if existing:
@@ -57,7 +75,9 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
                 "backend": backend,
             },
         )
-        ctx.database.write_memory(session_id, f"container.{container_name}", existing)
+        ctx.database.write_memory(
+            session_id, f"container.{container_name}", existing
+        )
         return SkillResult(
             status="success",
             content=json.dumps(existing, indent=2, sort_keys=True),
@@ -65,7 +85,6 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
 
     # Create the container
-    project_root = str(ctx.config.project_root.resolve())
     scratch_dir = ctx.config.project_root / ".deverino-scratch" / session_id
     scratch_dir.mkdir(parents=True, exist_ok=True)
     scratch_str = str(scratch_dir.resolve())
@@ -86,11 +105,16 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         "-w",
         "/workspace",
         # Direct all temporary/cache output to the writable scratch
-        "-e", f"TMPDIR={SCRATCH_TARGET}",
-        "-e", f"TMP={SCRATCH_TARGET}",
-        "-e", f"TEMP={SCRATCH_TARGET}",
-        "-e", f"HOME={SCRATCH_TARGET}",
-        "-e", f"PYTHONPYCACHEPREFIX={SCRATCH_TARGET}/pycache",
+        "-e",
+        f"TMPDIR={SCRATCH_TARGET}",
+        "-e",
+        f"TMP={SCRATCH_TARGET}",
+        "-e",
+        f"TEMP={SCRATCH_TARGET}",
+        "-e",
+        f"HOME={SCRATCH_TARGET}",
+        "-e",
+        f"PYTHONPYCACHEPREFIX={SCRATCH_TARGET}/pycache",
         image,
     ]
     create_cmd.extend(KEEPALIVE_CMD)
@@ -165,7 +189,9 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
         return SkillResult(
             status="failed",
-            content=(f"Failed to create container '{container_name}': {result.stderr.strip()}"),
+            content=(
+                f"Failed to create container '{container_name}': {result.stderr.strip()}"
+            ),
             artifacts={
                 "backend": backend,
                 "image": image,
@@ -195,7 +221,9 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
         return SkillResult(
             status="failed",
-            content=(f"Container '{container_name}' created but did not start."),
+            content=(
+                f"Container '{container_name}' created but did not start."
+            ),
             artifacts={
                 "backend": backend,
                 "image": image,
@@ -248,6 +276,88 @@ def _validate_inputs(image: str, backend: str | None) -> str:
     return ""
 
 
+def _ensure_image_available(
+    backend: str,
+    image: str,
+    project_root: str,
+    dockerfile_path: Path,
+) -> SkillResult | None:
+    """Check if the container image exists locally; auto-build from Dockerfile if missing.
+
+    Returns None if the image is available (locally or after build).
+    Returns a SkillResult with status='failed' if the build fails or no Dockerfile exists.
+    """
+    # Check if image exists locally
+    try:
+        result = subprocess.run(  # noqa: S603
+            [backend, "images", "-q", image],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return SkillResult(
+            status="failed",
+            content=f"Failed to check if image '{image}' exists locally.",
+        )
+
+    if result.stdout.strip():
+        logger.debug("Container image found locally", extra={"image": image})
+        return None
+
+    # Image not found — try auto-build if Dockerfile exists
+    if not dockerfile_path.exists():
+        logger.debug(
+            "Image not found and no Dockerfile — will attempt pull",
+            extra={"image": image, "project_root": project_root},
+        )
+        return None  # Let docker/podman pull from registry
+
+    logger.info(
+        "Building container image from Dockerfile",
+        extra={"image": image, "dockerfile": str(dockerfile_path)},
+    )
+    try:
+        build_result = subprocess.run(  # noqa: S603
+            [backend, "build", "-t", image, project_root],
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 min for first build
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return SkillResult(
+            status="failed",
+            content=f"Docker build timed out for image '{image}'.",
+        )
+    except OSError as exc:
+        return SkillResult(
+            status="failed",
+            content=f"Failed to run '{backend} build': {exc}",
+        )
+
+    if build_result.returncode != 0:
+        logger.error(
+            "Docker build failed",
+            extra={
+                "image": image,
+                "exit_code": build_result.returncode,
+                "stderr": build_result.stderr.strip()[-500:],
+            },
+        )
+        return SkillResult(
+            status="failed",
+            content=(
+                f"Failed to build image '{image}': "
+                f"{build_result.stderr.strip()[-300:]}"
+            ),
+        )
+
+    logger.info("Container image built successfully", extra={"image": image})
+    return None
+
+
 def _resolve_backend() -> str | None:
     for backend in BACKENDS:
         if shutil.which(backend):
@@ -279,10 +389,14 @@ def _cleanup_stale_harness_containers(
         if now - float(container.get("created_at_ts", now)) > ttl_seconds
     }
     retained = [
-        container for container in containers if container["container_name"] not in stale_names
+        container
+        for container in containers
+        if container["container_name"] not in stale_names
     ]
     if max_containers > 0 and len(retained) > max_containers:
-        retained.sort(key=lambda container: float(container.get("created_at_ts", 0)))
+        retained.sort(
+            key=lambda container: float(container.get("created_at_ts", 0))
+        )
         stale_names.update(
             str(container["container_name"])
             for container in retained[: len(retained) - max_containers]
@@ -328,7 +442,9 @@ def _remove_container(backend: str, container_name: str) -> None:
         )
 
 
-def _inspect_container(backend: str, container_name: str) -> dict[str, Any] | None:
+def _inspect_container(
+    backend: str, container_name: str
+) -> dict[str, Any] | None:
     """Check if a container exists and return its info, or None."""
     try:
         result = subprocess.run(  # noqa: S603
@@ -362,7 +478,9 @@ def _inspect_container(backend: str, container_name: str) -> dict[str, Any] | No
         "image": str(container.get("Config", {}).get("Image", "")),
         "status": str(state.get("Status", "")),
         "running": bool(state.get("Running", False)),
-        "workdir": str(container.get("Config", {}).get("WorkingDir", "/workspace")),
+        "workdir": str(
+            container.get("Config", {}).get("WorkingDir", "/workspace")
+        ),
         "created_at": created_at,
         "created_at_ts": _parse_created_at(created_at),
     }

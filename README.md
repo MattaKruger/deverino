@@ -473,6 +473,27 @@ states:
 
 `harness.yaml` at the repo root controls paths, the LLM provider/model, and runtime settings. API keys are read from `.env` (or environment variables) via pydantic-settings. The database is local to the repo (`harness_poc/blackboard.db`) and should not be committed.
 
+### Container image
+
+The harness runs Python code inside a Docker/Podman container for isolation. The default image is `deverino-python:latest` — defined by the `Dockerfile` at the project root.
+
+**Auto-build:** On first use, if the image isn't found locally, `container_spawn` automatically runs `docker build -t deverino-python:latest .` from the project root. Subsequent runs use the cached image.
+
+**Customizing packages:** Edit `Dockerfile` and add your dependencies to the `RUN pip install` line. Delete the old image (`docker rmi deverino-python:latest`) to trigger a rebuild on next use, or rebuild manually:
+
+```bash
+docker build -t deverino-python:latest .
+```
+
+**Using a different image:** Change `default_container_image` in `harness.yaml`:
+
+```yaml
+runtime:
+  default_container_image: my-custom-image:latest
+```
+
+### Full config reference
+
 ## Development
 
 ```bash
