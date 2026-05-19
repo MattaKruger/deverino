@@ -11,6 +11,9 @@ uv run harness-poc
 # Run an autonomous goal
 uv run harness-poc goal "Write a one-sentence summary of the ReAct prompting pattern" --max-iterations 5
 
+# Run a pipeline (supports parallel + sequential nodes, agent and skill nodes)
+uv run harness-poc pipeline run research_and_write --input topic="black holes"
+
 # Run a workflow
 uv run harness-poc workflow run research_task "What is the ReAct prompting pattern?"
 
@@ -27,19 +30,27 @@ export OPENAI_BASE_URL=https://api.deepseek.com
 export OPENAI_API_KEY=sk-...
 ```
 
+To enable Logfire observability, set `observability.logfire: true` in `harness.yaml` and export your token:
+
+```bash
+export LOGFIRE_TOKEN=<your-token>
+```
+
 ## Architecture
 
 ```
 harness_poc/
 ├── cli.py                  # Typer CLI entry point
 ├── repl.py                 # Interactive REPL with tab completion
-├── app_factory.py          # Wires DB, EventBus, LLM client, skills, workflows into AppState
+├── app_factory.py          # Wires DB, EventBus, LLM client, skills, workflows, pipelines into AppState
 ├── core/
 │   ├── database.py         # BlackboardDatabase — SQLite-backed session/memory/state tables
 │   ├── events.py           # Typed Pydantic event hierarchy with EVENT_REGISTRY
 │   ├── event_store.py      # SQLite persistence for events — owns the state_events table
 │   ├── event_bus.py        # In-process pub/sub — dispatches to subscribers, persists via EventStore
 │   ├── goal_runner.py      # Autonomous ReAct loop — publishes events via EventBus
+│   ├── pipeline_runner.py  # DAG pipeline executor — wave-based parallelism, skill + agent nodes
+│   ├── logfire_subscriber.py # EventBus → Logfire span wiring for observability
 │   ├── llm_client.py       # OpenAI-compatible client
 │   ├── pydantic_runtime.py # PydanticAI agent runtime with tool-based skill execution
 │   ├── skill_runner.py     # Discovers and executes skills from SKILL.md + skill.py
@@ -50,6 +61,7 @@ harness_poc/
 └── system_prompts/         # SOUL.md — system prompt for the primary agent
 skills/                     # Project-local skills (spec_writer, web_search, etc.)
 workflows/                  # YAML workflow definitions
+pipelines/                  # YAML pipeline DAG definitions
 personas/                   # Prompt templates for sub-agents
 ```
 
@@ -59,15 +71,19 @@ All agent lifecycle events flow through a typed, Pydantic-based event bus. This 
 
 **Event hierarchy** (`core/events.py`):
 
-| Event                | Published when                                     |
-| -------------------- | -------------------------------------------------- |
-| `AgentStarted`       | A `GoalRunner.run()` loop begins                   |
-| `SkillCalled`        | A skill is about to be executed                    |
-| `SkillCompleted`     | A skill finishes (`success` / `error` / `blocked`) |
-| `GoalEvaluated`      | The LLM calls `evaluate_goal` to assess completion |
-| `LLMTextEmitted`     | The LLM emits text without a tool call             |
-| `SubAgentDispatched` | A sub-agent is spawned (defined, wiring follow-up) |
-| `SubAgentCompleted`  | A sub-agent finishes (defined, wiring follow-up)   |
+| Event                  | Published when                                       |
+| ---------------------- | ---------------------------------------------------- |
+| `AgentStarted`         | A `GoalRunner.run()` loop begins                     |
+| `SkillCalled`          | A skill is about to be executed                      |
+| `SkillCompleted`       | A skill finishes (`success` / `error` / `blocked`)   |
+| `GoalEvaluated`        | The LLM calls `evaluate_goal` to assess completion   |
+| `LLMTextEmitted`       | The LLM emits text without a tool call               |
+| `SubAgentDispatched`   | A sub-agent is spawned                               |
+| `SubAgentCompleted`    | A sub-agent finishes                                 |
+| `PipelineStarted`      | A `PipelineRunner.run()` begins                      |
+| `PipelineNodeStarted`  | A pipeline node begins execution                     |
+| `PipelineNodeCompleted`| A pipeline node finishes (`completed`/`failed`/`skipped`) |
+| `PipelineCompleted`    | All pipeline waves finish                            |
 
 Each event is a Pydantic `BaseModel` with `event_id`, `session_id`, `created_at`, plus type-specific fields (e.g. `goal: str` on `AgentStarted`, `tool_name` + `arguments` on `SkillCalled`). A `EVENT_REGISTRY: dict[str, type[BaseEvent]]` maps type names to classes so deserialization never needs `if/elif` chains.
 
@@ -148,6 +164,11 @@ Skills are discovered at startup by scanning `harness_poc/system_skills/` and `s
 ### Built-in REPL commands
 
 ```
+/pipeline <name> [key=value ...]     # run a pipeline (multi-word values supported)
+/pipelines                           # list available pipelines
+/workflow <name> <objective>         # run a workflow
+/workflows                           # list available workflows
+/goal <objective>                    # run an autonomous ReAct goal loop
 /skill list                          # list all skills
 /skill show <name>                   # print a skill's SKILL.md
 /skill <name> <args>                 # call a skill directly (bypasses LLM)
@@ -157,6 +178,8 @@ Skills are discovered at startup by scanning `harness_poc/system_skills/` and `s
 /help
 /exit
 ```
+
+Tab-completion works for pipeline names, workflow names, and skill names.
 
 ### Calling skills directly
 
@@ -264,6 +287,67 @@ Or without a prior gather session, using flat inputs:
 
 The spec is written to `specs/` and stored in the blackboard under `output_key` (default: `spec_writer_result`).
 
+## Pipelines
+
+Pipelines are declarative DAGs in `pipelines/`. Unlike workflows (linear, skill-only), pipelines support **parallel execution** and **autonomous agent nodes** alongside simple skill calls.
+
+```bash
+uv run harness-poc pipeline list
+uv run harness-poc pipeline run research_and_write --input topic="black holes"
+
+# In the REPL:
+# /pipeline research_and_write topic=black holes
+```
+
+A pipeline definition:
+
+```yaml
+name: research-and-write
+description: Research in parallel, then synthesize.
+
+inputs:
+  topic: string
+
+nodes:
+  - id: web_research
+    type: agent                          # full autonomous ReAct loop
+    goal: "Research: {{inputs.topic}}"
+    allowed_skills: [read_memory]        # optional skill filter
+
+  - id: memory_research
+    type: skill                          # single skill call, no LLM loop
+    skill: read_memory
+    arguments:
+      query: "{{inputs.topic}}"
+
+  # web_research and memory_research have no depends_on → run in parallel
+
+  - id: synthesize
+    type: agent
+    goal: |
+      Synthesize findings about {{inputs.topic}}:
+      Web: {{nodes.web_research.output}}
+      Memory: {{nodes.memory_research.output}}
+    depends_on: [web_research, memory_research]
+```
+
+**Execution model:** nodes without `depends_on` (or with all deps resolved) form a wave and run concurrently via `ThreadPoolExecutor`. A failed node marks its dependents as `skipped` but does not abort independent nodes in the same wave. Template variables: `{{inputs.key}}` and `{{nodes.node_id.output}}`.
+
+## Observability
+
+When `observability.logfire: true` is set in `harness.yaml` and `LOGFIRE_TOKEN` is exported, all EventBus events are forwarded to [Logfire](https://logfire.pydantic.dev) as structured log entries. PydanticAI's auto-instrumentation additionally traces every `Agent.run_sync` call inside agent nodes, giving a full span tree: pipeline → node → agent loop → skill calls.
+
+```yaml
+# harness.yaml
+observability:
+  logfire: true
+```
+
+```bash
+export LOGFIRE_TOKEN=<your-token>
+uv run harness-poc
+```
+
 ## Workflows
 
 Workflows are YAML state machines in `workflows/`. Each state calls a skill and passes its output to the next state via template variables.
@@ -302,7 +386,7 @@ states:
 ## Development
 
 ```bash
-uv run pytest                  # full test suite (87 tests)
+uv run pytest                  # full test suite (106 tests)
 uv run pytest tests/test_goal_runner.py -v  # goal runner + event bus integration
 uv run pytest tests/test_event_bus.py tests/test_event_store.py -v  # event system
 uv run ruff check .            # lint
