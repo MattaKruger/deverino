@@ -240,12 +240,23 @@ class ChatApp(App[None]):
                     _last_flush[0] = now
                     _flush_to_ui()
 
+        tool_lines: list[str] = []
+        tool_state: dict[str, Static | None] = {"widget": None}
+
         def on_tool_event(message: str) -> None:
-            def _mount() -> None:
-                chat.mount(Static(f"  ⚙ {message}", classes="tool-line"))
+            tool_lines.append(message)
+            combined = "\n".join(f"  ⚙ {line}" for line in tool_lines)
+
+            def _update_tool() -> None:
+                if tool_state["widget"] is None:
+                    w = Static(combined, classes="tool-line", markup=False)
+                    tool_state["widget"] = w
+                    chat.mount(w)
+                else:
+                    tool_state["widget"].update(combined)
                 chat.scroll_end(animate=False)
 
-            self.call_from_thread(_mount)
+            self.call_from_thread(_update_tool)
 
         self._app_state.streaming.on_text = on_text_chunk
         self._app_state.streaming.on_tool_event = on_tool_event
