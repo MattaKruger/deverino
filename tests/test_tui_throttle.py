@@ -2,10 +2,20 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
-def _make_throttled_flusher(flush_fn, interval: float = 0.033):
+EXPECTED_CALL_COUNT = 2
+
+Flusher = "Callable[[str], None]"
+
+
+def _make_throttled_flusher(
+    flush_fn: Callable[[str], None], interval: float = 0.033
+) -> Callable[[str], None]:
     """Mirrors the throttle logic from tui.py on_text_chunk."""
     last_flush: list[float] = [0.0]
     lock = threading.Lock()
@@ -39,4 +49,4 @@ def test_throttle_fires_after_interval() -> None:
     time.sleep(0.06)
     throttled("b")  # after interval — fires again
 
-    assert flush.call_count == 2
+    assert flush.call_count == EXPECTED_CALL_COUNT
