@@ -234,6 +234,9 @@ def handle_pipeline_command(app_state: AppState, user_input: str) -> None:
     run_pipeline(app_state, pipeline_name, inputs)
 
 
+MAX_PYDANTIC_MESSAGES = 50
+
+
 def handle_chat_input(app_state: AppState, user_input: str) -> None:
     app_state.messages.append({"role": "user", "content": user_input})
 
@@ -246,6 +249,11 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
         _track_tokens(response.usage)
         if response.messages:
             app_state.pydantic_messages.extend(response.messages)
+            # Prune old messages to prevent context bloat from
+            # accumulated tool calls/results across turns.
+            if len(app_state.pydantic_messages) > MAX_PYDANTIC_MESSAGES:
+                excess = len(app_state.pydantic_messages) - MAX_PYDANTIC_MESSAGES
+                app_state.pydantic_messages = app_state.pydantic_messages[excess:]
         else:
             _append_pydantic_chat_exchange(app_state, user_input, response.content)
         app_state.messages.append({"role": "assistant", "content": response.content})
@@ -745,28 +753,15 @@ def _append_pydantic_chat_exchange(
 
 
 def _build_prompt_bar(app_state: AppState) -> FormattedText:
-    """Build a styled prompt bar showing model, reasoning, token usage, and cache."""
-    llm = app_state.llm_client
-
-    if llm.use_mock:
-        return FormattedText(
-            [
-                ("fg:ansimagenta", "[mock]"),
-                ("", " > "),
-            ]
-        )
-
-    model = llm.model
-    reasoning = llm.reasoning_effort
-    thinking = llm.thinking
+    """Build a styled prompt bar showing provider, model, and token usage."""
+    llm = app_state.config.llm
 
     parts: list[tuple[str, str]] = [
         ("fg:ansicyan", "["),
-        ("fg:ansigreen bold", model),
+        ("fg:ansigreen bold", llm.provider),
+        ("fg:ansicyan", " · "),
+        ("fg:ansigreen bold", llm.model),
     ]
-
-    if thinking == "enabled":
-        parts.append(("fg:ansiyellow", f" · reason:{reasoning}"))
 
     if _session_token_count > 0:
         token_text = _format_tokens(_session_token_count)

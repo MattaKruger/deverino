@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any, cast
 
 import yaml
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,10 +31,55 @@ class ObservabilityConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class LLMConfig:
+    provider: str  # "deepseek" | "openai" | "anthropic"
+    model: str
+    base_url: (
+        str | None
+    )  # None unless overriding endpoint (openai-compatible only)
+
+
+def _find_dotenv() -> Path | None:
+    for directory in (Path.cwd(), *Path.cwd().parents):
+        env_path = directory / ".env"
+        if env_path.exists():
+            return env_path
+    return None
+
+
+class APISettings(BaseSettings):
+    """API keys loaded from .env via pydantic-settings, one per provider."""
+
+    model_config = SettingsConfigDict(
+        env_file=None,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    deepseek_api_key: str | None = Field(
+        default=None, validation_alias="DEEPSEEK_API_KEY"
+    )
+    openai_api_key: str | None = Field(
+        default=None, validation_alias="OPENAI_API_KEY"
+    )
+    anthropic_api_key: str | None = Field(
+        default=None, validation_alias="ANTHROPIC_API_KEY"
+    )
+
+    @classmethod
+    def load(cls) -> APISettings:
+        env_path = _find_dotenv()
+        if env_path is None:
+            return cls()
+        return cls(_env_file=env_path)  # type: ignore[call-arg]
+
+
+@dataclass(frozen=True, slots=True)
 class HarnessConfig:
     project_root: Path
     config_path: Path
     paths: HarnessPaths
+    llm: LLMConfig
     runtime: RuntimeConfig
     observability: ObservabilityConfig
 
@@ -48,6 +95,7 @@ class HarnessConfig:
         paths_raw = _mapping(raw.get("paths"), "paths")
         runtime_raw = _mapping(raw.get("runtime"), "runtime")
         observability_raw = _mapping(raw.get("observability"), "observability")
+        llm_raw = _mapping(raw.get("llm"), "llm")
 
         paths = HarnessPaths(
             soul=_resolve_path(
@@ -83,11 +131,17 @@ class HarnessConfig:
         observability = ObservabilityConfig(
             logfire_enabled=bool(observability_raw.get("logfire", False)),
         )
+        llm = LLMConfig(
+            provider=str(llm_raw.get("provider", "deepseek")),
+            model=str(llm_raw.get("model", "deepseek-v4-flash")),
+            base_url=llm_raw.get("base_url"),  # None is fine — defaults to None
+        )
 
         return cls(
             project_root=project_root,
             config_path=resolved_config_path,
             paths=paths,
+            llm=llm,
             runtime=runtime,
             observability=observability,
         )

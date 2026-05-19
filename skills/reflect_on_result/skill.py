@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.llm_client import LLMClient, Message
+from harness_poc.core.pydantic_runtime import build_model, chat_text
 from harness_poc.core.skill_context import SkillContext, SkillResult
+
+if TYPE_CHECKING:
+    from harness_poc.core.llm_client import Message
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
@@ -28,14 +31,12 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             "risks": ["Missing subagent result."],
         }
     else:
-        response = LLMClient().chat(
-            messages=_build_reviewer_messages(
-                objective=objective, payload=payload
-            ),
-            tools=None,
+        response = chat_text(
+            _build_reviewer_messages(objective=objective, payload=payload),
+            model=build_model(ctx.config.llm),
         )
         reflection = _normalize_reflection(
-            response.content,
+            response,
             objective=objective,
             memory_key=memory_key,
             payload=payload,

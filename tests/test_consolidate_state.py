@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from harness_poc.core.config import HarnessConfig, HarnessPaths, ObservabilityConfig, RuntimeConfig
+from harness_poc.core.config import (
+    HarnessConfig,
+    HarnessPaths,
+    LLMConfig,
+    ObservabilityConfig,
+    RuntimeConfig,
+)
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.skill_runner import SkillRunner
 
@@ -74,4 +80,5 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
+        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
     )

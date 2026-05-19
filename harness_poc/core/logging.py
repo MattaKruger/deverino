@@ -5,7 +5,9 @@ import os
 from pathlib import Path
 
 DEFAULT_LOG_LEVEL = "INFO"
-LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(filename)s:%(lineno)d %(message)s"
+LOG_FORMAT = (
+    "%(asctime)s %(levelname)s [%(name)s] %(filename)s:%(lineno)d %(message)s"
+)
 
 
 def configure_logging(

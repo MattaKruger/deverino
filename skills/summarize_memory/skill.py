@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.llm_client import LLMClient, Message
+from harness_poc.core.pydantic_runtime import build_model, chat_text
 from harness_poc.core.skill_context import SkillContext, SkillResult
+
+if TYPE_CHECKING:
+    from harness_poc.core.llm_client import Message
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
@@ -21,11 +24,11 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             artifacts={"memory_key": memory_key},
         )
 
-    response = LLMClient().chat(
-        messages=_build_messages(memory_key=memory_key, payload=payload),
-        tools=None,
+    response = chat_text(
+        _build_messages(memory_key=memory_key, payload=payload),
+        model=build_model(ctx.config.llm),
     )
-    summary = response.content.strip()
+    summary = response.strip()
 
     return SkillResult(
         status="success",
@@ -37,9 +40,13 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     )
 
 
-def _build_messages(*, memory_key: str, payload: dict[str, Any] | str) -> list[Message]:
+def _build_messages(
+    *, memory_key: str, payload: dict[str, Any] | str
+) -> list[Message]:
     payload_text = (
-        json.dumps(payload, indent=2, sort_keys=True) if isinstance(payload, dict) else payload
+        json.dumps(payload, indent=2, sort_keys=True)
+        if isinstance(payload, dict)
+        else payload
     )
     return [
         {

@@ -15,7 +15,7 @@ from harness_poc.app_factory import AppState, build_app_state
 from harness_poc.cli import app
 from harness_poc.core.events import AgentStarted, LLMTextEmitted, SkillCompleted
 from harness_poc.core.goal_runner import GoalRunner, count_tokens
-from harness_poc.core.llm_client import LLMClient, LLMResponse, Message
+from harness_poc.core.llm_client import LLMResponse, Message
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -87,7 +87,6 @@ def _make_app_state(
     """Build an AppState with an in-memory database and optional mock LLM."""
     state = build_app_state()
     if mock is not None:
-        state.llm_client = LLMClient(use_mock=True, mock_response=mock)
         state.goal_decision_model = _mock_goal_model(mock)
     return state
 

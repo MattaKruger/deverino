@@ -607,7 +607,7 @@ class GoalRunner:
         model = (
             self.decision_model
             or app_state.goal_decision_model
-            or build_model()
+            or build_model(app_state.config.llm)
         )
         logger.debug(
             "Requesting goal decision",

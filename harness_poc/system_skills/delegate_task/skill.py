@@ -13,6 +13,8 @@ from harness_poc.core.skill_context import SkillContext, SkillResult
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from harness_poc.core.config import LLMConfig
+
 
 class DelegatedTaskOutput(BaseModel):
     status: Literal["completed", "failed", "blocked"] = "completed"
@@ -20,11 +22,15 @@ class DelegatedTaskOutput(BaseModel):
     artifacts: dict[str, Any] = Field(default_factory=dict)
 
 
-DelegatedTaskOutput.model_rebuild(_types_namespace={"Any": Any, "Literal": Literal})
+DelegatedTaskOutput.model_rebuild(
+    _types_namespace={"Any": Any, "Literal": Literal}
+)
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
-    persona = str(arguments.get("persona") or arguments.get("template_name") or "")
+    persona = str(
+        arguments.get("persona") or arguments.get("template_name") or ""
+    )
     objective = str(arguments.get("objective") or "")
     memory_key = str(arguments.get("memory_key") or f"{persona}_result")
     context = str(arguments.get("context") or "")
@@ -43,6 +49,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         objective=objective,
         context=context,
         use_mock=use_mock,
+        llm_config=ctx.config.llm,
         on_text=ctx.emit_text,
     )
     result = {
@@ -58,7 +65,9 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     ctx.database.write_memory(ctx.session_id, memory_key, result)
 
     return SkillResult(
-        status="success" if output.status not in {"failed", "blocked"} else "failed",
+        status="success"
+        if output.status not in {"failed", "blocked"}
+        else "failed",
         content=json.dumps(result, indent=2, sort_keys=True),
         artifacts={
             "memory_key": memory_key,
@@ -68,18 +77,19 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     )
 
 
-def _run_subagent(
+def _run_subagent(  # noqa: PLR0913
     *,
     persona_template: str,
     objective: str,
     context: str,
     use_mock: bool = False,
+    llm_config: LLMConfig | None = None,
     on_text: Callable[[str], None] | None = None,
 ) -> DelegatedTaskOutput:
     agent = Agent(
         _fallback_model(objective)
         if use_mock
-        else build_model(fallback_model=_fallback_model(objective)),
+        else build_model(llm_config, fallback_model=_fallback_model(objective)),
         output_type=DelegatedTaskOutput,
         system_prompt=persona_template,
         output_retries=2,
@@ -94,7 +104,9 @@ def _run_subagent(
 
     return cast(
         "DelegatedTaskOutput",
-        agent.run_sync(_build_subagent_prompt(objective=objective, context=context)).output,
+        agent.run_sync(
+            _build_subagent_prompt(objective=objective, context=context)
+        ).output,
     )
 
 
@@ -125,7 +137,9 @@ def _stream_subagent_output(
     return output
 
 
-def _summary_from_partial_output(output: DelegatedTaskOutput | dict[str, Any]) -> str:
+def _summary_from_partial_output(
+    output: DelegatedTaskOutput | dict[str, Any],
+) -> str:
     if isinstance(output, DelegatedTaskOutput):
         return output.summary
     summary = output.get("summary")

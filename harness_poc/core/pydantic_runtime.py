@@ -7,12 +7,13 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
 from pydantic_ai import Agent, RunContext, Tool
+from pydantic_ai.messages import TextPart
+from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.deepseek import DeepSeekProvider
 from pydantic_ai.providers.openai import OpenAIProvider
-
-from harness_poc.core.llm_client import DeepSeekSettings, Usage
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -21,10 +22,12 @@ if TYPE_CHECKING:
     from pydantic_ai.models import Model
     from pydantic_ai.usage import RunUsage
 
-    from harness_poc.core.config import HarnessConfig
+    from harness_poc.core.config import HarnessConfig, LLMConfig
     from harness_poc.core.database import BlackboardDatabase
+    from harness_poc.core.llm_client import Message, Usage
     from harness_poc.core.skill_runner import SkillRunner
 
+from harness_poc.core.config import APISettings
 
 HUMAN_ACTION_REQUIRED_STATUS = "needs_orchestrator_action"
 logger = logging.getLogger(__name__)
@@ -105,75 +108,171 @@ class PydanticAgentRuntime:
         message_history: list[ModelMessage] | None,
         on_text: Callable[[str], None] | None,
     ) -> AgentRunResult:
+        # Use agent.iter() instead of run_stream() because run_stream()
+        # stops at the first text output matching the output type.
+        # With tools, the model may produce text BEFORE tool calls — with
+        # run_stream() that pre-tool text becomes the "final output" and
+        # post-tool text is lost.  agent.iter() runs the full agent graph
+        # to completion, giving us all model responses including those
+        # after tool calls.
+        max_tool_rounds = 5
+
         deps = replace(self.deps, stream_text=on_text)
-        async with self.agent.run_stream(
+        all_output_parts: list[str] = []
+        seen_text: str = ""
+        usage: Usage | None = None
+        tool_rounds = 0
+        capped = False
+
+        async with self.agent.iter(
             prompt,
             deps=deps,
             message_history=message_history,
-        ) as result:
-            async for chunk in result.stream_text(delta=True):
-                if on_text is not None:
-                    on_text(chunk)
-            output = await result.get_output()
+            conversation_id="new",
+        ) as agent_run:
+            async for node in agent_run:
+                mr = getattr(node, "model_response", None)
+                if mr is None:
+                    continue
+                # Count tool-call rounds (each CallToolsNode is one round)
+                tool_rounds += 1
+                if tool_rounds > max_tool_rounds:
+                    capped = True
+                    logger.warning(
+                        "Tool call limit (%d) reached, stopping agent loop",
+                        max_tool_rounds,
+                        extra={"session_id": self.deps.session_id},
+                    )
+                    break
+                # Collect text parts from this model response
+                new_text = "".join(
+                    part.content
+                    for part in mr.parts
+                    if isinstance(part, TextPart)
+                )
+                # Stream only the NEW portion (diff against seen)
+                if new_text and on_text is not None:
+                    if new_text.startswith(seen_text):
+                        delta = new_text[len(seen_text) :]
+                        if delta:
+                            on_text(delta)
+                    else:
+                        # Text changed completely (rare — model revision)
+                        on_text(new_text)
+                seen_text = new_text
+                all_output_parts.append(new_text)
 
-            return AgentRunResult(
-                content=str(output),
-                usage=_usage_to_dict(result.usage),
-                messages=result.new_messages(),
-            )
+            if capped and on_text is not None:
+                on_text(
+                    "\n\n[Tool call limit reached — stopping. "
+                    "Refine your query for better results.]"
+                )
+
+            result_output = agent_run.result.output if agent_run.result else None
+            output = str(result_output) if result_output is not None else "".join(all_output_parts)
+
+            if not capped and agent_run.result is not None:
+                usage = _usage_to_dict(agent_run.result.usage)
+                # Only trust new_messages() when the graph completed
+                # cleanly.  Capped runs produce incomplete tool messages
+                # that corrupt the next turn's context.
+                all_new_messages = agent_run.result.new_messages()
+            else:
+                # Capped or no result — return empty messages so the
+                # REPL uses _append_pydantic_chat_exchange (clean
+                # user/assistant pair, no tool pollution).
+                all_new_messages = []
+
+        return AgentRunResult(
+            content=str(output),
+            usage=usage,
+            messages=all_new_messages,
+        )
 
 
-def build_model(
-    settings: DeepSeekSettings | None = None,
+def build_model(  # noqa: PLR0911
+    config: LLMConfig | None = None,
     *,
     fallback_model: Model | None = None,
 ) -> Model:
-    resolved_settings = settings or DeepSeekSettings.load()
-    if resolved_settings.api_key is None:
-        logger.info(
-            "No provider API key configured; using fallback PydanticAI model"
-        )
+    if config is None:
         return fallback_model or TestModel(call_tools=[])
 
-    if resolved_settings.base_url == "https://api.deepseek.com":
+    api_settings = APISettings.load()
+
+    if config.provider == "anthropic":
+        api_key = api_settings.anthropic_api_key
+        if not api_key:
+            logger.info(
+                "No Anthropic API key configured; using fallback PydanticAI model"
+            )
+            return fallback_model or TestModel(call_tools=[])
         logger.debug(
-            "Building DeepSeek-backed PydanticAI model",
-            extra={"model": resolved_settings.model},
+            "Building Anthropic-backed PydanticAI model",
+            extra={"model": config.model},
         )
-        return OpenAIChatModel(
-            cast("Any", resolved_settings.model),
-            provider=DeepSeekProvider(api_key=resolved_settings.api_key),
+        return AnthropicModel(
+            cast("Any", config.model),
+            provider=AnthropicProvider(api_key=api_key),
         )
 
-    logger.debug(
-        "Building OpenAI-compatible PydanticAI model",
-        extra={
-            "model": resolved_settings.model,
-            "base_url": resolved_settings.base_url,
-        },
-    )
-    return OpenAIChatModel(
-        cast("Any", resolved_settings.model),
-        provider=OpenAIProvider(
-            base_url=resolved_settings.base_url,
-            api_key=resolved_settings.api_key,
-        ),
-    )
+    if config.provider == "deepseek":
+        api_key = api_settings.deepseek_api_key
+        if not api_key:
+            logger.info(
+                "No DeepSeek API key configured; using fallback PydanticAI model"
+            )
+            return fallback_model or TestModel(call_tools=[])
+        logger.debug(
+            "Building DeepSeek-backed PydanticAI model",
+            extra={"model": config.model},
+        )
+        return OpenAIChatModel(
+            cast("Any", config.model),
+            provider=DeepSeekProvider(api_key=api_key),
+        )
+
+    # "openai" or any openai-compatible provider
+    if config.provider == "openai":
+        api_key = api_settings.openai_api_key
+        if not api_key:
+            logger.info(
+                "No OpenAI API key configured; using fallback PydanticAI model"
+            )
+            return fallback_model or TestModel(call_tools=[])
+        provider_kwargs: dict[str, Any] = {"api_key": api_key}
+        if config.base_url:
+            provider_kwargs["base_url"] = config.base_url
+        logger.debug(
+            "Building OpenAI-compatible PydanticAI model",
+            extra={
+                "model": config.model,
+                "base_url": config.base_url or "default",
+            },
+        )
+        return OpenAIChatModel(
+            cast("Any", config.model),
+            provider=OpenAIProvider(**provider_kwargs),
+        )
+
+    msg = f"Unknown LLM provider: {config.provider!r}"
+    raise ValueError(msg)
 
 
 def build_primary_agent(
     *,
     system_prompt: str,
     skill_runner: SkillRunner,
+    llm: LLMConfig | None = None,
     model: Model | None = None,
     enable_tools: bool = True,
 ) -> Agent[AgentDeps, str]:
     return Agent(
-        model or build_model(),
+        model or build_model(llm),
         deps_type=AgentDeps,
         tools=build_skill_tools(skill_runner) if enable_tools else [],
         system_prompt=_with_tool_policy(system_prompt),
-        end_strategy="exhaustive",
+        end_strategy="early",
     )
 
 
@@ -184,6 +283,7 @@ def build_runtime(  # noqa: PLR0913
     config: HarnessConfig,
     skill_runner: SkillRunner,
     system_prompt: str,
+    llm: LLMConfig | None = None,
     model: Model | None = None,
     enable_tools: bool = True,
 ) -> PydanticAgentRuntime:
@@ -198,6 +298,7 @@ def build_runtime(  # noqa: PLR0913
         agent=build_primary_agent(
             system_prompt=system_prompt,
             skill_runner=skill_runner,
+            llm=llm,
             model=model,
             enable_tools=enable_tools,
         ),
@@ -300,23 +401,18 @@ def execute_skill_as_tool(
     else:
         _emit_tool_progress(ctx, f"  {skill_name}: {result.status}")
 
-    payload: dict[str, Any] = {
-        "status": result.status,
-        "content": result.content,
-        "artifacts": result.artifacts,
-        "requested_actions": [
-            {
-                "requested_skill": request.requested_skill,
-                "arguments": request.arguments,
-                "reason": request.reason,
-            }
-            for request in result.requested_actions
-        ],
-    }
     if result.status == HUMAN_ACTION_REQUIRED_STATUS:
-        payload["orchestrator_action_required"] = True
-        payload["orchestrator_instruction"] = (
-            "Stop and surface content to the user unchanged. Do not summarize."
+        return json.dumps(
+            {
+                "status": result.status,
+                "content": result.content,
+                "orchestrator_action_required": True,
+                "orchestrator_instruction": (
+                    "Stop and surface content to the user unchanged. "
+                    "Do not summarize."
+                ),
+            },
+            sort_keys=True,
         )
 
     if result.status == "success":
@@ -328,29 +424,44 @@ def execute_skill_as_tool(
                 "status": result.status,
             },
         )
-    else:
-        logger.error(
-            "PydanticAI tool adapter skill returned non-success status",
-            extra={
-                "session_id": ctx.deps.session_id,
-                "skill_name": skill_name,
-                "status": result.status,
-                "content": result.content,
-                "artifacts": result.artifacts,
-            },
-        )
+        # Return raw content — the agent reads it directly.
+        # No JSON wrapper so the model sees search results / tool
+        # output without extra parsing overhead.
+        return result.content
 
-    return json.dumps(payload, sort_keys=True)
+    # Non-success (failed, error, etc.)
+    logger.error(
+        "PydanticAI tool adapter skill returned non-success status",
+        extra={
+            "session_id": ctx.deps.session_id,
+            "skill_name": skill_name,
+            "status": result.status,
+            "content": result.content,
+            "artifacts": result.artifacts,
+        },
+    )
+    return f"[{result.status}] {result.content}"
 
 
 def _with_tool_policy(system_prompt: str) -> str:
     return (
         f"{system_prompt}\n\n"
         "## Tool Result Policy\n"
-        "- Tools return JSON with status, content, artifacts, and requested_actions.\n"
-        "- If a tool returns status `needs_orchestrator_action`, stop and surface "
-        "the tool content to the user unchanged.\n"
-        "- Do not summarize human-in-loop prompts."
+        "- Successful tool calls return the result content directly as plain text.\n"
+        "- Failed tool calls are prefixed with `[failed]`.\n"
+        "- If a tool returns JSON with `orchestrator_action_required: true`, "
+        "stop and surface the content to the user unchanged.\n"
+        "  Do not summarize or rephrase human-in-loop prompts.\n"
+        "- **Do not retry failed tools.** If a tool returns status `failed`, "
+        "report the error to the user. Do not call the same tool again with "
+        "different arguments — the tool is indicating it cannot complete the "
+        "request.\n"
+        "- **semble_search / web_search**: if the first 2 search calls do not "
+        "return the specific information the user asked for (including empty "
+        "results or failures), stop searching. Tell the user what you found "
+        "(or that the information is unavailable). Do not refine the query "
+        "further.\n"
+        "- Do not make the same tool call with the same arguments more than once."
     )
 
 
@@ -388,3 +499,32 @@ def _summarise_args(arguments: dict[str, Any]) -> str:
     if not parts:
         parts.append("...")
     return ", ".join(parts)
+
+
+def chat_text(
+    messages: list[Message],
+    *,
+    model: Model,
+) -> str:
+    """Run a simple chat without tools and return text content only."""
+    system_parts: list[str] = []
+    user_parts: list[str] = []
+    for msg in messages:
+        if msg["role"] == "system":
+            system_parts.append(msg["content"])
+        elif msg["role"] == "user":
+            user_parts.append(msg["content"])
+
+    system_prompt = "\n\n".join(system_parts)
+    prompt = "\n\n".join(
+        msg["content"] for msg in messages if msg["role"] != "system"
+    )
+
+    agent = Agent(model, system_prompt=system_prompt)
+    result = agent.run_sync(prompt)
+    return str(result.output)
+
+
+def is_live_model(model: Model) -> bool:
+    """Return True if the model is not a TestModel fallback."""
+    return not isinstance(model, TestModel)

@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from harness_poc.core.llm_client import LLMClient, Message
+from harness_poc.core.config import LLMConfig
+from harness_poc.core.llm_client import Message
+from harness_poc.core.pydantic_runtime import (
+    build_model,
+    chat_text,
+    is_live_model,
+)
 from harness_poc.core.skill_context import SkillContext, SkillResult
 
 DEFAULT_OUTPUT_KEY = "spec_writer_result"
@@ -45,7 +51,9 @@ class GatherState:
     xml_context: str = ""
 
 
-def _load_gather_state(ctx: SkillContext, gather_key: str) -> GatherState | None:
+def _load_gather_state(
+    ctx: SkillContext, gather_key: str
+) -> GatherState | None:
     payload = ctx.database.read_memory(ctx.session_id, gather_key)
     if not isinstance(payload, dict):
         return None
@@ -61,7 +69,9 @@ def _load_gather_state(ctx: SkillContext, gather_key: str) -> GatherState | None
     )
 
 
-def _save_gather_state(ctx: SkillContext, gather_key: str, state: GatherState) -> None:
+def _save_gather_state(
+    ctx: SkillContext, gather_key: str, state: GatherState
+) -> None:
     ctx.database.write_memory(
         ctx.session_id,
         gather_key,
@@ -281,7 +291,9 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             artifacts={"questions": questions, "mode": inputs.mode},
         )
 
-    previous_spec = _previous_spec(ctx, inputs) if inputs.mode == "refine" else ""
+    previous_spec = (
+        _previous_spec(ctx, inputs) if inputs.mode == "refine" else ""
+    )
     if inputs.mode == "refine" and not previous_spec:
         return SkillResult(
             status="blocked",
@@ -297,7 +309,9 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     if gather_state is not None and gather_state.phase == "complete":
         xml_context = gather_state.xml_context
 
-    spec, used_llm = _draft_with_optional_llm(inputs, previous_spec, xml_context)
+    spec, used_llm = _draft_with_optional_llm(
+        inputs, previous_spec, xml_context, llm_config=ctx.config.llm
+    )
     spec_path = _write_spec_file(ctx.project_root, spec, inputs)
     ctx.database.write_memory(
         ctx.session_id,
@@ -365,13 +379,17 @@ def _bool_value(value: object) -> bool:
 def _clarifying_questions(inputs: SpecInputs) -> list[str]:
     questions: list[str] = []
     if not inputs.goal:
-        questions.append("What feature, change, or behavior should this spec cover?")
+        questions.append(
+            "What feature, change, or behavior should this spec cover?"
+        )
     if not inputs.context:
         questions.append(
             "What existing behavior, code area, or user workflow should the spec account for?"
         )
     if not inputs.requirements:
-        questions.append("What must be true for the implementation to be accepted?")
+        questions.append(
+            "What must be true for the implementation to be accepted?"
+        )
     return questions[:MAX_QUESTIONS]
 
 
@@ -388,7 +406,9 @@ def _questions_result(questions: list[str]) -> SkillResult:
 
 def _format_questions(questions: list[str]) -> str:
     lines = ["## Clarifying Questions", ""]
-    lines.extend(f"{index}. {question}" for index, question in enumerate(questions, 1))
+    lines.extend(
+        f"{index}. {question}" for index, question in enumerate(questions, 1)
+    )
     return "\n".join(lines)
 
 
@@ -401,23 +421,23 @@ def _previous_spec(ctx: SkillContext, inputs: SpecInputs) -> str:
 
 
 def _draft_with_optional_llm(
-    inputs: SpecInputs, previous_spec: str, xml_context: str = ""
+    inputs: SpecInputs,
+    previous_spec: str,
+    xml_context: str = "",
+    *,
+    llm_config: LLMConfig | None = None,
 ) -> tuple[str, bool]:
-    if inputs.use_llm and _should_try_llm():
+    model = build_model(llm_config)
+    if inputs.use_llm and is_live_model(model):
         messages = (
             _llm_messages_with_xml(xml_context, inputs, previous_spec)
             if xml_context
             else _llm_messages(inputs, previous_spec)
         )
-        response = LLMClient().chat(messages, tools=None)
-        candidate = response.content.strip()
+        candidate = chat_text(messages, model=model).strip()
         if _is_valid_spec(candidate):
             return candidate, True
     return _deterministic_spec(inputs, previous_spec), False
-
-
-def _should_try_llm() -> bool:
-    return not LLMClient().use_mock
 
 
 def _llm_messages_with_xml(
@@ -474,7 +494,9 @@ def _llm_messages(inputs: SpecInputs, previous_spec: str) -> list[Message]:
 
 
 def _is_valid_spec(spec: str) -> bool:
-    return bool(spec.startswith("# ")) and all(heading in spec for heading in SPEC_HEADINGS)
+    return bool(spec.startswith("# ")) and all(
+        heading in spec for heading in SPEC_HEADINGS
+    )
 
 
 def _deterministic_spec(inputs: SpecInputs, previous_spec: str) -> str:
@@ -487,13 +509,17 @@ def _deterministic_spec(inputs: SpecInputs, previous_spec: str) -> str:
         inputs.constraints,
         "Follow existing project patterns and keep the change narrowly scoped.",
     )
-    non_goals = _lines_or_default(inputs.non_goals, "No explicit non-goals provided.")
+    non_goals = _lines_or_default(
+        inputs.non_goals, "No explicit non-goals provided."
+    )
     open_questions = _lines_or_default(
         inputs.open_questions,
         "No open questions recorded.",
     )
     refinement_note = (
-        f"\n\nPrevious draft considered:\n\n{previous_spec.strip()}" if previous_spec else ""
+        f"\n\nPrevious draft considered:\n\n{previous_spec.strip()}"
+        if previous_spec
+        else ""
     )
 
     return "\n".join(

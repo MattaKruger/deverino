@@ -6,9 +6,14 @@ from typing import TYPE_CHECKING, cast
 
 from pydantic_ai.models.test import TestModel
 
-from harness_poc.core.config import HarnessConfig, HarnessPaths, ObservabilityConfig, RuntimeConfig
+from harness_poc.core.config import (
+    HarnessConfig,
+    HarnessPaths,
+    LLMConfig,
+    ObservabilityConfig,
+    RuntimeConfig,
+)
 from harness_poc.core.database import BlackboardDatabase
-from harness_poc.core.llm_client import DeepSeekSettings
 from harness_poc.core.pydantic_runtime import (
     AgentDeps,
     build_model,
@@ -19,18 +24,26 @@ from harness_poc.core.pydantic_runtime import (
 from harness_poc.core.skill_runner import SkillRunner
 
 if TYPE_CHECKING:
+    import pytest
     from pydantic_ai import RunContext
 
 
-def test_build_model_uses_test_model_without_api_key() -> None:
-    settings = DeepSeekSettings(api_key=None)
+def test_build_model_uses_test_model_without_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("harness_poc.core.config._find_dotenv", lambda: None)
+    config = LLMConfig(
+        provider="deepseek", model="deepseek-v4-flash", base_url=None
+    )
 
-    model = build_model(settings)
+    model = build_model(config)
 
     assert isinstance(model, TestModel)
 
 
-def test_build_skill_tools_reuses_discovered_skill_schema(tmp_path: Path) -> None:
+def test_build_skill_tools_reuses_discovered_skill_schema(
+    tmp_path: Path,
+) -> None:
     skill_runner, _database, _config, _session_id = _runtime_parts(tmp_path)
 
     tools = build_skill_tools(skill_runner)
@@ -41,11 +54,14 @@ def test_build_skill_tools_reuses_discovered_skill_schema(tmp_path: Path) -> Non
     assert read_memory_tool.description is not None
     assert read_memory_tool.description.startswith("Retrieves data")
     assert (
-        read_memory_tool.function_schema.json_schema["properties"]["memory_key"]["type"] == "string"
+        read_memory_tool.function_schema.json_schema["properties"][
+            "memory_key"
+        ]["type"]
+        == "string"
     )
 
 
-def test_execute_skill_as_tool_returns_structured_skill_result(
+def test_execute_skill_as_tool_returns_raw_content_for_success(
     tmp_path: Path,
 ) -> None:
     skill_runner, database, config, session_id = _runtime_parts(tmp_path)
@@ -59,12 +75,13 @@ def test_execute_skill_as_tool_returns_structured_skill_result(
         ),
     )
 
-    raw_result = execute_skill_as_tool(ctx, "read_memory", {"memory_key": "note"})
+    raw_result = execute_skill_as_tool(
+        ctx, "read_memory", {"memory_key": "note"}
+    )
 
-    result = json.loads(raw_result)
-    assert result["status"] == "success"
-    assert result["artifacts"]["memory_key"] == "note"
-    assert "stored" in result["content"]
+    # Success returns raw content, not JSON-wrapped
+    assert isinstance(raw_result, str)
+    assert "stored" in raw_result
 
 
 def test_execute_skill_as_tool_marks_human_action_required(
@@ -130,6 +147,9 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             workflows=project_root / "workflows",
             pipelines=project_root / "pipelines",
             personas=project_root / "personas",
+        ),
+        llm=LLMConfig(
+            provider="deepseek", model="deepseek-v4-flash", base_url=None
         ),
         runtime=RuntimeConfig(
             database_path=tmp_path / "blackboard.db",

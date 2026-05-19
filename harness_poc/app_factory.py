@@ -10,7 +10,6 @@ from harness_poc.core.config import HarnessConfig
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.event_bus import EventBus
 from harness_poc.core.event_store import EventStore
-from harness_poc.core.llm_client import LLMClient
 from harness_poc.core.logging import configure_logging
 from harness_poc.core.pipeline_runner import PipelineRunner
 from harness_poc.core.pydantic_runtime import (
@@ -48,7 +47,6 @@ class AppState:
     skill_scaffolder: SkillScaffolder
     workflow_runner: WorkflowRunner
     pipeline_runner: PipelineRunner
-    llm_client: LLMClient
     pydantic_runtime: PydanticAgentRuntime
     pydantic_messages: list[ModelMessage]
     goal_decision_model: Model | None
@@ -107,13 +105,13 @@ def build_app_state() -> AppState:
         skill_scaffolder=SkillScaffolder(config),
         workflow_runner=workflow_runner,
         pipeline_runner=pipeline_runner,
-        llm_client=LLMClient(),
         pydantic_runtime=build_runtime(
             session_id=session_id,
             database=database,
             config=config,
             skill_runner=skill_runner,
             system_prompt=full_system_prompt,
+            llm=config.llm,
             enable_tools=True,
         ),
         pydantic_messages=[],
