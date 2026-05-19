@@ -3,6 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 
+from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -56,6 +58,31 @@ def test_handle_chat_input_publishes_chat_events() -> None:
     assert events[1].tokens_used == EXPECTED_TOTAL_TOKENS
     assert isinstance(events[2], LLMTextEmitted)
     assert events[2].content == "Pydantic response"
+
+
+def test_handle_chat_input_prunes_history_before_runtime_call() -> None:
+    app_state = _FakeAppState()
+    app_state.streaming.on_finish = lambda _: None
+    app_state.pydantic_messages = [
+        ModelRequest(parts=[UserPromptPart(content="old")]),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    tool_name="semble_search",
+                    content="x" * 10_000,
+                    tool_call_id="call-1",
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content="recent")]),
+    ]
+    app_state.config.runtime.chat_history_max_tokens = 100
+    app_state.config.runtime.chat_history_recent_turns = 1
+
+    handle_chat_input(cast("Any", app_state), "next")
+
+    history = app_state.pydantic_runtime.histories[0]
+    assert "x" * 100 not in repr(history)
 
 
 def test_handle_goal_command_adds_result_to_chat_history(
@@ -120,7 +147,14 @@ class _FakeAppState:
         self.pydantic_runtime = _FakeRuntime()
         self.streaming = StreamingContext()
         self.event_bus = RecordingEventBus()
-        self.config = SimpleNamespace(llm=SimpleNamespace(model="fake-model"))
+        self.config = SimpleNamespace(
+            llm=SimpleNamespace(model="fake-model"),
+            runtime=SimpleNamespace(
+                chat_history_max_tokens=24_000,
+                chat_history_recent_turns=6,
+                tool_result_max_chars=12_000,
+            ),
+        )
 
 
 class _FakeGoalRunner:

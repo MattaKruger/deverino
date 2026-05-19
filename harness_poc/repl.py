@@ -7,11 +7,12 @@ import sqlite3
 from typing import TYPE_CHECKING, Any
 
 import yaml
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 from harness_poc.console import print_error, print_markdown, print_skill_table, print_text
 from harness_poc.core.events import AgentInputAdded, LLMActionEmitted, LLMTextEmitted
 from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
+from harness_poc.core.message_history import prune_message_history, sanitize_new_messages
 from harness_poc.core.state import StateSection, build_state_context
 
 logger = logging.getLogger(__name__)
@@ -208,21 +209,30 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
     )
 
     try:
+        history = prune_message_history(
+            app_state.pydantic_messages,
+            max_tokens=app_state.config.runtime.chat_history_max_tokens,
+            recent_turns=app_state.config.runtime.chat_history_recent_turns,
+        )
         response = app_state.pydantic_runtime.stream_text(
             user_input,
-            message_history=app_state.pydantic_messages,
+            message_history=history,
             on_text=app_state.streaming.on_text,
             on_tool_event=app_state.streaming.on_tool_event,
         )
         _track_tokens(response.usage, app_state)
         _publish_llm_usage_event(app_state, response.usage)
         if response.messages:
-            app_state.pydantic_messages.extend(response.messages)
-            if len(app_state.pydantic_messages) > MAX_PYDANTIC_MESSAGES:
-                excess = len(app_state.pydantic_messages) - MAX_PYDANTIC_MESSAGES
-                app_state.pydantic_messages = app_state.pydantic_messages[excess:]
+            app_state.pydantic_messages.extend(
+                sanitize_new_messages(
+                    response.messages,
+                    tool_result_max_chars=app_state.config.runtime.tool_result_max_chars,
+                )
+            )
+            app_state.pydantic_messages = _bounded_pydantic_messages(app_state)
         else:
             _append_pydantic_chat_exchange(app_state, user_input, response.content)
+            app_state.pydantic_messages = _bounded_pydantic_messages(app_state)
         app_state.messages.append({"role": "assistant", "content": response.content})
         if response.content:
             app_state.event_bus.publish(
@@ -236,6 +246,18 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
         print_error(f"Database operation failed: {exc}")
     except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
         print_error(f"Tool execution failed: {exc}")
+
+
+def _bounded_pydantic_messages(app_state: AppState) -> list[ModelMessage]:
+    pruned = prune_message_history(
+        app_state.pydantic_messages,
+        max_tokens=app_state.config.runtime.chat_history_max_tokens,
+        recent_turns=app_state.config.runtime.chat_history_recent_turns,
+    )
+    if len(pruned) > MAX_PYDANTIC_MESSAGES:
+        excess = len(pruned) - MAX_PYDANTIC_MESSAGES
+        return pruned[excess:]
+    return pruned
 
 
 def _publish_llm_usage_event(app_state: AppState, usage: Usage | None) -> None:

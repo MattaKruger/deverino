@@ -25,20 +25,24 @@ class RuntimeConfig:
     default_container_image: str
     max_retries: int = 3
     max_tokens: int = 10_000
+    container_ttl_seconds: int = 14_400
+    max_harness_containers: int = 5
+    chat_history_max_tokens: int = 24_000
+    chat_history_recent_turns: int = 6
+    tool_result_max_chars: int = 12_000
 
 
 @dataclass(frozen=True, slots=True)
 class ObservabilityConfig:
     logfire_enabled: bool
+    logfire_include_content: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class LLMConfig:
     provider: str  # "deepseek" | "openai" | "anthropic"
     model: str
-    base_url: (
-        str | None
-    )  # None unless overriding endpoint (openai-compatible only)
+    base_url: str | None  # None unless overriding endpoint (openai-compatible only)
 
 
 def _find_dotenv() -> Path | None:
@@ -58,15 +62,9 @@ class APISettings(BaseSettings):
         extra="ignore",
     )
 
-    deepseek_api_key: str | None = Field(
-        default=None, validation_alias="DEEPSEEK_API_KEY"
-    )
-    openai_api_key: str | None = Field(
-        default=None, validation_alias="OPENAI_API_KEY"
-    )
-    anthropic_api_key: str | None = Field(
-        default=None, validation_alias="ANTHROPIC_API_KEY"
-    )
+    deepseek_api_key: str | None = Field(default=None, validation_alias="DEEPSEEK_API_KEY")
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    anthropic_api_key: str | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
 
     @classmethod
     def load(cls) -> APISettings:
@@ -108,18 +106,10 @@ class HarnessConfig:
                 project_root,
                 paths_raw.get("system_skills", "harness_poc/system_skills"),
             ),
-            project_skills=_resolve_path(
-                project_root, paths_raw.get("project_skills", "skills")
-            ),
-            workflows=_resolve_path(
-                project_root, paths_raw.get("workflows", "workflows")
-            ),
-            pipelines=_resolve_path(
-                project_root, paths_raw.get("pipelines", "pipelines")
-            ),
-            personas=_resolve_path(
-                project_root, paths_raw.get("personas", "personas")
-            ),
+            project_skills=_resolve_path(project_root, paths_raw.get("project_skills", "skills")),
+            workflows=_resolve_path(project_root, paths_raw.get("workflows", "workflows")),
+            pipelines=_resolve_path(project_root, paths_raw.get("pipelines", "pipelines")),
+            personas=_resolve_path(project_root, paths_raw.get("personas", "personas")),
         )
         runtime = RuntimeConfig(
             database_path=_resolve_path(
@@ -131,9 +121,15 @@ class HarnessConfig:
             ),
             max_retries=int(runtime_raw.get("max_retries", 3)),
             max_tokens=int(runtime_raw.get("max_tokens", 10_000)),
+            container_ttl_seconds=int(runtime_raw.get("container_ttl_seconds", 14_400)),
+            max_harness_containers=int(runtime_raw.get("max_harness_containers", 5)),
+            chat_history_max_tokens=int(runtime_raw.get("chat_history_max_tokens", 24_000)),
+            chat_history_recent_turns=int(runtime_raw.get("chat_history_recent_turns", 6)),
+            tool_result_max_chars=int(runtime_raw.get("tool_result_max_chars", 12_000)),
         )
         observability = ObservabilityConfig(
             logfire_enabled=bool(observability_raw.get("logfire", False)),
+            logfire_include_content=bool(observability_raw.get("logfire_include_content", False)),
         )
         llm = LLMConfig(
             provider=str(llm_raw.get("provider", "deepseek")),

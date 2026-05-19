@@ -18,6 +18,12 @@ paths:
 runtime:
   database_path: harness_poc/blackboard.db
   default_container_image: python:3.12-slim
+  container_ttl_seconds: 14400
+  max_harness_containers: 5
+  chat_history_max_tokens: 24000
+  chat_history_recent_turns: 6
+  tool_result_max_chars: 12000
 
 observability:
   logfire: true   # set to true and export LOGFIRE_TOKEN to enable
+  logfire_include_content: false
