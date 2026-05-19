@@ -21,19 +21,58 @@ uv run harness-poc workflow run research_task "What is the ReAct prompting patte
 uv run harness-poc skill list
 ```
 
-Set your LLM credentials before starting:
+LLM provider and model are configured in `harness.yaml`:
 
-```bash
-export OPENAI_API_KEY=sk-...
-# or for DeepSeek
-export OPENAI_BASE_URL=https://api.deepseek.com
-export OPENAI_API_KEY=sk-...
+```yaml
+llm:
+  provider: deepseek          # deepseek | openai | anthropic
+  model: deepseek-v4-flash
+  base_url: ~                 # optional — for custom OpenAI-compatible endpoints only
 ```
 
-To enable Logfire observability, set `observability.logfire: true` in `harness.yaml` and export your token:
+API keys come from environment variables (or a `.env` file at the project root):
+
+| Provider     | Env var            |
+| ------------ | ------------------ |
+| `deepseek`   | `DEEPSEEK_API_KEY` |
+| `openai`     | `OPENAI_API_KEY`   |
+| `anthropic`  | `ANTHROPIC_API_KEY`|
+
+### Provider examples
+
+**OpenAI:**
+
+```yaml
+llm:
+  provider: openai
+  model: gpt-4o
+```
+
+**Anthropic:**
+
+```yaml
+llm:
+  provider: anthropic
+  model: claude-sonnet-4-6
+```
+
+**Local Ollama (OpenAI-compatible):**
+
+```yaml
+llm:
+  provider: openai
+  model: llama3
+  base_url: http://localhost:11434/v1
+```
+
+If no API key is found for the configured provider, the harness falls back to mock mode — the REPL prompt bar shows `[mock]` and all LLM calls use deterministic test responses.
+
+To enable Logfire observability, set `observability.logfire: true` in `harness.yaml`
+and provide your token (via env var or `.env` file):
 
 ```bash
 export LOGFIRE_TOKEN=<your-token>
+# or add LOGFIRE_TOKEN=<your-token> to .env
 ```
 
 ## Architecture
@@ -42,8 +81,9 @@ export LOGFIRE_TOKEN=<your-token>
 harness_poc/
 ├── cli.py                  # Typer CLI entry point
 ├── repl.py                 # Interactive REPL with tab completion
-├── app_factory.py          # Wires DB, EventBus, LLM client, skills, workflows, pipelines into AppState
+├── app_factory.py          # Wires DB, EventBus, PydanticAI runtime, skills, workflows, pipelines into AppState
 ├── core/
+│   ├── config.py           # HarnessConfig + APISettings — YAML config, .env loading, LLM credentials
 │   ├── database.py         # BlackboardDatabase — SQLite-backed session/memory/state tables
 │   ├── events.py           # Typed Pydantic event hierarchy with EVENT_REGISTRY
 │   ├── event_store.py      # SQLite persistence for events — owns the state_events table
@@ -51,11 +91,10 @@ harness_poc/
 │   ├── goal_runner.py      # Autonomous ReAct loop — publishes events via EventBus
 │   ├── pipeline_runner.py  # DAG pipeline executor — wave-based parallelism, skill + agent nodes
 │   ├── logfire_subscriber.py # EventBus → Logfire span wiring for observability
-│   ├── llm_client.py       # OpenAI-compatible client
-│   ├── pydantic_runtime.py # PydanticAI agent runtime with tool-based skill execution
+│   ├── llm_client.py       # Shared type definitions (Message, Usage, ToolCall, LLMResponse)
+│   ├── pydantic_runtime.py # Agent runtime — agent.iter() streaming, tool call cap (5 rounds), raw tool results
 │   ├── skill_runner.py     # Discovers and executes skills from SKILL.md + skill.py
 │   ├── state.py            # StatePayload, StateProposal, state context builder
-│   ├── config.py           # HarnessConfig from harness.yaml
 │   └── workflow_runner.py  # Executes YAML workflow state machines
 ├── system_skills/          # Built-in skills (evaluate_goal, delegate_task, etc.)
 └── system_prompts/         # SOUL.md — system prompt for the primary agent
@@ -139,6 +178,20 @@ GoalRunner.run(goal, app_state)
 - `EventStore` tests use temp-file SQLite — no mocking, real round-trips
 - `RecordingEventBus` (in `tests/helpers.py`) collects events in memory, no persistence — used in `test_goal_runner.py` to assert event sequences without disk I/O
 - Full integration: `GoalRunner` with real `EventBus` + `EventStore`, verifying typed event retrieval after completed goal loops
+
+### Agent Runtime
+
+The REPL and pipeline agent nodes use `PydanticAgentRuntime` (`core/pydantic_runtime.py`) to stream LLM responses with tool execution.
+
+**Streaming:** Uses `agent.iter()` (PydanticAI's full-graph iterator) instead of `agent.run_stream()`. `run_stream()` stops at the first text output matching the return type — when the model emits text before a tool call, that pre-tool text is treated as the "final output" and post-tool responses are lost. `agent.iter()` runs the complete graph (text → tool calls → more text) and text is streamed as diffs against previously-seen output.
+
+**Tool call cap:** Maximum 5 tool-call rounds per turn. If the model exceeds this (e.g. refining a web search query repeatedly), the loop breaks and a `[Tool call limit reached]` warning is surfaced. The cap prevents infinite search loops when API results are poor.
+
+**Tool result format:** Successful tool calls return raw content directly (no JSON wrapper). Failures are prefixed `[failed]`. The `needs_orchestrator_action` status still returns JSON with orchestration flags. This change lets the model read search results and other tool output without JSON parsing overhead.
+
+**End strategy:** `"early"` (PydanticAI default) — the agent stops as soon as a model response contains no tool calls. The previous `"exhaustive"` strategy caused excessive tool calling.
+
+**System prompt** (`system_prompts/SOUL.md`): Includes a tool use strategy — respond after results, stop after 2 tool calls maximum, do not retry failures, never call the same tool with the same arguments twice.
 
 ### The blackboard
 
@@ -335,7 +388,7 @@ nodes:
 
 ## Observability
 
-When `observability.logfire: true` is set in `harness.yaml` and `LOGFIRE_TOKEN` is exported, all EventBus events are forwarded to [Logfire](https://logfire.pydantic.dev) as structured log entries. PydanticAI's auto-instrumentation additionally traces every `Agent.run_sync` call inside agent nodes, giving a full span tree: pipeline → node → agent loop → skill calls.
+When `observability.logfire: true` is set in `harness.yaml` and `LOGFIRE_TOKEN` is provided (env var or `.env` file), all EventBus events are forwarded to [Logfire](https://logfire.pydantic.dev) as structured log entries. PydanticAI's auto-instrumentation additionally traces every `Agent.run_sync` call inside agent nodes, giving a full span tree: pipeline → node → agent loop → skill calls.
 
 ```yaml
 # harness.yaml
@@ -344,7 +397,10 @@ observability:
 ```
 
 ```bash
+# Option 1: export
 export LOGFIRE_TOKEN=<your-token>
+# Option 2: add to .env
+# LOGFIRE_TOKEN=<your-token>
 uv run harness-poc
 ```
 
@@ -381,7 +437,7 @@ states:
 
 ## Configuration
 
-`harness.yaml` at the repo root controls paths and runtime settings. The database is local to the repo (`harness_poc/blackboard.db`) and should not be committed.
+`harness.yaml` at the repo root controls paths, the LLM provider/model, and runtime settings. API keys are read from `.env` (or environment variables) via pydantic-settings. The database is local to the repo (`harness_poc/blackboard.db`) and should not be committed.
 
 ## Development
 
