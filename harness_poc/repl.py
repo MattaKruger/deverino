@@ -269,13 +269,22 @@ def _parse_pipeline_command(user_input: str) -> tuple[str, dict[str, str]]:
     parts = normalized.split(maxsplit=1)
     if len(parts) < MIN_PIPELINE_PARTS:
         return "", {}
-    pipeline_name = parts[1].split()[0]
-    raw_inputs = parts[1].split()[1:]
+    tokens = parts[1].split()
+    pipeline_name = tokens[0]
     inputs: dict[str, str] = {}
-    for item in raw_inputs:
-        if "=" in item:
-            key, _, value = item.partition("=")
-            inputs[key.strip()] = value.strip()
+    current_key: str | None = None
+    current_value_parts: list[str] = []
+    for token in tokens[1:]:
+        if "=" in token:
+            if current_key is not None:
+                inputs[current_key] = " ".join(current_value_parts)
+            key, _, value = token.partition("=")
+            current_key = key.strip()
+            current_value_parts = [value] if value else []
+        elif current_key is not None:
+            current_value_parts.append(token)
+    if current_key is not None:
+        inputs[current_key] = " ".join(current_value_parts)
     return pipeline_name, inputs
 
 
