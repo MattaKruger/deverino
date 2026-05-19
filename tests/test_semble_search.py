@@ -18,7 +18,7 @@ from skills.semble_search import skill as semble_skill
 if TYPE_CHECKING:
     import pytest
 
-EXPECTED_DEFAULT_TOP_K = 5
+EXPECTED_DEFAULT_TOP_K = 15
 EXPECTED_MAX_TOP_K = 50
 MIN_TOP_K = 1
 OVERSIZED_TOP_K = 100

@@ -119,7 +119,7 @@ class PydanticAgentRuntime:
         # post-tool text is lost.  agent.iter() runs the full agent graph
         # to completion, giving us all model responses including those
         # after tool calls.
-        max_consecutive_tool_rounds = 5
+        max_consecutive_tool_rounds = 10
 
         deps = replace(self.deps, stream_text=on_text, on_tool_event=on_tool_event)
         all_output_parts: list[str] = []
@@ -159,8 +159,8 @@ class PydanticAgentRuntime:
                         if delta:
                             on_text(delta)
                     else:
-                        # Text changed completely (rare — model revision)
-                        on_text(new_text)
+                        # New turn text (after tool calls, etc.) — separate from prior
+                        on_text("\n\n" + new_text)
                 seen_text = new_text
                 all_output_parts.append(new_text)
 

@@ -8,7 +8,7 @@ from typing import Any, Literal
 from harness_poc.core.skill_context import SkillContext, SkillResult
 
 SEARCH_MODES = {"hybrid", "semantic", "bm25"}
-DEFAULT_TOP_K = 5
+DEFAULT_TOP_K = 15
 DEFAULT_MODE = "hybrid"
 SEMBLE_TIMEOUT_SECONDS = 30
 SEMBLE_PROGRESS_INTERVAL_SECONDS = 10

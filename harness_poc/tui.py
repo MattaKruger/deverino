@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import itertools
 import logging
-from typing import TYPE_CHECKING
+import re
+import shutil
+import subprocess
+from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar
 
-from textual.app import App, ComposeResult
+from textual.app import App, Binding, ComposeResult
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Input, Markdown, Static
 
@@ -43,7 +48,30 @@ def _format_tokens(count: int) -> str:
     return str(count)
 
 
+_FILE_REF_PATTERN = re.compile(
+    r"\b([\w./-]+\.\w{1,10}):(\d+)(?:-(\d+))?\b"
+)
+
+
+def _linkify_file_refs(text: str, project_root: str) -> str:
+    """Convert ``path/file.py:123`` patterns into clickable Markdown links."""
+    def _replace(match: re.Match[str]) -> str:
+        rel = match.group(1)
+        line = match.group(2)
+        raw = match.group(0)
+        # Resolve the path against project root
+        candidate = Path(project_root) / rel.lstrip("/")
+        if not candidate.is_file():
+            return raw  # don't linkify non-existent paths
+        return f"[{raw}](file-line:{candidate}:{line})"
+    return _FILE_REF_PATTERN.sub(_replace, text)
+
+
 class ChatApp(App[None]):
+    BINDINGS: ClassVar[list] = [
+        Binding("super+c", "copy_smart", "Copy", priority=True, show=False),
+    ]
+
     DEFAULT_CSS = """
     #header {
         height: 1;
@@ -112,6 +140,30 @@ class ChatApp(App[None]):
         tokens = self._app_state.streaming.session_tokens
         token_part = f" · {_format_tokens(tokens)}" if tokens > 0 else ""
         self.query_one("#header", Static).update(f"{llm.provider} · {llm.model}{token_part}")
+
+    def action_copy_smart(self) -> None:
+        """Copy: prefer screen text selection, fall back to input field copy."""
+        selected = self.screen.get_selected_text()
+        if selected:
+            self.copy_to_clipboard(selected)
+        else:
+            with contextlib.suppress(Exception):
+                self.query_one("#input", Input).action_copy()
+
+    def on_markdown_link_clicked(self, event: Markdown.LinkClicked) -> None:
+        """Open ``file-line:`` links in Zed editor."""
+        href = event.href
+        if href.startswith("file-line:"):
+            path = href.removeprefix("file-line:")
+            editor = shutil.which("zed-preview") or shutil.which("zed") or "open"
+            if editor == "open":
+                subprocess.run(["open", path], check=False)  # noqa: S603, S607
+            else:
+                # zed supports file:line syntax: zed path:123
+                subprocess.run([editor, path], check=False)  # noqa: S603
+            return
+        # All other links (http, https, etc.) → default browser
+        self.open_url(event.href)
 
     def _start_spinner(self) -> None:
         spinner = self.query_one("#spinner", Static)
@@ -201,7 +253,8 @@ class ChatApp(App[None]):
                 # no streaming happened — add the label now
                 label = Static("[green]Agent:[/green]", classes="agent-label", markup=True)
                 await chat.mount(label)
-            await chat.mount(Markdown(response))
+            linkified = _linkify_file_refs(response, str(self._app_state.config.project_root))
+            await chat.mount(Markdown(linkified, open_links=False))
         self._stop_spinner()
         chat.scroll_end(animate=False)
         self._app_state.streaming.reset_callbacks()
@@ -210,7 +263,8 @@ class ChatApp(App[None]):
     def _tui_print_markdown(self, text: str) -> None:
         def _mount() -> None:
             chat = self.query_one("#chat", VerticalScroll)
-            chat.mount(Markdown(text))
+            linkified = _linkify_file_refs(text, str(self._app_state.config.project_root))
+            chat.mount(Markdown(linkified, open_links=False))
             chat.scroll_end(animate=False)
 
         self.call_from_thread(_mount)
