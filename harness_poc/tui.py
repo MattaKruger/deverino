@@ -7,6 +7,8 @@ import logging
 import re
 import shutil
 import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -204,14 +206,17 @@ class ChatApp(App[None]):
         chat.scroll_end(animate=False)
         self.run_worker(self._chat_worker(text, chat))
 
-    async def _chat_worker(self, text: str, chat: VerticalScroll) -> None:
+    async def _chat_worker(self, text: str, chat: VerticalScroll) -> None:  # noqa: PLR0915
         from harness_poc.repl import handle_repl_input  # noqa: PLC0415
 
         buffer: list[str] = []
         state: dict[str, Static | None] = {"widget": None}
 
-        def on_text_chunk(chunk: str) -> None:
-            buffer.append(chunk)
+        _last_flush: list[float] = [0.0]
+        _flush_lock = threading.Lock()
+        flush_interval = 0.033  # ~30 fps
+
+        def _flush_to_ui() -> None:
             current = "".join(buffer)
 
             def _update() -> None:
@@ -226,6 +231,14 @@ class ChatApp(App[None]):
                 chat.scroll_end(animate=False)
 
             self.call_from_thread(_update)
+
+        def on_text_chunk(chunk: str) -> None:
+            buffer.append(chunk)
+            now = time.monotonic()
+            with _flush_lock:
+                if now - _last_flush[0] >= flush_interval:
+                    _last_flush[0] = now
+                    _flush_to_ui()
 
         def on_tool_event(message: str) -> None:
             def _mount() -> None:
@@ -243,6 +256,10 @@ class ChatApp(App[None]):
             await loop.run_in_executor(None, handle_repl_input, self._app_state, text)
         except Exception:
             logger.exception("ChatApp worker raised", extra={"text": text})
+
+        # Flush any tokens buffered in the last throttle window
+        if buffer and state["widget"] is not None:
+            state["widget"].update("".join(buffer))
 
         # Replace live streaming Static with rendered Markdown
         response = "".join(buffer)
