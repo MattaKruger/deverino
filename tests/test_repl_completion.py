@@ -18,6 +18,8 @@ def test_slash_root_completion_includes_discovery_commands() -> None:
     assert "/skills" in completions
     assert "/workflows" in completions
     assert "/workflow" in completions
+    assert "/pipelines" in completions
+    assert "/pipeline" in completions
 
 
 def test_workflow_completion_uses_workflow_files() -> None:
@@ -63,6 +65,13 @@ class _FakeSkillRunner:
         ]
 
 
+class _FakePipelineRunner:
+    @staticmethod
+    def list_pipelines() -> list[str]:
+        return ["research_and_write"]
+
+
 class _FakeAppState:
     config = _FakeConfig(paths=_FakePaths(workflows=Path.cwd() / "workflows"))
     skill_runner = _FakeSkillRunner()
+    pipeline_runner = _FakePipelineRunner()

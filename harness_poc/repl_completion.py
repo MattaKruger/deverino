@@ -19,10 +19,14 @@ ROOT_COMMANDS = (
     "/quit",
     "/workflow",
     "/workflows",
+    "/pipeline",
+    "/pipelines",
     "/state",
     "/skill",
     "/skills",
     "workflow",
+    "pipeline",
+    "pipelines",
     "state",
     "skill",
     "exit",
@@ -50,12 +54,14 @@ SUBCOMMAND_TOKEN_COUNT = 2
 @dataclass(frozen=True, slots=True)
 class ReplCommandCatalog:
     workflows: tuple[str, ...]
+    pipelines: tuple[str, ...]
     skills: tuple[str, ...]
 
     @classmethod
     def from_app_state(cls, app_state: AppState) -> ReplCommandCatalog:
         return cls(
             workflows=tuple(_workflow_names(app_state)),
+            pipelines=tuple(app_state.pipeline_runner.list_pipelines()),
             skills=tuple(_skill_names(app_state)),
         )
 
@@ -81,6 +87,13 @@ class HarnessCompleter(Completer):
                 len(tokens) == SUBCOMMAND_TOKEN_COUNT and not text.endswith(" ")
             ):
                 yield from _word_completions(catalog.workflows, current)
+            return
+
+        if root == "pipeline":
+            if len(tokens) == ROOT_TOKEN_COUNT or (
+                len(tokens) == SUBCOMMAND_TOKEN_COUNT and not text.endswith(" ")
+            ):
+                yield from _word_completions(catalog.pipelines, current)
             return
 
         if root == "state":

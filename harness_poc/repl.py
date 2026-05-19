@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
 MIN_WORKFLOW_PARTS = 2
 WORKFLOW_OBJECTIVE_PARTS = 2
+MIN_PIPELINE_PARTS = 2
 TOKEN_MILLION = 1_000_000
 TOKEN_THOUSAND = 1_000
 
@@ -51,6 +52,7 @@ def run_repl(app_state: AppState) -> None:
     console.print(f"Started session: [cyan]{app_state.session_id}[/cyan]")
     console.print("Type 'exit' or 'quit' to stop.")
     console.print("Run an explicit workflow with: workflow research_task <objective>")
+    console.print("Run a pipeline with: pipeline <name> [key=value ...]")
     console.print("Run an autonomous goal loop with: /goal <objective>")
     console.print("Manage STATE with: state show | state note <text> | state propose")
     console.print("Manage skills with: skill list | skill create <name> <description>")
@@ -89,6 +91,14 @@ def handle_repl_input(app_state: AppState, user_input: str) -> None:  # noqa: PL
         handle_workflow_command(app_state, user_input)
         return
 
+    if _is_pipelines_command(user_input):
+        list_pipelines(app_state)
+        return
+
+    if _is_pipeline_command(user_input):
+        handle_pipeline_command(app_state, user_input)
+        return
+
     if _is_state_command(user_input):
         handle_state_command(app_state, user_input)
         return
@@ -116,6 +126,10 @@ def _is_workflows_command(user_input: str) -> bool:
     return user_input in {"/workflows", "workflows"}
 
 
+def _is_pipelines_command(user_input: str) -> bool:
+    return user_input in {"/pipelines", "pipelines"}
+
+
 def _is_skills_command(user_input: str) -> bool:
     return user_input in {"/skills", "skills"}
 
@@ -126,6 +140,8 @@ def print_repl_help() -> None:
   /goal <objective>
   /workflow <name> <objective>
   /workflows
+  /pipeline <name> [key=value ...]
+  /pipelines
   /state show [project|session|all]
   /state note <text>
   /state consolidate [preview|propose|approve]
@@ -173,6 +189,51 @@ def handle_workflow_command(app_state: AppState, user_input: str) -> None:
     run_workflow(app_state, workflow_name, objective)
 
 
+def list_pipelines(app_state: AppState) -> None:
+    names = app_state.pipeline_runner.list_pipelines()
+    if not names:
+        console.print("[dim]No pipelines found.[/dim]")
+        return
+    for name in names:
+        console.print(f"  {name}")
+
+
+def run_pipeline(app_state: AppState, pipeline_name: str, inputs: dict[str, str]) -> bool:
+    if not pipeline_name:
+        console.print("Usage: pipeline <name> [key=value ...]")
+        return False
+    try:
+        result = app_state.pipeline_runner.run(pipeline_name, inputs, app_state)
+    except FileNotFoundError as exc:
+        print_error(str(exc))
+        return False
+    except (OSError, KeyError, RuntimeError, TypeError, ValueError, yaml.YAMLError) as exc:
+        print_error(f"Pipeline failed: {exc}")
+        return False
+
+    status_color = "green" if result.status == "completed" else "red"
+    console.print(
+        f"\n[{status_color}]Pipeline '{pipeline_name}': {result.status}[/{status_color}]"
+        f" ({result.duration_s:.1f}s)\n"
+    )
+    for node_id, node_result in result.node_results.items():
+        node_color = {"completed": "green", "failed": "red", "skipped": "yellow"}.get(
+            node_result.status, "white"
+        )
+        console.print(f"  [{node_color}]{node_id}: {node_result.status}[/{node_color}]")
+        if node_result.output:
+            console.print(f"    {node_result.output[:300]}")
+
+    summary = f"Pipeline '{pipeline_name}' {result.status}."
+    app_state.messages.append({"role": "assistant", "content": summary})
+    return result.status == "completed"
+
+
+def handle_pipeline_command(app_state: AppState, user_input: str) -> None:
+    pipeline_name, inputs = _parse_pipeline_command(user_input)
+    run_pipeline(app_state, pipeline_name, inputs)
+
+
 def handle_chat_input(app_state: AppState, user_input: str) -> None:
     app_state.messages.append({"role": "user", "content": user_input})
 
@@ -197,6 +258,25 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
 
 def _is_workflow_command(user_input: str) -> bool:
     return user_input.startswith(("workflow ", "/workflow "))
+
+
+def _is_pipeline_command(user_input: str) -> bool:
+    return user_input.startswith(("pipeline ", "/pipeline "))
+
+
+def _parse_pipeline_command(user_input: str) -> tuple[str, dict[str, str]]:
+    normalized = user_input.removeprefix("/").strip()
+    parts = normalized.split(maxsplit=1)
+    if len(parts) < MIN_PIPELINE_PARTS:
+        return "", {}
+    pipeline_name = parts[1].split()[0]
+    raw_inputs = parts[1].split()[1:]
+    inputs: dict[str, str] = {}
+    for item in raw_inputs:
+        if "=" in item:
+            key, _, value = item.partition("=")
+            inputs[key.strip()] = value.strip()
+    return pipeline_name, inputs
 
 
 def _parse_workflow_command(user_input: str) -> tuple[str, str]:
