@@ -135,14 +135,8 @@ class BlackboardDatabase:
             )
         return session_id
 
-    def write_memory(
-        self, session_id: str, key: str, payload: str | dict[str, Any]
-    ) -> None:
-        data_payload = (
-            json.dumps(payload, sort_keys=True)
-            if isinstance(payload, dict)
-            else payload
-        )
+    def write_memory(self, session_id: str, key: str, payload: str | dict[str, Any]) -> None:
+        data_payload = json.dumps(payload, sort_keys=True) if isinstance(payload, dict) else payload
         created_at = self._utc_now()
         with self._connect() as connection:
             connection.execute("PRAGMA foreign_keys = ON")
@@ -154,9 +148,7 @@ class BlackboardDatabase:
                 (session_id, key, data_payload, created_at),
             )
 
-    def read_memory(
-        self, session_id: str, key: str
-    ) -> dict[str, Any] | str | None:
+    def read_memory(self, session_id: str, key: str) -> dict[str, Any] | str | None:
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -211,9 +203,7 @@ class BlackboardDatabase:
             )
         return empty_state
 
-    def read_project_state(
-        self, project_id: str = "default"
-    ) -> StatePayload | None:
+    def read_project_state(self, project_id: str = "default") -> StatePayload | None:
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -299,9 +289,7 @@ class BlackboardDatabase:
         if session_state.is_empty():
             msg = "Session state is empty; nothing to propose"
             raise ValueError(msg)
-        proposal = StateProposal.create(
-            session_id=session_id, payload=session_state
-        )
+        proposal = StateProposal.create(session_id=session_id, payload=session_state)
         now = self._utc_now()
         with self._connect() as connection:
             connection.execute("PRAGMA foreign_keys = ON")
@@ -334,9 +322,7 @@ class BlackboardDatabase:
                     "session",
                     session_id,
                     "proposal_created",
-                    json.dumps(
-                        {"proposal_id": proposal.proposal_id}, sort_keys=True
-                    ),
+                    json.dumps({"proposal_id": proposal.proposal_id}, sort_keys=True),
                     now,
                 ),
             )
@@ -376,9 +362,7 @@ class BlackboardDatabase:
             raise ValueError(msg)
 
         current_project_state = self.ensure_project_state(project_id)
-        next_project_state = current_project_state.append_payload(
-            proposal.payload
-        )
+        next_project_state = current_project_state.append_payload(proposal.payload)
         now = self._utc_now()
         with self._connect() as connection:
             connection.execute("PRAGMA foreign_keys = ON")
@@ -427,9 +411,7 @@ class BlackboardDatabase:
             )
         return next_project_state
 
-    def approve_latest_proposal(
-        self, project_id: str = "default"
-    ) -> StatePayload:
+    def approve_latest_proposal(self, project_id: str = "default") -> StatePayload:
         with self._connect() as connection:
             cursor = connection.execute(
                 """

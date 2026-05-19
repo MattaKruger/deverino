@@ -91,9 +91,7 @@ def test_summarize_memory_builds_messages_with_json_payload() -> None:
 def test_summarize_memory_builds_messages_with_string_payload() -> None:
     from skills.summarize_memory.skill import _build_messages
 
-    messages = _build_messages(
-        memory_key="test_key", payload="just a string payload"
-    )
+    messages = _build_messages(memory_key="test_key", payload="just a string payload")
     assert "just a string payload" in messages[1]["content"]
 
 

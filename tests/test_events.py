@@ -30,10 +30,21 @@ def test_base_event_auto_generates_unique_ids() -> None:
 
 def test_event_registry_covers_all_concrete_types() -> None:
     expected = {
-        "AgentStarted", "SkillCalled", "SkillRequested", "SkillCompleted",
-        "AgentInputAdded", "LLMActionEmitted", "StreamPaused", "GoalEvaluated",
-        "LLMTextEmitted", "SubAgentDispatched", "SubAgentCompleted", "PipelineStarted",
-        "PipelineNodeStarted", "PipelineNodeCompleted", "PipelineCompleted",
+        "AgentStarted",
+        "SkillCalled",
+        "SkillRequested",
+        "SkillCompleted",
+        "AgentInputAdded",
+        "LLMActionEmitted",
+        "StreamPaused",
+        "GoalEvaluated",
+        "LLMTextEmitted",
+        "SubAgentDispatched",
+        "SubAgentCompleted",
+        "PipelineStarted",
+        "PipelineNodeStarted",
+        "PipelineNodeCompleted",
+        "PipelineCompleted",
     }
     assert set(EVENT_REGISTRY.keys()) == expected
 
@@ -122,7 +133,10 @@ def test_pipeline_completed_roundtrip() -> None:
 
 def test_pipeline_events_in_registry() -> None:
     pipeline_event_names = (
-        "PipelineStarted", "PipelineNodeStarted", "PipelineNodeCompleted", "PipelineCompleted"
+        "PipelineStarted",
+        "PipelineNodeStarted",
+        "PipelineNodeCompleted",
+        "PipelineCompleted",
     )
     for name in pipeline_event_names:
         assert name in EVENT_REGISTRY

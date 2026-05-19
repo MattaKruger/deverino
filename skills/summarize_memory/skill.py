@@ -47,13 +47,9 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     )
 
 
-def _build_messages(
-    *, memory_key: str, payload: dict[str, Any] | str
-) -> list[Message]:
+def _build_messages(*, memory_key: str, payload: dict[str, Any] | str) -> list[Message]:
     payload_text = (
-        json.dumps(payload, indent=2, sort_keys=True)
-        if isinstance(payload, dict)
-        else payload
+        json.dumps(payload, indent=2, sort_keys=True) if isinstance(payload, dict) else payload
     )
     return [
         {

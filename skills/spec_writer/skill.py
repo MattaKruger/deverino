@@ -51,9 +51,7 @@ class GatherState:
     xml_context: str = ""
 
 
-def _load_gather_state(
-    ctx: SkillContext, gather_key: str
-) -> GatherState | None:
+def _load_gather_state(ctx: SkillContext, gather_key: str) -> GatherState | None:
     payload = ctx.database.read_memory(ctx.session_id, gather_key)
     if not isinstance(payload, dict):
         return None
@@ -69,9 +67,7 @@ def _load_gather_state(
     )
 
 
-def _save_gather_state(
-    ctx: SkillContext, gather_key: str, state: GatherState
-) -> None:
+def _save_gather_state(ctx: SkillContext, gather_key: str, state: GatherState) -> None:
     ctx.database.write_memory(
         ctx.session_id,
         gather_key,
@@ -291,9 +287,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             artifacts={"questions": questions, "mode": inputs.mode},
         )
 
-    previous_spec = (
-        _previous_spec(ctx, inputs) if inputs.mode == "refine" else ""
-    )
+    previous_spec = _previous_spec(ctx, inputs) if inputs.mode == "refine" else ""
     if inputs.mode == "refine" and not previous_spec:
         return SkillResult(
             status="blocked",
@@ -379,17 +373,13 @@ def _bool_value(value: object) -> bool:
 def _clarifying_questions(inputs: SpecInputs) -> list[str]:
     questions: list[str] = []
     if not inputs.goal:
-        questions.append(
-            "What feature, change, or behavior should this spec cover?"
-        )
+        questions.append("What feature, change, or behavior should this spec cover?")
     if not inputs.context:
         questions.append(
             "What existing behavior, code area, or user workflow should the spec account for?"
         )
     if not inputs.requirements:
-        questions.append(
-            "What must be true for the implementation to be accepted?"
-        )
+        questions.append("What must be true for the implementation to be accepted?")
     return questions[:MAX_QUESTIONS]
 
 
@@ -406,9 +396,7 @@ def _questions_result(questions: list[str]) -> SkillResult:
 
 def _format_questions(questions: list[str]) -> str:
     lines = ["## Clarifying Questions", ""]
-    lines.extend(
-        f"{index}. {question}" for index, question in enumerate(questions, 1)
-    )
+    lines.extend(f"{index}. {question}" for index, question in enumerate(questions, 1))
     return "\n".join(lines)
 
 
@@ -494,9 +482,7 @@ def _llm_messages(inputs: SpecInputs, previous_spec: str) -> list[Message]:
 
 
 def _is_valid_spec(spec: str) -> bool:
-    return bool(spec.startswith("# ")) and all(
-        heading in spec for heading in SPEC_HEADINGS
-    )
+    return bool(spec.startswith("# ")) and all(heading in spec for heading in SPEC_HEADINGS)
 
 
 def _deterministic_spec(inputs: SpecInputs, previous_spec: str) -> str:
@@ -509,17 +495,13 @@ def _deterministic_spec(inputs: SpecInputs, previous_spec: str) -> str:
         inputs.constraints,
         "Follow existing project patterns and keep the change narrowly scoped.",
     )
-    non_goals = _lines_or_default(
-        inputs.non_goals, "No explicit non-goals provided."
-    )
+    non_goals = _lines_or_default(inputs.non_goals, "No explicit non-goals provided.")
     open_questions = _lines_or_default(
         inputs.open_questions,
         "No open questions recorded.",
     )
     refinement_note = (
-        f"\n\nPrevious draft considered:\n\n{previous_spec.strip()}"
-        if previous_spec
-        else ""
+        f"\n\nPrevious draft considered:\n\n{previous_spec.strip()}" if previous_spec else ""
     )
 
     return "\n".join(

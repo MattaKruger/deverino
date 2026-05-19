@@ -28,7 +28,9 @@ class EventBus:
     def __init__(self, event_store: EventStore) -> None:
         self._store: EventStore = event_store
         self._queue: asyncio.Queue[BaseEvent] = asyncio.Queue()
-        self._handlers: dict[str, list[Callable[[Any], None]]] = defaultdict(list)
+        self._handlers: dict[str, list[Callable[[Any], None]]] = defaultdict(
+            list
+        )
         self._async_subscribers: list[asyncio.Queue[BaseEvent]] = []
 
     def publish(self, event: BaseEvent) -> _Published:
@@ -41,7 +43,9 @@ class EventBus:
         self._dispatch(event)
 
     @overload
-    def subscribe(self, event_type: type[E], handler: Callable[[E], None]) -> None: ...
+    def subscribe(
+        self, event_type: type[E], handler: Callable[[E], None]
+    ) -> None: ...
 
     @overload
     def subscribe(self, session_id: str) -> AsyncGenerator[BaseEvent, None]: ...
@@ -64,7 +68,9 @@ class EventBus:
 
         return self._subscribe_session(event_type_or_session_id)
 
-    def subscribe_session(self, session_id: str) -> AsyncGenerator[BaseEvent, None]:
+    def subscribe_session(
+        self, session_id: str
+    ) -> AsyncGenerator[BaseEvent, None]:
         return self._subscribe_session(session_id)
 
     def get_recent_events(
@@ -88,7 +94,9 @@ class EventBus:
             try:
                 handler(event)
             except Exception:
-                logger.exception("Event handler raised for %s", event.event_type)
+                logger.exception(
+                    "Event handler raised for %s", event.event_type
+                )
 
     async def _subscribe_session(
         self,

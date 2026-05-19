@@ -6,7 +6,7 @@ from harness_poc.core.permissions import SkillPermissions
 
 if TYPE_CHECKING:
     from harness_poc.core.database import BlackboardDatabase
-    from harness_poc.core.state import StatePayload, StateProposal, StateSection
+    from harness_poc.core.state import StatePayload, StateProposal
 
 
 class BlackboardAccessProxy:
@@ -22,7 +22,9 @@ class BlackboardAccessProxy:
     it must be mirrored here (or the skill will get a raw ``AttributeError``).
     """
 
-    def __init__(self, db: BlackboardDatabase, permissions: SkillPermissions) -> None:
+    def __init__(
+        self, db: BlackboardDatabase, permissions: SkillPermissions
+    ) -> None:
         self._db = db
         self._permissions = permissions
 
@@ -44,7 +46,9 @@ class BlackboardAccessProxy:
 
     # ---- read methods (allowed with "read" or "read_write") ----
 
-    def read_memory(self, session_id: str, key: str) -> dict[str, Any] | str | None:
+    def read_memory(
+        self, session_id: str, key: str
+    ) -> dict[str, Any] | str | None:
         self._require_read()
         return self._db.read_memory(session_id, key)
 

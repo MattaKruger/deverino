@@ -63,13 +63,9 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     )
 
 
-def _build_reviewer_messages(
-    *, objective: str, payload: dict[str, Any] | str
-) -> list[Message]:
+def _build_reviewer_messages(*, objective: str, payload: dict[str, Any] | str) -> list[Message]:
     payload_text = (
-        json.dumps(payload, indent=2, sort_keys=True)
-        if isinstance(payload, dict)
-        else payload
+        json.dumps(payload, indent=2, sort_keys=True) if isinstance(payload, dict) else payload
     )
     return [
         {
@@ -140,9 +136,7 @@ def _strip_json_fence(content: str) -> str:
     if not stripped.startswith("```"):
         return stripped
     lines = stripped.splitlines()
-    if len(lines) < MIN_FENCED_JSON_LINES or not lines[-1].strip().startswith(
-        "```"
-    ):
+    if len(lines) < MIN_FENCED_JSON_LINES or not lines[-1].strip().startswith("```"):
         return stripped
     return "\n".join(lines[1:-1]).strip()
 

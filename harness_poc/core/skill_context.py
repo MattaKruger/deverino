@@ -9,12 +9,14 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
     from harness_poc.core.config import HarnessConfig
     from harness_poc.core.database import BlackboardDatabase
-    from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 
 
-SkillStatus = Literal["success", "failed", "blocked", "needs_orchestrator_action"]
+SkillStatus = Literal[
+    "success", "failed", "blocked", "needs_orchestrator_action"
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +84,9 @@ class SkillContext:
                 f"Skill '{self.skill_name}' has workspace="
                 f"{self.permissions.workspace!r} — cannot write files."
             )
-        scratch = self.config.project_root / ".deverino-scratch" / self.session_id
+        scratch = (
+            self.config.project_root / ".deverino-scratch" / self.session_id
+        )
         scratch.mkdir(parents=True, exist_ok=True)
         return scratch
 

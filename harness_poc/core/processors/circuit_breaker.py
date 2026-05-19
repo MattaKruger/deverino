@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from harness_poc.core.events import LLMActionEmitted, SkillCompleted, StreamPaused
+from harness_poc.core.events import (
+    LLMActionEmitted,
+    SkillCompleted,
+    StreamPaused,
+)
 
 if TYPE_CHECKING:
     from harness_poc.core.event_bus import EventBus

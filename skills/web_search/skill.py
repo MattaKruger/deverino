@@ -123,9 +123,7 @@ def _search_langsearch(
     response.raise_for_status()
     body: dict[str, Any] = response.json()
 
-    raw_results: list[dict[str, Any]] = (
-        body.get("data", {}).get("webPages", {}).get("value", [])
-    )
+    raw_results: list[dict[str, Any]] = body.get("data", {}).get("webPages", {}).get("value", [])
     return [
         {
             "title": str(r.get("name", "")),

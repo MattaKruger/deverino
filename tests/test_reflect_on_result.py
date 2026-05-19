@@ -98,9 +98,7 @@ def test_strip_json_fence_removes_markdown_wrapper() -> None:
     from skills.reflect_on_result.skill import _strip_json_fence
 
     assert _strip_json_fence('{"key": "value"}') == '{"key": "value"}'
-    assert (
-        _strip_json_fence('```json\n{"key": "value"}\n```') == '{"key": "value"}'
-    )
+    assert _strip_json_fence('```json\n{"key": "value"}\n```') == '{"key": "value"}'
     # Not wrapped in fences
     assert _strip_json_fence("plain text") == "plain text"
 
@@ -111,9 +109,7 @@ def test_parse_json_object_handles_valid_and_invalid() -> None:
     assert _parse_json_object('{"verdict": "pass"}') == {"verdict": "pass"}
     assert _parse_json_object("not json") == {}
     assert _parse_json_object("[1, 2, 3]") == {}  # list, not dict
-    assert _parse_json_object('```json\n{"verdict": "fail"}\n```') == {
-        "verdict": "fail"
-    }
+    assert _parse_json_object('```json\n{"verdict": "fail"}\n```') == {"verdict": "fail"}
 
 
 def test_normalize_reflection_sanitizes_verdict() -> None:

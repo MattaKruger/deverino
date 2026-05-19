@@ -34,9 +34,7 @@ def _mock_response_factory(
 ) -> Callable[[list[Message], list[dict[str, Any]] | None], LLMResponse]:
     """Return a callable that returns responses in sequence, then repeats the last."""
 
-    def _respond(
-        _messages: list[Message], _tools: list[dict[str, Any]] | None
-    ) -> LLMResponse:
+    def _respond(_messages: list[Message], _tools: list[dict[str, Any]] | None) -> LLMResponse:
         nonlocal responses
         if not responses:
             return LLMResponse(kind="text", content="No responses left.")
@@ -79,10 +77,7 @@ def _tool_call_response(name: str, arguments: dict[str, Any]) -> LLMResponse:
 
 
 def _make_app_state(
-    mock: (
-        Callable[[list[Message], list[dict[str, Any]] | None], LLMResponse]
-        | None
-    ) = None,
+    mock: (Callable[[list[Message], list[dict[str, Any]] | None], LLMResponse] | None) = None,
 ) -> AppState:
     """Build an AppState with an in-memory database and optional mock LLM."""
     state = build_app_state()
@@ -136,11 +131,7 @@ def _response_to_goal_action(response: LLMResponse) -> dict[str, Any]:
 def test_evaluate_goal_skill_registered() -> None:
     state = _make_app_state()
     tools = state.skill_runner.discover_skills()
-    names = {
-        tool["function"]["name"]
-        for tool in tools
-        if isinstance(tool.get("function"), dict)
-    }
+    names = {tool["function"]["name"] for tool in tools if isinstance(tool.get("function"), dict)}
     assert "evaluate_goal" in names
 
 
@@ -157,9 +148,7 @@ def test_evaluate_goal_stub_execute() -> None:
 
 def test_review_work_skill_executes() -> None:
     state = _make_app_state()
-    state.database.write_memory(
-        state.session_id, "candidate", {"summary": "ok"}
-    )
+    state.database.write_memory(state.session_id, "candidate", {"summary": "ok"})
 
     result = state.skill_runner.execute_skill(
         tool_name="review_work",
@@ -177,9 +166,7 @@ def test_review_work_skill_executes() -> None:
 
 
 def test_completes_on_evaluate_goal_true() -> None:
-    mock = _mock_response_factory(
-        [_evaluate_goal_response(True, "Task finished successfully.")]
-    )
+    mock = _mock_response_factory([_evaluate_goal_response(True, "Task finished successfully.")])
     state = _make_app_state(mock)
     runner = GoalRunner(max_iterations=10)
 
@@ -208,14 +195,10 @@ def test_completed_generation_goal_prefers_final_answer() -> None:
     assert result.content == "feat: migrate goal runner to pydantic-ai"
 
 
-def test_completed_generation_goal_uses_latest_artifact_for_meta_reasoning() -> (
-    None
-):
+def test_completed_generation_goal_uses_latest_artifact_for_meta_reasoning() -> None:
     mock = _mock_response_factory(
         [
-            _tool_call_response(
-                "read_memory", {"memory_key": "commit_message"}
-            ),
+            _tool_call_response("read_memory", {"memory_key": "commit_message"}),
             _evaluate_goal_response(
                 True,
                 "The delegate_task skill returned a comprehensive commit message.",
@@ -272,9 +255,7 @@ def test_text_response_without_tool_call() -> None:
 
 def test_iteration_budget_exhausted() -> None:
     """Loop should stop when max_iterations is reached."""
-    mock = _mock_response_factory(
-        [_evaluate_goal_response(False, "Still working...")]
-    )
+    mock = _mock_response_factory([_evaluate_goal_response(False, "Still working...")])
     state = _make_app_state(mock)
     runner = GoalRunner(max_iterations=3)
 
@@ -285,9 +266,7 @@ def test_iteration_budget_exhausted() -> None:
 
 def test_token_budget_exhausted() -> None:
     """Loop should stop when token budget is exceeded."""
-    mock = _mock_response_factory(
-        [_evaluate_goal_response(False, "Working...")]
-    )
+    mock = _mock_response_factory([_evaluate_goal_response(False, "Working...")])
     state = _make_app_state(mock)
     # Set a very low token budget — the system prompt alone is >200 tokens
     runner = GoalRunner(max_iterations=50, max_tokens=100)
@@ -299,20 +278,14 @@ def test_token_budget_exhausted() -> None:
 
 def test_stuck_detection_blocks_fourth_identical_action() -> None:
     """Identical (tool, args) 4 times in a row should trigger stuck detection."""
-    mock = _mock_response_factory(
-        [_tool_call_response("read_memory", {"memory_key": "x"})]
-    )
+    mock = _mock_response_factory([_tool_call_response("read_memory", {"memory_key": "x"})])
     state = _make_app_state(mock)
     runner = GoalRunner(max_iterations=10, stuck_threshold=3)
 
     result = runner.run("Test goal", state)
     assert result.status == "budget_exhausted"
     events = state.event_bus.get_recent_events(state.session_id)
-    blocked = [
-        e
-        for e in events
-        if isinstance(e, SkillCompleted) and e.status == "blocked"
-    ]
+    blocked = [e for e in events if isinstance(e, SkillCompleted) and e.status == "blocked"]
     assert len(blocked) >= 1
 
 
@@ -330,11 +303,7 @@ def test_skill_execution_error_handled() -> None:
     result = runner.run("Test goal", state)
     assert result.status == "completed"
     events = state.event_bus.get_recent_events(state.session_id)
-    errors = [
-        e
-        for e in events
-        if isinstance(e, SkillCompleted) and e.status == "error"
-    ]
+    errors = [e for e in events if isinstance(e, SkillCompleted) and e.status == "error"]
     assert len(errors) >= 1
 
 
@@ -395,9 +364,7 @@ def test_count_tokens_scales_with_length() -> None:
 def test_goal_cli_command_help() -> None:
     result = runner.invoke(app, ["goal", "--help"])
     assert result.exit_code == 0
-    assert (
-        "autonomous ReAct" in result.output.lower() or "goal" in result.output
-    )
+    assert "autonomous ReAct" in result.output.lower() or "goal" in result.output
 
 
 def test_goal_cli_executes_with_mock(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -406,8 +373,6 @@ def test_goal_cli_executes_with_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     state = _make_app_state(mock)
     monkeypatch.setattr("harness_poc.cli.build_app_state", lambda: state)
 
-    result = runner.invoke(
-        app, ["goal", "test objective", "--max-iterations", "1"]
-    )
+    result = runner.invoke(app, ["goal", "test objective", "--max-iterations", "1"])
     assert result.exit_code == 0
     assert "Status:" in result.output

@@ -73,8 +73,7 @@ def _event_to_message(event: BaseEvent) -> Message | None:
         return {
             "role": "assistant",
             "content": (
-                f"[Action] Called {event.tool_name}"
-                f"({json.dumps(event.arguments, sort_keys=True)})"
+                f"[Action] Called {event.tool_name}({json.dumps(event.arguments, sort_keys=True)})"
             ),
         }
     if isinstance(event, SkillCompleted):

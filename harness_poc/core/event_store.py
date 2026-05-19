@@ -71,11 +71,7 @@ class EventStore:
         limit: int = 20,
         event_types: list[type[BaseEvent]] | None = None,
     ) -> list[BaseEvent]:
-        type_names = (
-            [t.__name__ for t in event_types]
-            if event_types is not None
-            else None
-        )
+        type_names = [t.__name__ for t in event_types] if event_types is not None else None
         with self._connect() as conn:
             if type_names:
                 placeholders = ",".join("?" * len(type_names))

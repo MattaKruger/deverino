@@ -48,10 +48,9 @@ def test_direct_workflow_invocation_dispatches_without_tui_cli(
 
     monkeypatch.setattr(
         "harness_poc.repl.run_workflow",
-        lambda _app_state, workflow_name, objective: calls.update(
-            {"workflow": workflow_name, "objective": objective}
-        )
-        or True,
+        lambda _app_state, workflow_name, objective: (
+            calls.update({"workflow": workflow_name, "objective": objective}) or True
+        ),
     )
     monkeypatch.setattr(
         "harness_poc.repl.handle_chat_input",
@@ -72,10 +71,9 @@ def test_direct_pipeline_invocation_dispatches_without_chat(
 
     monkeypatch.setattr(
         "harness_poc.repl.run_pipeline",
-        lambda _app_state, pipeline_name, inputs: calls.update(
-            {"pipeline": pipeline_name, "inputs": inputs}
-        )
-        or True,
+        lambda _app_state, pipeline_name, inputs: (
+            calls.update({"pipeline": pipeline_name, "inputs": inputs}) or True
+        ),
     )
     monkeypatch.setattr(
         "harness_poc.repl.handle_chat_input",

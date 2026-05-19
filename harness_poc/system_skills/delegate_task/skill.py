@@ -22,15 +22,11 @@ class DelegatedTaskOutput(BaseModel):
     artifacts: dict[str, Any] = Field(default_factory=dict)
 
 
-DelegatedTaskOutput.model_rebuild(
-    _types_namespace={"Any": Any, "Literal": Literal}
-)
+DelegatedTaskOutput.model_rebuild(_types_namespace={"Any": Any, "Literal": Literal})
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
-    persona = str(
-        arguments.get("persona") or arguments.get("template_name") or ""
-    )
+    persona = str(arguments.get("persona") or arguments.get("template_name") or "")
     objective = str(arguments.get("objective") or "")
     memory_key = str(arguments.get("memory_key") or f"{persona}_result")
     context = str(arguments.get("context") or "")
@@ -65,9 +61,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     ctx.database.write_memory(ctx.session_id, memory_key, result)
 
     return SkillResult(
-        status="success"
-        if output.status not in {"failed", "blocked"}
-        else "failed",
+        status="success" if output.status not in {"failed", "blocked"} else "failed",
         content=json.dumps(result, indent=2, sort_keys=True),
         artifacts={
             "memory_key": memory_key,
@@ -104,9 +98,7 @@ def _run_subagent(  # noqa: PLR0913
 
     return cast(
         "DelegatedTaskOutput",
-        agent.run_sync(
-            _build_subagent_prompt(objective=objective, context=context)
-        ).output,
+        agent.run_sync(_build_subagent_prompt(objective=objective, context=context)).output,
     )
 
 

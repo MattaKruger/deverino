@@ -25,7 +25,9 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 
     if not command:
         logger.error("Container exec missing command")
-        return SkillResult(status="failed", content="container_exec requires a command")
+        return SkillResult(
+            status="failed", content="container_exec requires a command"
+        )
     if not container:
         logger.error("Container exec missing container")
         return SkillResult(
@@ -75,7 +77,11 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     except subprocess.TimeoutExpired:
         logger.exception(
             "Container exec timed out",
-            extra={"backend": backend, "container": container, "command": command},
+            extra={
+                "backend": backend,
+                "container": container,
+                "command": command,
+            },
         )
         return SkillResult(
             status="failed",
@@ -89,7 +95,11 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     except OSError as exc:
         logger.exception(
             "Container runtime invocation failed",
-            extra={"backend": backend, "container": container, "command": command},
+            extra={
+                "backend": backend,
+                "container": container,
+                "command": command,
+            },
         )
         return SkillResult(
             status="failed",
@@ -110,7 +120,11 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     if result.returncode == 0:
         logger.debug(
             "Container exec completed",
-            extra={"backend": backend, "container": container, "command": command},
+            extra={
+                "backend": backend,
+                "container": container,
+                "command": command,
+            },
         )
     else:
         logger.error(

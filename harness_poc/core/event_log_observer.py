@@ -121,7 +121,9 @@ def render_event_log_row(
     json_output: bool = False,
 ) -> str:
     if json_output:
-        return json.dumps(_row_to_dict(row, include_payload=True), sort_keys=True)
+        return json.dumps(
+            _row_to_dict(row, include_payload=True), sort_keys=True
+        )
 
     summary = _event_summary(row).strip()
     line = f"{row.id:06d} {row.created_at} {row.session_id} {row.event_type}"
@@ -135,7 +137,9 @@ def render_event_log_row(
         indent=2,
         sort_keys=True,
     )
-    payload_lines = "\n".join(f"    {payload_line}" for payload_line in payload.splitlines())
+    payload_lines = "\n".join(
+        f"    {payload_line}" for payload_line in payload.splitlines()
+    )
     header_lines = [
         f"{row.id:06d} {row.event_type}",
         f"  created_at: {row.created_at}",
@@ -170,7 +174,9 @@ def _decode_json_object(raw: str) -> dict[str, Any]:
 def _event_summary(row: EventLogRow) -> str:
     payload = row.payload
     if row.event_type == "AgentInputAdded":
-        return _format_fields(user_content=_truncate(str(payload.get("user_content", ""))))
+        return _format_fields(
+            user_content=_truncate(str(payload.get("user_content", "")))
+        )
     if row.event_type in {"SkillCalled", "SkillRequested", "SkillCompleted"}:
         skill_name = payload.get("skill_name") or payload.get("tool_name") or ""
         status = str(payload.get("status", ""))
@@ -181,7 +187,9 @@ def _event_summary(row: EventLogRow) -> str:
             tokens=str(payload.get("tokens_used", "")),
         )
     if row.event_type == "LLMTextEmitted":
-        return _format_fields(content=_truncate(str(payload.get("content", ""))))
+        return _format_fields(
+            content=_truncate(str(payload.get("content", "")))
+        )
     if row.event_type == "StreamPaused":
         return _format_fields(
             reason=str(payload.get("reason", "")),

@@ -133,9 +133,7 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
-        llm=LLMConfig(
-            provider="deepseek", model="deepseek-v4-flash", base_url=None
-        ),
+        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
     )
 
 
@@ -267,9 +265,7 @@ def test_apply_answer_project_overview_advances_to_feature_request() -> None:
     from skills.spec_writer.skill import GatherState, _apply_answer_and_advance
 
     state = GatherState(phase="awaiting_project_overview")
-    result = _apply_answer_and_advance(
-        state, "A Python harness for LLM agents."
-    )
+    result = _apply_answer_and_advance(state, "A Python harness for LLM agents.")
     assert result.phase == "awaiting_feature_request"
     assert result.project_overview == "A Python harness for LLM agents."
 
@@ -277,9 +273,7 @@ def test_apply_answer_project_overview_advances_to_feature_request() -> None:
 def test_apply_answer_feature_request_advances_to_components_list() -> None:
     from skills.spec_writer.skill import GatherState, _apply_answer_and_advance
 
-    state = GatherState(
-        phase="awaiting_feature_request", project_overview="..."
-    )
+    state = GatherState(phase="awaiting_feature_request", project_overview="...")
     result = _apply_answer_and_advance(state, "Add an autonomous goal loop.")
     assert result.phase == "awaiting_components_list"
     assert result.feature_request == "Add an autonomous goal loop."
@@ -319,9 +313,7 @@ def test_apply_answer_last_component_detail_advances_to_constraints() -> None:
     )
     result = _apply_answer_and_advance(state, "Acts as the exit mechanism.")
     assert result.phase == "awaiting_constraints"
-    assert (
-        result.component_details["EvalSkill"] == "Acts as the exit mechanism."
-    )
+    assert result.component_details["EvalSkill"] == "Acts as the exit mechanism."
 
 
 def test_apply_answer_constraints_advances_to_complete() -> None:
@@ -431,12 +423,8 @@ def test_gather_full_flow_produces_xml(tmp_path: Path) -> None:
 
     call()  # ask project overview
     call("A Python LLM harness.")  # answer project overview → feature_request
-    call(
-        "Add an autonomous goal loop."
-    )  # answer feature request → components_list
-    call(
-        "GoalRunner, EvalSkill"
-    )  # answer components list → component_detail[0]
+    call("Add an autonomous goal loop.")  # answer feature request → components_list
+    call("GoalRunner, EvalSkill")  # answer components list → component_detail[0]
     call("Manages the while loop.")  # answer GoalRunner → component_detail[1]
     result = call("Acts as exit mechanism.")  # answer EvalSkill → constraints
     assert result.artifacts["phase"] == "awaiting_constraints"
