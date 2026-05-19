@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from harness_poc.core.config import HarnessConfig, HarnessPaths, RuntimeConfig
+from harness_poc.core.config import HarnessConfig, HarnessPaths, ObservabilityConfig, RuntimeConfig
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.skill_runner import SkillRunner
 from harness_poc.repl import _parse_skill_arguments, is_skill_name
@@ -61,10 +61,12 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             system_skills=project_root / "harness_poc/system_skills",
             project_skills=project_root / "skills",
             workflows=project_root / "workflows",
+            pipelines=project_root / "pipelines",
             personas=project_root / "personas",
         ),
         runtime=RuntimeConfig(
             database_path=tmp_path / "blackboard.db",
             default_container_image="python:3.12-slim",
         ),
+        observability=ObservabilityConfig(logfire_enabled=False),
     )

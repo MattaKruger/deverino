@@ -16,6 +16,7 @@ from harness_poc.core.pydantic_runtime import (
     PydanticAgentRuntime,
     build_runtime,
 )
+from harness_poc.core.pipeline_runner import PipelineRunner
 from harness_poc.core.skill_runner import SkillRunner
 from harness_poc.core.skill_scaffolder import SkillScaffolder
 from harness_poc.core.state import build_state_context
@@ -46,6 +47,7 @@ class AppState:
     skill_runner: SkillRunner
     skill_scaffolder: SkillScaffolder
     workflow_runner: WorkflowRunner
+    pipeline_runner: PipelineRunner
     llm_client: LLMClient
     pydantic_runtime: PydanticAgentRuntime
     pydantic_messages: list[ModelMessage]
@@ -66,6 +68,7 @@ def build_app_state() -> AppState:
     session_state = database.ensure_session_state(session_id)
     skill_runner = SkillRunner(database=database, config=config)
     workflow_runner = WorkflowRunner(skill_runner)
+    pipeline_runner = PipelineRunner(config.paths.pipelines)
     messages: list[Message] = [
         {
             "role": "system",
@@ -87,6 +90,12 @@ def build_app_state() -> AppState:
     event_store = EventStore(config.runtime.database_path)
     event_bus = EventBus(event_store)
 
+    if config.observability.logfire_enabled:
+        from harness_poc.core.logfire_subscriber import configure_logfire, wire_logfire
+
+        configure_logfire()
+        wire_logfire(event_bus)
+
     return AppState(
         session_id=session_id,
         database=database,
@@ -94,6 +103,7 @@ def build_app_state() -> AppState:
         skill_runner=skill_runner,
         skill_scaffolder=SkillScaffolder(config),
         workflow_runner=workflow_runner,
+        pipeline_runner=pipeline_runner,
         llm_client=LLMClient(),
         pydantic_runtime=build_runtime(
             session_id=session_id,
