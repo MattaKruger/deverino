@@ -57,7 +57,10 @@ def build_waves(nodes: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
         ready = {
             nid
             for nid in remaining
-            if all(dep not in remaining for dep in node_map[nid].get("depends_on", []))
+            if all(
+                dep not in remaining
+                for dep in node_map[nid].get("depends_on", [])
+            )
         }
         if not ready:
             msg = f"Circular dependency detected among nodes: {remaining}"
@@ -102,7 +105,9 @@ class PipelineRunner:
         for wave in waves:
             ready = []
             for node in wave:
-                blocked = any(dep in failed_ids for dep in node.get("depends_on", []))
+                blocked = any(
+                    dep in failed_ids for dep in node.get("depends_on", [])
+                )
                 if blocked:
                     node_results[node["id"]] = PipelineNodeResult(
                         node_id=node["id"], status="skipped", output=""
@@ -114,7 +119,9 @@ class PipelineRunner:
                 continue
 
             if len(ready) == 1:
-                result = self._execute_node(ready[0], inputs, node_results, app_state)
+                result = self._execute_node(
+                    ready[0], inputs, node_results, app_state
+                )
                 node_results[result.node_id] = result
                 if result.status == "failed":
                     failed_ids.add(result.node_id)
@@ -122,7 +129,11 @@ class PipelineRunner:
                 with ThreadPoolExecutor(max_workers=len(ready)) as executor:
                     futures = {
                         executor.submit(
-                            self._execute_node, node, inputs, node_results, app_state
+                            self._execute_node,
+                            node,
+                            inputs,
+                            node_results,
+                            app_state,
                         ): node["id"]
                         for node in ready
                     }
@@ -173,12 +184,20 @@ class PipelineRunner:
 
         try:
             if node_type == "skill":
-                output = self._run_skill_node(node, inputs, node_results, app_state)
+                output = self._run_skill_node(
+                    node, inputs, node_results, app_state
+                )
             else:
-                output = self._run_agent_node(node, inputs, node_results, app_state)
-            node_result = PipelineNodeResult(node_id=node_id, status="completed", output=output)
+                output = self._run_agent_node(
+                    node, inputs, node_results, app_state
+                )
+            node_result = PipelineNodeResult(
+                node_id=node_id, status="completed", output=output
+            )
         except Exception as exc:  # noqa: BLE001
-            node_result = PipelineNodeResult(node_id=node_id, status="failed", output=str(exc))
+            node_result = PipelineNodeResult(
+                node_id=node_id, status="failed", output=str(exc)
+            )
 
         app_state.event_bus.publish(
             PipelineNodeCompleted(
@@ -199,7 +218,9 @@ class PipelineRunner:
     ) -> str:
         skill_name: str = node["skill"]
         raw_args: dict[str, Any] = node.get("arguments", {})
-        rendered_args = _render_value(raw_args, inputs=inputs, node_results=node_results)
+        rendered_args = _render_value(
+            raw_args, inputs=inputs, node_results=node_results
+        )
         result = app_state.skill_runner.execute_skill(
             tool_name=skill_name,
             arguments=rendered_args,
@@ -214,15 +235,21 @@ class PipelineRunner:
         node_results: dict[str, PipelineNodeResult],
         app_state: AppState,
     ) -> str:
-        goal = _render_string(node["goal"], inputs=inputs, node_results=node_results)
+        goal = _render_string(
+            node["goal"], inputs=inputs, node_results=node_results
+        )
         allowed_skills: list[str] | None = node.get("allowed_skills")
 
         if allowed_skills is not None:
             allowed = set(allowed_skills)
             filtered_tools = [
-                t for t in app_state.tools if t.get("function", {}).get("name") in allowed
+                t
+                for t in app_state.tools
+                if t.get("function", {}).get("name") in allowed
             ]
-            effective_state = dataclasses.replace(app_state, tools=filtered_tools)
+            effective_state = dataclasses.replace(
+                app_state, tools=filtered_tools
+            )
         else:
             effective_state = app_state
 
@@ -255,7 +282,10 @@ def _render_value(
             for k, v in value.items()
         }
     if isinstance(value, list):
-        return [_render_value(item, inputs=inputs, node_results=node_results) for item in value]
+        return [
+            _render_value(item, inputs=inputs, node_results=node_results)
+            for item in value
+        ]
     return value
 
 

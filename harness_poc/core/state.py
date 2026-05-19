@@ -5,7 +5,9 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
-StateSection = Literal["notes", "decisions", "next_actions", "open_questions", "changelog"]
+StateSection = Literal[
+    "notes", "decisions", "next_actions", "open_questions", "changelog"
+]
 ProposalStatus = Literal["pending", "approved", "rejected"]
 
 
@@ -133,7 +135,9 @@ class StateProposal:
         return json.dumps(self.payload.to_dict(), sort_keys=True)
 
 
-def build_state_context(project_state: StatePayload, session_state: StatePayload) -> str:
+def build_state_context(
+    project_state: StatePayload, session_state: StatePayload
+) -> str:
     return "\n\n".join(
         [
             "Runtime STATE is compact durable context, not a transcript.",

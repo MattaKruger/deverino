@@ -19,7 +19,9 @@ E = TypeVar("E", bound=BaseEvent)
 class EventBus:
     def __init__(self, event_store: EventStore) -> None:
         self._store: EventStore = event_store
-        self._handlers: dict[str, list[Callable[[Any], None]]] = defaultdict(list)
+        self._handlers: dict[str, list[Callable[[Any], None]]] = defaultdict(
+            list
+        )
 
     def publish(self, event: BaseEvent) -> None:
         self._store.persist(event)
@@ -27,9 +29,13 @@ class EventBus:
             try:
                 handler(event)
             except Exception:
-                logger.exception("Event handler raised for %s", event.event_type)
+                logger.exception(
+                    "Event handler raised for %s", event.event_type
+                )
 
-    def subscribe(self, event_type: type[E], handler: Callable[[E], None]) -> None:
+    def subscribe(
+        self, event_type: type[E], handler: Callable[[E], None]
+    ) -> None:
         self._handlers[event_type.__name__].append(handler)  # type: ignore[arg-type]
 
     def get_recent_events(

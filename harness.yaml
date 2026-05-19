@@ -16,4 +16,4 @@ runtime:
   default_container_image: python:3.12-slim
 
 observability:
-  logfire: false   # set to true and export LOGFIRE_TOKEN to enable
+  logfire: true   # set to true and export LOGFIRE_TOKEN to enable
