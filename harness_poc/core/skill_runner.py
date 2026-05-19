@@ -25,6 +25,7 @@ class SkillMetadata(TypedDict):
     description: str
     parameters: dict[str, Any]
     auto_invokable: bool
+    permissions: dict[str, str]
 
 
 class ToolSchema(TypedDict):
@@ -73,6 +74,7 @@ class SkillRunner:
                             "description": skill["metadata"]["description"],
                             "parameters": skill["metadata"]["parameters"],
                             "auto_invokable": skill["metadata"]["auto_invokable"],
+                            "permissions": skill["metadata"]["permissions"],
                         },
                     },
                 )
@@ -245,6 +247,10 @@ class SkillRunner:
         parameters = frontmatter.get("parameters", {"type": "object", "properties": {}})
         entrypoint = frontmatter.get("entrypoint", {"module": "skill", "function": "execute"})
         auto_invokable = bool(frontmatter.get("auto_invokable", False))
+        raw_permissions = frontmatter.get("permissions", {})
+        permissions: dict[str, str] = (
+            raw_permissions if isinstance(raw_permissions, dict) else {}
+        )
         if not isinstance(name, str) or not isinstance(description, str):
             msg = f"Skill {skill_file} must define string name and description"
             raise TypeError(msg)
@@ -267,6 +273,7 @@ class SkillRunner:
                 "description": description,
                 "parameters": cast("dict[str, Any]", parameters),
                 "auto_invokable": auto_invokable,
+                "permissions": permissions,
             },
             "body": body,
             "path": skill_file,
