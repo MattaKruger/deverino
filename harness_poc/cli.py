@@ -48,6 +48,10 @@ skill_app = typer.Typer(
     help="Manage executable skills.",
     rich_markup_mode="rich",
 )
+pipeline_app = typer.Typer(
+    help="Run declarative DAG pipeline YAML files.",
+    rich_markup_mode="rich",
+)
 
 
 @app.callback(invoke_without_command=True)
@@ -306,6 +310,64 @@ def _print_goal_cli_result(result: object) -> None:
             console.print(f"[dim]{i}. [{event_type}] {tool}{extra}[/dim]")
 
 
+@pipeline_app.command("list")
+def pipeline_list() -> None:
+    """List discovered pipeline YAML files."""
+    app_state = _new_app_state()
+    names = app_state.pipeline_runner.list_pipelines()
+    if not names:
+        console.print("[dim]No pipelines found.[/dim]")
+        return
+    for name in names:
+        console.print(f"  {name}")
+
+
+@pipeline_app.command("run")
+def pipeline_run(
+    name: Annotated[str, typer.Argument(help="Pipeline YAML name without .yaml.")],
+    inputs: Annotated[
+        list[str],
+        typer.Option("--input", "-i", help="Input as key=value. Repeat for multiple inputs."),
+    ] = [],  # noqa: B006
+) -> None:
+    """Run a pipeline and print the node results."""
+    parsed_inputs: dict[str, str] = {}
+    for item in inputs:
+        if "=" not in item:
+            print_error(f"Invalid --input format '{item}': expected key=value")
+            raise typer.Exit(1)
+        key, _, value = item.partition("=")
+        parsed_inputs[key.strip()] = value.strip()
+
+    app_state = _new_app_state()
+    try:
+        result = app_state.pipeline_runner.run(name, parsed_inputs, app_state)
+    except FileNotFoundError as exc:
+        print_error(str(exc))
+        raise typer.Exit(1) from exc
+    except Exception as exc:
+        print_error(f"Pipeline failed: {exc}")
+        raise typer.Exit(1) from exc
+
+    status_style = {"completed": "green", "failed": "red"}
+    color = status_style.get(result.status, "white")
+    console.print(
+        f"\n[{color}]Pipeline '{name}': {result.status}[/{color}] ({result.duration_s:.1f}s)\n"
+    )
+
+    for node_id, node_result in result.node_results.items():
+        node_color = {"completed": "green", "failed": "red", "skipped": "yellow"}.get(
+            node_result.status, "white"
+        )
+        console.print(f"  [{node_color}]{node_id}: {node_result.status}[/{node_color}]")
+        if node_result.output:
+            console.print(f"    {node_result.output[:300]}")
+
+    if result.status == "failed":
+        raise typer.Exit(1)
+
+
 app.add_typer(workflow_app, name="workflow")
 app.add_typer(state_app, name="state")
 app.add_typer(skill_app, name="skill")
+app.add_typer(pipeline_app, name="pipeline")
