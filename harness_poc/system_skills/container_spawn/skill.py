@@ -23,14 +23,8 @@ logger = logging.getLogger(__name__)
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noqa: PLR0911
     session_id = ctx.session_id
-    image = str(
-        arguments.get("image")
-        or ctx.config.runtime.default_container_image
-        or ""
-    ).strip()
-    container_name = str(
-        arguments.get("container_name") or f"harness-{session_id[:12]}"
-    ).strip()
+    image = str(arguments.get("image") or ctx.config.runtime.default_container_image or "").strip()
+    container_name = str(arguments.get("container_name") or f"harness-{session_id[:12]}").strip()
     backend = _resolve_backend()
 
     error = _validate_inputs(image, backend)
@@ -58,9 +52,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
     # Auto-build: if image not found locally and a Dockerfile exists, build it
     project_root = str(ctx.config.project_root.resolve())
     dockerfile_path = ctx.config.project_root / "Dockerfile"
-    build_result = _ensure_image_available(
-        backend, image, project_root, dockerfile_path
-    )
+    build_result = _ensure_image_available(backend, image, project_root, dockerfile_path)
     if build_result is not None:
         return build_result
 
@@ -75,9 +67,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
                 "backend": backend,
             },
         )
-        ctx.database.write_memory(
-            session_id, f"container.{container_name}", existing
-        )
+        ctx.database.write_memory(session_id, f"container.{container_name}", existing)
         return SkillResult(
             status="success",
             content=json.dumps(existing, indent=2, sort_keys=True),
@@ -189,9 +179,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
         return SkillResult(
             status="failed",
-            content=(
-                f"Failed to create container '{container_name}': {result.stderr.strip()}"
-            ),
+            content=(f"Failed to create container '{container_name}': {result.stderr.strip()}"),
             artifacts={
                 "backend": backend,
                 "image": image,
@@ -221,9 +209,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
         return SkillResult(
             status="failed",
-            content=(
-                f"Container '{container_name}' created but did not start."
-            ),
+            content=(f"Container '{container_name}' created but did not start."),
             artifacts={
                 "backend": backend,
                 "image": image,
@@ -276,7 +262,7 @@ def _validate_inputs(image: str, backend: str | None) -> str:
     return ""
 
 
-def _ensure_image_available(
+def _ensure_image_available(  # noqa: PLR0911
     backend: str,
     image: str,
     project_root: str,
@@ -348,10 +334,7 @@ def _ensure_image_available(
         )
         return SkillResult(
             status="failed",
-            content=(
-                f"Failed to build image '{image}': "
-                f"{build_result.stderr.strip()[-300:]}"
-            ),
+            content=(f"Failed to build image '{image}': {build_result.stderr.strip()[-300:]}"),
         )
 
     logger.info("Container image built successfully", extra={"image": image})
@@ -389,14 +372,10 @@ def _cleanup_stale_harness_containers(
         if now - float(container.get("created_at_ts", now)) > ttl_seconds
     }
     retained = [
-        container
-        for container in containers
-        if container["container_name"] not in stale_names
+        container for container in containers if container["container_name"] not in stale_names
     ]
     if max_containers > 0 and len(retained) > max_containers:
-        retained.sort(
-            key=lambda container: float(container.get("created_at_ts", 0))
-        )
+        retained.sort(key=lambda container: float(container.get("created_at_ts", 0)))
         stale_names.update(
             str(container["container_name"])
             for container in retained[: len(retained) - max_containers]
@@ -442,9 +421,7 @@ def _remove_container(backend: str, container_name: str) -> None:
         )
 
 
-def _inspect_container(
-    backend: str, container_name: str
-) -> dict[str, Any] | None:
+def _inspect_container(backend: str, container_name: str) -> dict[str, Any] | None:
     """Check if a container exists and return its info, or None."""
     try:
         result = subprocess.run(  # noqa: S603
@@ -478,9 +455,7 @@ def _inspect_container(
         "image": str(container.get("Config", {}).get("Image", "")),
         "status": str(state.get("Status", "")),
         "running": bool(state.get("Running", False)),
-        "workdir": str(
-            container.get("Config", {}).get("WorkingDir", "/workspace")
-        ),
+        "workdir": str(container.get("Config", {}).get("WorkingDir", "/workspace")),
         "created_at": created_at,
         "created_at_ts": _parse_created_at(created_at),
     }

@@ -1,3 +1,4 @@
+# ruff: noqa: PLC0415, PLR2004, ARG001
 from __future__ import annotations
 
 from pathlib import Path

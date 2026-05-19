@@ -37,8 +37,7 @@ async def run_llm_worker(  # noqa: PLR0913
         database=database,
         config=config,
         skill_runner=skill_runner,
-        system_prompt=system_prompt
-        or config.paths.soul.read_text(encoding="utf-8"),
+        system_prompt=system_prompt or config.paths.soul.read_text(encoding="utf-8"),
         llm=config.llm,
         enable_tools=False,
     )
@@ -66,9 +65,7 @@ async def run_llm_worker(  # noqa: PLR0913
 
         requested_skill = _parse_skill_request(result.content)
         if requested_skill is not None:
-            await bus.publish_async(
-                SkillRequested(session_id=session_id, **requested_skill)
-            )
+            await bus.publish_async(SkillRequested(session_id=session_id, **requested_skill))
         elif result.content:
             await bus.publish_async(
                 LLMTextEmitted(session_id=session_id, content=result.content),

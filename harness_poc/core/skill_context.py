@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from harness_poc.core.permissions import SkillPermissions  # noqa: TC001
+from harness_poc.core.permissions import SkillPermissions
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -14,9 +14,7 @@ if TYPE_CHECKING:
     from harness_poc.core.database import BlackboardDatabase
 
 
-SkillStatus = Literal[
-    "success", "failed", "blocked", "needs_orchestrator_action"
-]
+SkillStatus = Literal["success", "failed", "blocked", "needs_orchestrator_action"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,10 +64,11 @@ class SkillContext:
         Raises PermissionError when the skill's workspace permission is ``"none"``.
         """
         if not self.permissions.can_read_workspace:
-            raise PermissionError(
+            msg = (
                 f"Skill '{self.skill_name}' has workspace="
                 f"{self.permissions.workspace!r} — cannot access project files."
             )
+            raise PermissionError(msg)
         return self.config.project_root
 
     @property
@@ -80,13 +79,12 @@ class SkillContext:
         don't collide.
         """
         if not self.permissions.can_write_workspace:
-            raise PermissionError(
+            msg = (
                 f"Skill '{self.skill_name}' has workspace="
                 f"{self.permissions.workspace!r} — cannot write files."
             )
-        scratch = (
-            self.config.project_root / ".deverino-scratch" / self.session_id
-        )
+            raise PermissionError(msg)
+        scratch = self.config.project_root / ".deverino-scratch" / self.session_id
         scratch.mkdir(parents=True, exist_ok=True)
         return scratch
 

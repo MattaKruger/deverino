@@ -38,12 +38,7 @@ def test_execute_python_is_auto_invokable(tmp_path: Path) -> None:
     tool_by_name = {tool.name: tool for tool in tools}
 
     assert "execute_python" in tool_by_name
-    assert (
-        "code"
-        in tool_by_name["execute_python"].function_schema.json_schema[
-            "properties"
-        ]
-    )
+    assert "code" in tool_by_name["execute_python"].function_schema.json_schema["properties"]
 
 
 def test_execute_python_requires_code(tmp_path: Path) -> None:
@@ -109,13 +104,9 @@ def test_execute_python_spawns_container_and_executes_encoded_code(
     assert result.artifacts["stdout"] == "3"
     assert result.artifacts["timeout_seconds"] == CUSTOM_TIMEOUT_SECONDS
     assert result.artifacts["spawned_container"] is True
-    assert calls["spawn"]["arguments"]["container_name"].startswith(
-        "harness-python-"
-    )
+    assert calls["spawn"]["arguments"]["container_name"].startswith("harness-python-")
     assert calls["exec"]["arguments"]["container"] == "test-python-container"
-    assert (
-        calls["exec"]["arguments"]["timeout_seconds"] == CUSTOM_TIMEOUT_SECONDS
-    )
+    assert calls["exec"]["arguments"]["timeout_seconds"] == CUSTOM_TIMEOUT_SECONDS
     assert "print(1 + 2)" not in calls["exec"]["arguments"]["command"]
     assert "base64.b64decode" in calls["exec"]["arguments"]["command"]
 
@@ -224,7 +215,5 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
-        llm=LLMConfig(
-            provider="deepseek", model="deepseek-v4-flash", base_url=None
-        ),
+        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
     )

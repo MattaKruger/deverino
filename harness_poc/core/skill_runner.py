@@ -16,9 +16,9 @@ if TYPE_CHECKING:
     from harness_poc.core.database import BlackboardDatabase
     from harness_poc.core.skill_context import SkillResult
 
-from harness_poc.core.skill_context import SkillContext
-from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
+from harness_poc.core.permissions import SkillPermissions
+from harness_poc.core.skill_context import SkillContext
 
 logger = logging.getLogger(__name__)
 
@@ -136,9 +136,7 @@ class SkillRunner:
         try:
             skill_file = self._find_skill_file(resolved_tool_name)
             skill = self.parse_skill_document(skill_file)
-            skill_permissions = SkillPermissions.from_yaml(
-                skill["metadata"].get("permissions", {})
-            )
+            skill_permissions = SkillPermissions.from_yaml(skill["metadata"].get("permissions", {}))
             execute = self._load_entrypoint(skill)
 
             context = SkillContext(
@@ -270,9 +268,7 @@ class SkillRunner:
         entrypoint = frontmatter.get("entrypoint", {"module": "skill", "function": "execute"})
         auto_invokable = bool(frontmatter.get("auto_invokable", False))
         raw_permissions = frontmatter.get("permissions", {})
-        permissions: dict[str, str] = (
-            raw_permissions if isinstance(raw_permissions, dict) else {}
-        )
+        permissions: dict[str, str] = raw_permissions if isinstance(raw_permissions, dict) else {}
         if not isinstance(name, str) or not isinstance(description, str):
             msg = f"Skill {skill_file} must define string name and description"
             raise TypeError(msg)

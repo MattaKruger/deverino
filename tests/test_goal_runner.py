@@ -1,6 +1,6 @@
 """Tests for GoalRunner, database event methods, evaluate_goal skill, and CLI/REPL integration."""
 
-# ruff: noqa: FBT001, FBT003, PLR2004
+# ruff: noqa: FBT001, FBT003, PLR2004, PLC0415
 
 from __future__ import annotations
 
@@ -293,10 +293,7 @@ def test_stuck_detection_blocks_repeated_failed_action() -> None:
     result = runner.run("Test goal", state)
     assert result.status == "budget_exhausted"
     events = state.event_bus.get_recent_events(state.session_id)
-    blocked = [
-        e for e in events
-        if isinstance(e, SkillCompleted) and e.status == "blocked"
-    ]
+    blocked = [e for e in events if isinstance(e, SkillCompleted) and e.status == "blocked"]
     assert len(blocked) >= 1
 
     # --- Verify semantic normalization: different whitespace/casing should

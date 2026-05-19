@@ -175,8 +175,7 @@ def _run_semble(  # noqa: PLR0911
     output = stdout.strip()
     visible_output, output_meta = _cap_output(output, MAX_OUTPUT_CHARS)
     ctx.emit_tool_event(
-        f"semble_search: finished in {elapsed:.1f}s; "
-        f"{_format_output_size(output_meta)}"
+        f"semble_search: finished in {elapsed:.1f}s; {_format_output_size(output_meta)}"
     )
     if proc.returncode != 0:
         stderr = stderr.strip()
@@ -259,8 +258,7 @@ def _cap_output(output: str, max_chars: int) -> tuple[str, dict[str, int | bool]
         }
 
     notice = (
-        f"\n\n[semble output truncated: original_chars={original_chars} "
-        f"retained_chars={max_chars}]"
+        f"\n\n[semble output truncated: original_chars={original_chars} retained_chars={max_chars}]"
     )
     return output[:max_chars] + notice, {
         "output_original_chars": original_chars,

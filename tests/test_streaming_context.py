@@ -1,26 +1,32 @@
+# ruff: noqa: PLR2004
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from harness_poc.app_factory import StreamingContext
 
+if TYPE_CHECKING:
+    from _pytest.capture import CaptureFixture
 
-def test_default_on_text_prints(capsys: object) -> None:
+
+def test_default_on_text_prints(capsys: CaptureFixture[str]) -> None:
     ctx = StreamingContext()
     ctx.on_text("hello")
-    captured = capsys.readouterr()  # type: ignore[union-attr]
+    captured = capsys.readouterr()
     assert captured.out == "hello"
 
 
-def test_default_on_finish_prints_newline(capsys: object) -> None:
+def test_default_on_finish_prints_newline(capsys: CaptureFixture[str]) -> None:
     ctx = StreamingContext()
     ctx.on_finish("some content")
-    captured = capsys.readouterr()  # type: ignore[union-attr]
+    captured = capsys.readouterr()
     assert captured.out == "\n"
 
 
-def test_default_on_finish_noop_for_empty(capsys: object) -> None:
+def test_default_on_finish_noop_for_empty(capsys: CaptureFixture[str]) -> None:
     ctx = StreamingContext()
     ctx.on_finish("")
-    captured = capsys.readouterr()  # type: ignore[union-attr]
+    captured = capsys.readouterr()
     assert captured.out == ""
 
 
@@ -45,7 +51,9 @@ def test_session_tokens_accumulate() -> None:
     assert ctx.session_tokens == 300
 
 
-def test_reset_callbacks_restores_defaults_and_preserves_tokens(capsys: object) -> None:
+def test_reset_callbacks_restores_defaults_and_preserves_tokens(
+    capsys: CaptureFixture[str],
+) -> None:
     ctx = StreamingContext()
     ctx.session_tokens = 500
     ctx.on_text = lambda _: None  # replace default
@@ -56,7 +64,7 @@ def test_reset_callbacks_restores_defaults_and_preserves_tokens(capsys: object) 
 
     # Callbacks restored to defaults
     ctx.on_text("x")
-    captured = capsys.readouterr()  # type: ignore[union-attr]
+    captured = capsys.readouterr()
     assert captured.out == "x"
     assert ctx.on_tool_event is None
     # Token count preserved

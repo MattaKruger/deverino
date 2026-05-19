@@ -39,7 +39,7 @@ class LangSearchSettings(BaseSettings):
         env_path = _find_dotenv_for_skill()
         if env_path is None:
             return cls()
-        return cls(_env_file=env_path)  # type: ignore[call-arg]
+        return cls(_env_file=env_path)  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:

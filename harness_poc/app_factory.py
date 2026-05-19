@@ -24,9 +24,7 @@ from harness_poc.core.workflow_runner import WorkflowRunner
 # Skills excluded from the agent's auto-invokable toolset because they
 # have workspace=read_write and could mutate project source files.
 # The user can still invoke them explicitly via /skill <name>.
-_TUI_BLOCKED_SKILLS: frozenset[str] = frozenset(
-    {"execute_python", "spec_writer"}
-)
+_TUI_BLOCKED_SKILLS: frozenset[str] = frozenset({"execute_python", "spec_writer"})
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -48,13 +46,9 @@ def _default_on_finish(content: str) -> None:
 
 @dataclass
 class StreamingContext:
-    on_text: Callable[[str], None] = field(
-        default_factory=lambda: _default_on_text
-    )
+    on_text: Callable[[str], None] = field(default_factory=lambda: _default_on_text)
     on_tool_event: Callable[[str], None] | None = None
-    on_finish: Callable[[str], None] = field(
-        default_factory=lambda: _default_on_finish
-    )
+    on_finish: Callable[[str], None] = field(default_factory=lambda: _default_on_finish)
     session_tokens: int = 0
 
     def reset_callbacks(self) -> None:
@@ -130,9 +124,7 @@ def build_app_state() -> AppState:
             wire_logfire,
         )
 
-        configure_logfire(
-            include_content=config.observability.logfire_include_content
-        )
+        configure_logfire(include_content=config.observability.logfire_include_content)
         wire_logfire(event_bus)
 
     return AppState(

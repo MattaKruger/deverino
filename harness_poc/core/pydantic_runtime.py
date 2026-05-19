@@ -156,10 +156,7 @@ class PydanticAgentRuntime:
                     async with node.stream(agent_run.ctx) as request_stream:
                         async for event in request_stream:
                             if isinstance(event, PartStartEvent):
-                                if (
-                                    isinstance(event.part, TextPart)
-                                    and event.part.content
-                                ):
+                                if isinstance(event.part, TextPart) and event.part.content:
                                     if on_text is not None:
                                         on_text(event.part.content)
                                     turn_chunks.append(event.part.content)
@@ -195,14 +192,8 @@ class PydanticAgentRuntime:
                     "Refine your query for better results.]"
                 )
 
-            result_output = (
-                agent_run.result.output if agent_run.result else None
-            )
-            output = (
-                str(result_output)
-                if result_output is not None
-                else "".join(all_output_parts)
-            )
+            result_output = agent_run.result.output if agent_run.result else None
+            output = str(result_output) if result_output is not None else "".join(all_output_parts)
 
             if not capped and agent_run.result is not None:
                 usage = _usage_to_dict(agent_run.result.usage)
@@ -230,9 +221,7 @@ def build_model(  # noqa: PLR0911
     if config.provider == "anthropic":
         api_key = api_settings.anthropic_api_key
         if not api_key:
-            logger.info(
-                "No Anthropic API key configured; using fallback PydanticAI model"
-            )
+            logger.info("No Anthropic API key configured; using fallback PydanticAI model")
             return fallback_model or TestModel(call_tools=[])
         logger.debug(
             "Building Anthropic-backed PydanticAI model",
@@ -246,9 +235,7 @@ def build_model(  # noqa: PLR0911
     if config.provider == "deepseek":
         api_key = api_settings.deepseek_api_key
         if not api_key:
-            logger.info(
-                "No DeepSeek API key configured; using fallback PydanticAI model"
-            )
+            logger.info("No DeepSeek API key configured; using fallback PydanticAI model")
             return fallback_model or TestModel(call_tools=[])
         logger.debug(
             "Building DeepSeek-backed PydanticAI model",
@@ -263,9 +250,7 @@ def build_model(  # noqa: PLR0911
     if config.provider == "openai":
         api_key = api_settings.openai_api_key
         if not api_key:
-            logger.info(
-                "No OpenAI API key configured; using fallback PydanticAI model"
-            )
+            logger.info("No OpenAI API key configured; using fallback PydanticAI model")
             return fallback_model or TestModel(call_tools=[])
         provider_kwargs: dict[str, Any] = {"api_key": api_key}
         if config.base_url:
@@ -295,11 +280,7 @@ def build_primary_agent(  # noqa: PLR0913
     enable_tools: bool = True,
     blocked_skills: frozenset[str] | None = None,
 ) -> Agent[AgentDeps, str]:
-    tools = (
-        build_skill_tools(skill_runner, blocked_skills=blocked_skills)
-        if enable_tools
-        else []
-    )
+    tools = build_skill_tools(skill_runner, blocked_skills=blocked_skills) if enable_tools else []
     return Agent(
         model or build_model(llm),
         deps_type=AgentDeps,
@@ -439,9 +420,7 @@ def execute_skill_as_tool(
         )
 
     # Stream progress so the user sees tool activity during execution.
-    _emit_tool_progress(
-        ctx, f"  {skill_name}: {_summarise_args(arguments)} ..."
-    )
+    _emit_tool_progress(ctx, f"  {skill_name}: {_summarise_args(arguments)} ...")
     try:
         result = ctx.deps.skill_runner.execute_skill(
             tool_name=skill_name,
@@ -533,9 +512,7 @@ def _usage_to_dict(usage: RunUsage) -> Usage:
     return {
         "prompt_tokens": int(usage.input_tokens or 0),
         "completion_tokens": int(usage.output_tokens or 0),
-        "total_tokens": int(
-            (usage.input_tokens or 0) + (usage.output_tokens or 0)
-        ),
+        "total_tokens": int((usage.input_tokens or 0) + (usage.output_tokens or 0)),
     }
 
 
@@ -591,9 +568,7 @@ def chat_text(
             user_parts.append(msg["content"])
 
     system_prompt = "\n\n".join(system_parts)
-    prompt = "\n\n".join(
-        msg["content"] for msg in messages if msg["role"] != "system"
-    )
+    prompt = "\n\n".join(msg["content"] for msg in messages if msg["role"] != "system")
 
     agent = Agent(model, system_prompt=system_prompt)
     result = agent.run_sync(prompt)

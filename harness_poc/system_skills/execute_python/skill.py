@@ -48,9 +48,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
                     "spawn": spawn_result.artifacts,
                 },
             )
-        container = str(
-            spawn_result.artifacts.get("container_name") or container_name
-        )
+        container = str(spawn_result.artifacts.get("container_name") or container_name)
 
     encoded = base64.b64encode(code.encode("utf-8")).decode("ascii")
     command = (
@@ -111,12 +109,8 @@ def _merge_artifacts(
 
 
 def _format_content(artifacts: dict[str, Any]) -> str:
-    stdout, _stdout_meta = _cap_stream(
-        str(artifacts.get("stdout", "")), MAX_STDOUT_CHARS
-    )
-    stderr, _stderr_meta = _cap_stream(
-        str(artifacts.get("stderr", "")), MAX_STDERR_CHARS
-    )
+    stdout, _stdout_meta = _cap_stream(str(artifacts.get("stdout", "")), MAX_STDOUT_CHARS)
+    stderr, _stderr_meta = _cap_stream(str(artifacts.get("stderr", "")), MAX_STDERR_CHARS)
     output = {
         "container": artifacts.get("container"),
         "backend": artifacts.get("backend"),
@@ -124,19 +118,11 @@ def _format_content(artifacts: dict[str, Any]) -> str:
         "stdout": stdout,
         "stderr": stderr,
         "timeout_seconds": artifacts.get("timeout_seconds"),
-        "stdout_original_chars": artifacts.get(
-            "stdout_original_chars", len(stdout)
-        ),
-        "stdout_retained_chars": artifacts.get(
-            "stdout_retained_chars", len(stdout)
-        ),
+        "stdout_original_chars": artifacts.get("stdout_original_chars", len(stdout)),
+        "stdout_retained_chars": artifacts.get("stdout_retained_chars", len(stdout)),
         "stdout_truncated": artifacts.get("stdout_truncated", False),
-        "stderr_original_chars": artifacts.get(
-            "stderr_original_chars", len(stderr)
-        ),
-        "stderr_retained_chars": artifacts.get(
-            "stderr_retained_chars", len(stderr)
-        ),
+        "stderr_original_chars": artifacts.get("stderr_original_chars", len(stderr)),
+        "stderr_retained_chars": artifacts.get("stderr_retained_chars", len(stderr)),
         "stderr_truncated": artifacts.get("stderr_truncated", False),
     }
     return json.dumps(output, indent=2, sort_keys=True)

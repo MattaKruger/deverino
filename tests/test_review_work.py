@@ -27,7 +27,7 @@ def test_review_work_requires_memory_key(tmp_path: Path) -> None:
 
 
 def test_review_work_fails_when_memory_missing(tmp_path: Path) -> None:
-    runner, session_id, database = _runner(tmp_path)
+    runner, session_id, _database = _runner(tmp_path)
 
     result = runner.execute_skill(
         tool_name="review_work",

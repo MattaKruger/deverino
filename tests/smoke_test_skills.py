@@ -58,7 +58,6 @@ def main() -> int:
     database.write_memory(session_id, "test_key", {"data": "test_value"})
 
     tests: list[tuple[str, dict, str, set[str]]] = [
-        # (skill_name, args, description, expected_statuses)
         (
             "evaluate_goal",
             {"is_complete": True, "reasoning": "smoke test"},
@@ -194,19 +193,19 @@ def main() -> int:
             )
             status = result.status
             content_preview = (
-                result.content[:150] + "..." if len(result.content) > 150 else result.content
+                result.content[:150] + "..." if len(result.content) > 150 else result.content  # noqa: PLR2004
             ).replace("\n", "\\n")
             print(f"  status: {status}")
             print(f"  content: {content_preview}")
 
             if status in expected:
-                print(f"  ✓ PASS")
+                print("  ✓ PASS")
                 passed += 1
             else:
                 print(f"  ✗ FAIL — expected one of {expected}, got {status}")
                 failed += 1
-        except Exception as exc:
-            import traceback
+        except Exception as exc:  # noqa: BLE001
+            import traceback  # noqa: PLC0415
 
             print(f"  ✗ EXCEPTION: {type(exc).__name__}: {exc}")
             traceback.print_exc()

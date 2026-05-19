@@ -3,10 +3,9 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.permissions import SkillPermissions
-
 if TYPE_CHECKING:
     from harness_poc.core.database import BlackboardDatabase
+    from harness_poc.core.permissions import SkillPermissions
     from harness_poc.core.state import StatePayload, StateProposal
 
 
@@ -23,9 +22,7 @@ class BlackboardAccessProxy:
     it must be mirrored here (or the skill will get a raw ``AttributeError``).
     """
 
-    def __init__(
-        self, db: BlackboardDatabase, permissions: SkillPermissions
-    ) -> None:
+    def __init__(self, db: BlackboardDatabase, permissions: SkillPermissions) -> None:
         self._db = db
         self._permissions = permissions
 
@@ -33,23 +30,23 @@ class BlackboardAccessProxy:
 
     def _require_read(self) -> None:
         if not self._permissions.can_read_blackboard:
-            raise PermissionError(
+            msg = (
                 f"Skill has blackboard={self._permissions.blackboard!r} "
                 f"— cannot read from blackboard."
             )
+            raise PermissionError(msg)
 
     def _require_write(self) -> None:
         if not self._permissions.can_write_blackboard:
-            raise PermissionError(
+            msg = (
                 f"Skill has blackboard={self._permissions.blackboard!r} "
                 f"— cannot write to blackboard."
             )
+            raise PermissionError(msg)
 
     # ---- read methods (allowed with "read" or "read_write") ----
 
-    def read_memory(
-        self, session_id: str, key: str
-    ) -> dict[str, Any] | str | None:
+    def read_memory(self, session_id: str, key: str) -> dict[str, Any] | str | None:
         self._require_read()
         return self._db.read_memory(session_id, key)
 
@@ -59,9 +56,7 @@ class BlackboardAccessProxy:
 
     # ---- write methods (allowed only with "read_write") ----
 
-    def write_memory(
-        self, session_id: str, key: str, payload: str | dict[str, Any]
-    ) -> None:
+    def write_memory(self, session_id: str, key: str, payload: str | dict[str, Any]) -> None:
         self._require_write()
         self._db.write_memory(session_id, key, payload)
 
@@ -73,17 +68,13 @@ class BlackboardAccessProxy:
         self._require_write()
         return self._db.create_state_proposal(session_id)
 
-    def approve_state_proposal(
-        self, proposal_id: str, project_id: str = "default"
-    ) -> StatePayload:
+    def approve_state_proposal(self, proposal_id: str, project_id: str = "default") -> StatePayload:
         self._require_write()
         return self._db.approve_state_proposal(proposal_id, project_id)
 
     # ---- async wrappers (Phase 3) ----
 
-    async def read_memory_async(
-        self, session_id: str, key: str
-    ) -> dict[str, Any] | str | None:
+    async def read_memory_async(self, session_id: str, key: str) -> dict[str, Any] | str | None:
         self._require_read()
         return await asyncio.to_thread(self._db.read_memory, session_id, key)
 
@@ -95,6 +86,4 @@ class BlackboardAccessProxy:
         self, session_id: str, key: str, payload: str | dict[str, Any]
     ) -> None:
         self._require_write()
-        await asyncio.to_thread(
-            self._db.write_memory, session_id, key, payload
-        )
+        await asyncio.to_thread(self._db.write_memory, session_id, key, payload)

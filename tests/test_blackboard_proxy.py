@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -25,6 +24,7 @@ def db() -> BlackboardDatabase:
 
 # ---- read methods ----
 
+
 def test_read_memory_allowed_with_read_permission(db: BlackboardDatabase) -> None:
     proxy = BlackboardAccessProxy(db, SkillPermissions(blackboard="read"))
     result = proxy.read_memory("s1", "greeting")  # session may differ; fine for read
@@ -39,6 +39,7 @@ def test_list_memory_keys_allowed_with_read_permission(db: BlackboardDatabase) -
 
 
 # ---- write methods blocked with read-only ----
+
 
 def test_write_memory_blocked_with_read_permission(db: BlackboardDatabase) -> None:
     proxy = BlackboardAccessProxy(db, SkillPermissions(blackboard="read"))
@@ -55,6 +56,7 @@ def test_ensure_session_state_blocked_with_read_permission(
 
 
 # ---- write methods allowed with read_write ----
+
 
 def test_write_memory_allowed_with_read_write_permission(
     db: BlackboardDatabase,
@@ -76,6 +78,7 @@ def test_ensure_session_state_allowed_with_read_write(
 
 
 # ---- all blocked with none ----
+
 
 def test_all_blocked_with_none_permission(db: BlackboardDatabase) -> None:
     proxy = BlackboardAccessProxy(db, SkillPermissions(blackboard="none"))
