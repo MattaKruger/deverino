@@ -7,15 +7,11 @@ import sqlite3
 from typing import TYPE_CHECKING, Any
 
 import yaml
-from prompt_toolkit import PromptSession
-from prompt_toolkit.formatted_text import FormattedText
-from prompt_toolkit.history import FileHistory
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 from harness_poc.console import print_error, print_markdown, print_skill_table, print_text
 from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
 from harness_poc.core.state import StateSection, build_state_context
-from harness_poc.repl_completion import HarnessCompleter
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +25,6 @@ if TYPE_CHECKING:
 MIN_WORKFLOW_PARTS = 2
 WORKFLOW_OBJECTIVE_PARTS = 2
 MIN_PIPELINE_PARTS = 2
-TOKEN_MILLION = 1_000_000
-TOKEN_THOUSAND = 1_000
 
 
 def _track_tokens(usage: Usage | None, app_state: AppState) -> None:
@@ -39,33 +33,9 @@ def _track_tokens(usage: Usage | None, app_state: AppState) -> None:
 
 
 def run_repl(app_state: AppState) -> None:
-    print_text(f"Started session: [cyan]{app_state.session_id}[/cyan]")
-    print_text("Type 'exit' or 'quit' to stop.")
-    print_text("Run an explicit workflow with: workflow research_task <objective>")
-    print_text("Run a pipeline with: pipeline <name> [key=value ...]")
-    print_text("Run an autonomous goal loop with: /goal <objective>")
-    print_text("Manage STATE with: state show | state note <text> | state propose")
-    print_text("Manage skills with: skill list | skill create <name> <description>")
-    print_text("Type '/' and press Tab to discover slash commands.")
-    session: PromptSession[str] = PromptSession(
-        completer=HarnessCompleter(app_state),
-        complete_while_typing=True,
-        history=FileHistory(str(app_state.config.project_root / ".harness_repl_history")),
-    )
+    from harness_poc.tui import ChatApp  # noqa: PLC0415
 
-    while True:
-        try:
-            user_input = session.prompt(_build_prompt_bar(app_state)).strip()
-        except (EOFError, KeyboardInterrupt):
-            print_text("\nExiting.")
-            break
-
-        if user_input.lower() in {"exit", "quit", "/exit", "/quit"}:
-            break
-        if not user_input:
-            continue
-
-        handle_repl_input(app_state, user_input)
+    ChatApp(app_state).run()
 
 
 def handle_repl_input(app_state: AppState, user_input: str) -> None:  # noqa: PLR0911
@@ -732,30 +702,3 @@ def _append_pydantic_chat_exchange(
     )
 
 
-def _build_prompt_bar(app_state: AppState) -> FormattedText:
-    llm = app_state.config.llm
-    tokens = app_state.streaming.session_tokens
-
-    parts: list[tuple[str, str]] = [
-        ("fg:ansicyan", "["),
-        ("fg:ansigreen bold", llm.provider),
-        ("fg:ansicyan", " · "),
-        ("fg:ansigreen bold", llm.model),
-    ]
-
-    if tokens > 0:
-        parts.append(("fg:ansiblue", f" · {_format_tokens(tokens)}"))
-
-    parts.append(("fg:ansicyan", "]"))
-    parts.append(("", " > "))
-
-    return FormattedText(parts)
-
-
-def _format_tokens(count: int) -> str:
-    """Format a token count for compact display: 1200 -> '1.2k', 350 -> '350'."""
-    if count >= TOKEN_MILLION:
-        return f"{count / TOKEN_MILLION:.1f}M"
-    if count >= TOKEN_THOUSAND:
-        return f"{count / TOKEN_THOUSAND:.1f}k"
-    return str(count)
