@@ -43,6 +43,11 @@ Run Python code in a container-backed scratchpad. This is intended for skills an
 2. Creates or reuses a session-scoped container when `container` is omitted.
 3. Encodes the provided code as base64 and executes it through `container_exec`.
 4. Returns stdout, stderr, exit code, backend, and container metadata.
+5. **Filesystem access:** The project directory (`/workspace`) is mounted read-only.
+   The container cannot create, modify, or delete files in the project source tree
+   (including `skills/`, `harness_poc/`, `harness.yaml`, `.env`, etc.).
+6. **Scratch writes:** Write temporary output to `/workspace/tmp` — a session-scoped
+   writable directory that is cleaned up when the container is destroyed.
 
 ## Expected Output
 Returns a `SkillResult` with `status` set to `"success"` when Python exits 0, or `"failed"` for validation, container, timeout, or non-zero execution failures.
