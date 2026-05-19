@@ -40,6 +40,7 @@ class AgentDeps:
     config: HarnessConfig
     skill_runner: SkillRunner
     stream_text: Callable[[str], None] | None = None
+    on_tool_event: Callable[[str], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +86,7 @@ class PydanticAgentRuntime:
         *,
         message_history: list[ModelMessage] | None = None,
         on_text: Callable[[str], None] | None = None,
+        on_tool_event: Callable[[str], None] | None = None,
     ) -> AgentRunResult:
         logger.debug(
             "Streaming PydanticAI text request",
@@ -98,6 +100,7 @@ class PydanticAgentRuntime:
                 prompt,
                 message_history=message_history,
                 on_text=on_text,
+                on_tool_event=on_tool_event,
             ),
         )
 
@@ -107,6 +110,7 @@ class PydanticAgentRuntime:
         *,
         message_history: list[ModelMessage] | None,
         on_text: Callable[[str], None] | None,
+        on_tool_event: Callable[[str], None] | None = None,
     ) -> AgentRunResult:
         # Use agent.iter() instead of run_stream() because run_stream()
         # stops at the first text output matching the output type.
@@ -117,7 +121,7 @@ class PydanticAgentRuntime:
         # after tool calls.
         max_tool_rounds = 5
 
-        deps = replace(self.deps, stream_text=on_text)
+        deps = replace(self.deps, stream_text=on_text, on_tool_event=on_tool_event)
         all_output_parts: list[str] = []
         seen_text: str = ""
         usage: Usage | None = None
@@ -476,10 +480,9 @@ def _usage_to_dict(usage: RunUsage) -> Usage:
 
 
 def _emit_tool_progress(ctx: RunContext[AgentDeps], message: str) -> None:
-    """Stream a progress line through the agent's text callback if available."""
-    stream = ctx.deps.stream_text
-    if stream is not None:
-        stream(f"\n  {message}\n")
+    handler = ctx.deps.on_tool_event
+    if handler is not None:
+        handler(message)
 
 
 ARG_SUMMARY_MAX_LEN = 60
