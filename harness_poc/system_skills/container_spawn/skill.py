@@ -16,14 +16,8 @@ logger = logging.getLogger(__name__)
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noqa: PLR0911
     session_id = ctx.session_id
-    image = str(
-        arguments.get("image")
-        or ctx.config.runtime.default_container_image
-        or ""
-    ).strip()
-    container_name = str(
-        arguments.get("container_name") or f"harness-{session_id[:12]}"
-    ).strip()
+    image = str(arguments.get("image") or ctx.config.runtime.default_container_image or "").strip()
+    container_name = str(arguments.get("container_name") or f"harness-{session_id[:12]}").strip()
     backend = _resolve_backend()
 
     error = _validate_inputs(image, backend)
@@ -52,9 +46,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
                 "backend": backend,
             },
         )
-        ctx.database.write_memory(
-            session_id, f"container.{container_name}", existing
-        )
+        ctx.database.write_memory(session_id, f"container.{container_name}", existing)
         return SkillResult(
             status="success",
             content=json.dumps(existing, indent=2, sort_keys=True),
@@ -62,7 +54,10 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
 
     # Create the container
-    project_root = str(ctx.project_root.resolve())
+    project_root = str(ctx.config.project_root.resolve())
+    scratch_dir = ctx.config.project_root / ".deverino-scratch" / session_id
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    scratch_str = str(scratch_dir.resolve())
     create_cmd: list[str] = [
         backend,
         "run",
@@ -70,7 +65,9 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         "--name",
         container_name,
         "-v",
-        f"{project_root}:/workspace",
+        f"{project_root}:/workspace:ro",
+        "-v",
+        f"{scratch_str}:/workspace/tmp",
         "-w",
         "/workspace",
         image,
@@ -147,9 +144,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
         return SkillResult(
             status="failed",
-            content=(
-                f"Failed to create container '{container_name}': {result.stderr.strip()}"
-            ),
+            content=(f"Failed to create container '{container_name}': {result.stderr.strip()}"),
             artifacts={
                 "backend": backend,
                 "image": image,
@@ -179,9 +174,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
         return SkillResult(
             status="failed",
-            content=(
-                f"Container '{container_name}' created but did not start."
-            ),
+            content=(f"Container '{container_name}' created but did not start."),
             artifacts={
                 "backend": backend,
                 "image": image,
@@ -240,9 +233,7 @@ def _resolve_backend() -> str | None:
     return None
 
 
-def _inspect_container(
-    backend: str, container_name: str
-) -> dict[str, Any] | None:
+def _inspect_container(backend: str, container_name: str) -> dict[str, Any] | None:
     """Check if a container exists and return its info, or None."""
     try:
         result = subprocess.run(  # noqa: S603
@@ -275,7 +266,5 @@ def _inspect_container(
         "image": str(container.get("Config", {}).get("Image", "")),
         "status": str(state.get("Status", "")),
         "running": bool(state.get("Running", False)),
-        "workdir": str(
-            container.get("Config", {}).get("WorkingDir", "/workspace")
-        ),
+        "workdir": str(container.get("Config", {}).get("WorkingDir", "/workspace")),
     }

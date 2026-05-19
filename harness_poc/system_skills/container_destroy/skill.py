@@ -55,6 +55,11 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     with contextlib.suppress(OSError, ValueError, RuntimeError):
         ctx.database.write_memory(ctx.session_id, f"container.{container}", {"removed": True})
 
+    # Clean up session scratch directory
+    scratch_dir = ctx.config.project_root / ".deverino-scratch" / ctx.session_id
+    if scratch_dir.exists():
+        shutil.rmtree(scratch_dir, ignore_errors=True)
+
     output: dict[str, Any] = {
         "backend": backend,
         "container": container,
