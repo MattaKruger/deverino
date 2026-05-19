@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 from pydantic_ai.models.test import TestModel
 
-from harness_poc.core.config import HarnessConfig, HarnessPaths, RuntimeConfig
+from harness_poc.core.config import HarnessConfig, HarnessPaths, ObservabilityConfig, RuntimeConfig
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.llm_client import DeepSeekSettings
 from harness_poc.core.pydantic_runtime import (
@@ -128,12 +128,14 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             system_skills=project_root / "harness_poc/system_skills",
             project_skills=project_root / "skills",
             workflows=project_root / "workflows",
+            pipelines=project_root / "pipelines",
             personas=project_root / "personas",
         ),
         runtime=RuntimeConfig(
             database_path=tmp_path / "blackboard.db",
             default_container_image="python:3.12-slim",
         ),
+        observability=ObservabilityConfig(logfire_enabled=False),
     )
 
 
