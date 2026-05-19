@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 from harness_poc.core.config import (
     HarnessConfig,
@@ -10,7 +12,14 @@ from harness_poc.core.config import (
     RuntimeConfig,
 )
 from harness_poc.core.database import BlackboardDatabase
+from harness_poc.core.skill_context import SkillContext
 from harness_poc.core.skill_runner import SkillRunner
+from harness_poc.system_skills.container_spawn import skill as container_spawn_skill
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import pytest
 
 
 def test_container_spawn_fails_when_no_image(tmp_path: Path) -> None:
@@ -28,8 +37,10 @@ def test_container_spawn_fails_when_no_image(tmp_path: Path) -> None:
 
 def test_container_spawn_fails_when_no_backend(tmp_path: Path) -> None:
     """If neither docker nor podman is on PATH, should get a clear error.
+
     When a backend is available, container may fail to pull/run the image,
-    which is also a valid failure path."""
+    which is also a valid failure path.
+    """
     runner, session_id, _ = _runner(tmp_path)
 
     result = runner.execute_skill(
@@ -108,6 +119,81 @@ def test_container_destroy_requires_container_name(tmp_path: Path) -> None:
     assert "requires a container name" in result.content
 
 
+def test_container_spawn_mounts_scratch_outside_read_only_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _test_config(tmp_path)
+    database = BlackboardDatabase(config.runtime.database_path)
+    database.create_tables()
+    session_id = database.start_session("test")
+    ctx = SkillContext(
+        session_id=session_id,
+        skill_name="container_spawn",
+        database=database,
+        config=config,
+    )
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(container_spawn_skill, "_resolve_backend", lambda: "docker")
+    monkeypatch.setattr(container_spawn_skill, "_cleanup_stale_harness_containers", _noop_cleanup)
+    monkeypatch.setattr(container_spawn_skill, "_inspect_container", _inspect_after_run())
+
+    def fake_run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+        del kwargs
+        calls.append(cmd)
+        return SimpleNamespace(returncode=0, stdout="container-id\n", stderr="")
+
+    monkeypatch.setattr(container_spawn_skill.subprocess, "run", fake_run)
+
+    result = container_spawn_skill.execute(ctx, {"container_name": "harness-python-test"})
+
+    assert result.status == "success"
+    create_cmd = calls[0]
+    assert any(mount.endswith(":/workspace:ro") for mount in create_cmd)
+    assert any(mount.endswith(":/tmp/deverino") for mount in create_cmd)
+    assert not any(mount.endswith(":/workspace/tmp") for mount in create_cmd)
+
+
+def test_container_spawn_cleanup_removes_only_stale_harness_containers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    removed: list[str] = []
+    now = container_spawn_skill.datetime.now(container_spawn_skill.UTC).timestamp()
+
+    monkeypatch.setattr(
+        container_spawn_skill,
+        "_list_harness_container_names",
+        lambda _backend: [
+            "harness-python-current",
+            "harness-python-old",
+            "harness-old",
+        ],
+    )
+    monkeypatch.setattr(
+        container_spawn_skill,
+        "_inspect_container",
+        lambda _backend, name: {
+            "container_name": name,
+            "created_at_ts": now - 10_000 if name.endswith("old") else now,
+        },
+    )
+    monkeypatch.setattr(
+        container_spawn_skill,
+        "_remove_container",
+        lambda _backend, name: removed.append(name),
+    )
+
+    container_spawn_skill._cleanup_stale_harness_containers(  # noqa: SLF001
+        "docker",
+        exclude={"harness-python-current"},
+        ttl_seconds=100,
+        max_containers=10,
+    )
+
+    assert removed == ["harness-old", "harness-python-old"]
+
+
 def _runner(
     tmp_path: Path, default_container_image: str = "python:3.12-slim"
 ) -> tuple[SkillRunner, str, BlackboardDatabase]:
@@ -116,6 +202,38 @@ def _runner(
     database.create_tables()
     session_id = database.start_session("test")
     return SkillRunner(database=database, config=config), session_id, database
+
+
+def _noop_cleanup(
+    _backend: str,
+    *,
+    exclude: set[str],
+    ttl_seconds: int,
+    max_containers: int,
+) -> None:
+    del exclude, ttl_seconds, max_containers
+
+
+def _inspect_after_run() -> Callable[[str, str], dict[str, object] | None]:
+    calls = {"count": 0}
+
+    def inspect(_backend: str, container_name: str) -> dict[str, object] | None:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return None
+        return {
+            "backend": _backend,
+            "container_name": container_name,
+            "container_id": "container-id",
+            "image": "python:3.12-slim",
+            "status": "running",
+            "running": True,
+            "workdir": "/workspace",
+            "created_at": "2026-05-19T00:00:00Z",
+            "created_at_ts": 0.0,
+        }
+
+    return inspect
 
 
 def _test_config(

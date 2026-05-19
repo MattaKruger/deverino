@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import shutil
 import subprocess
 import time
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from harness_poc.core.skill_context import SkillContext, SkillResult
 
 BACKENDS = ("podman", "docker")
 KEEPALIVE_CMD: list[str] = ["sleep", "infinity"]
+HARNESS_CONTAINER_PREFIXES = ("harness-", "harness-python-")
+SCRATCH_TARGET = "/tmp/deverino"  # noqa: S108 - container-internal scratch mount target.
 logger = logging.getLogger(__name__)
 
 
@@ -34,6 +38,13 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
         return SkillResult(status="failed", content=error)
     backend = cast("str", backend)  # validated above
+
+    _cleanup_stale_harness_containers(
+        backend,
+        exclude={container_name},
+        ttl_seconds=ctx.config.runtime.container_ttl_seconds,
+        max_containers=ctx.config.runtime.max_harness_containers,
+    )
 
     # Idempotent: check if container already exists
     existing = _inspect_container(backend, container_name)
@@ -64,10 +75,14 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         "-d",
         "--name",
         container_name,
+        "--label",
+        "deverino.managed=true",
+        "--label",
+        f"deverino.session_id={session_id}",
         "-v",
         f"{project_root}:/workspace:ro",
         "-v",
-        f"{scratch_str}:/workspace/tmp",
+        f"{scratch_str}:{SCRATCH_TARGET}",
         "-w",
         "/workspace",
         image,
@@ -189,6 +204,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         "container_name": container_name,
         "container_id": container_id,
         "workdir": "/workspace",
+        "scratch_dir": SCRATCH_TARGET,
     }
 
     ctx.database.write_memory(session_id, f"container.{container_name}", output)
@@ -233,6 +249,79 @@ def _resolve_backend() -> str | None:
     return None
 
 
+def _cleanup_stale_harness_containers(
+    backend: str,
+    *,
+    exclude: set[str],
+    ttl_seconds: int,
+    max_containers: int,
+) -> None:
+    containers = [
+        info
+        for name in _list_harness_container_names(backend)
+        if name not in exclude
+        for info in [_inspect_container(backend, name)]
+        if info is not None
+    ]
+    if not containers:
+        return
+
+    now = datetime.now(UTC).timestamp()
+    stale_names = {
+        str(container["container_name"])
+        for container in containers
+        if now - float(container.get("created_at_ts", now)) > ttl_seconds
+    }
+    retained = [
+        container for container in containers if container["container_name"] not in stale_names
+    ]
+    if max_containers > 0 and len(retained) > max_containers:
+        retained.sort(key=lambda container: float(container.get("created_at_ts", 0)))
+        stale_names.update(
+            str(container["container_name"])
+            for container in retained[: len(retained) - max_containers]
+        )
+
+    for name in sorted(stale_names):
+        _remove_container(backend, name)
+
+
+def _list_harness_container_names(backend: str) -> list[str]:
+    try:
+        result = subprocess.run(  # noqa: S603
+            [backend, "ps", "-a", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return []
+    if result.returncode != 0:
+        return []
+    return [
+        name
+        for line in result.stdout.splitlines()
+        for name in [line.strip()]
+        if name.startswith(HARNESS_CONTAINER_PREFIXES)
+    ]
+
+
+def _remove_container(backend: str, container_name: str) -> None:
+    logger.info(
+        "Removing stale harness container",
+        extra={"backend": backend, "container_name": container_name},
+    )
+    with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+        subprocess.run(  # noqa: S603
+            [backend, "rm", "-f", container_name],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+
 def _inspect_container(backend: str, container_name: str) -> dict[str, Any] | None:
     """Check if a container exists and return its info, or None."""
     try:
@@ -259,6 +348,7 @@ def _inspect_container(backend: str, container_name: str) -> dict[str, Any] | No
 
     container = inspect_data[0]
     state = container.get("State", {})
+    created_at = str(container.get("Created", ""))
     return {
         "backend": backend,
         "container_name": container_name,
@@ -267,4 +357,16 @@ def _inspect_container(backend: str, container_name: str) -> dict[str, Any] | No
         "status": str(state.get("Status", "")),
         "running": bool(state.get("Running", False)),
         "workdir": str(container.get("Config", {}).get("WorkingDir", "/workspace")),
+        "created_at": created_at,
+        "created_at_ts": _parse_created_at(created_at),
     }
+
+
+def _parse_created_at(created_at: str) -> float:
+    if not created_at:
+        return 0.0
+    normalized = created_at.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized).timestamp()
+    except ValueError:
+        return 0.0

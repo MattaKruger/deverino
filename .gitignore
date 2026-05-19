@@ -9,5 +9,6 @@ harness_poc/blackboard.db-wal
 .env
 .harness_repl_history
 .harness/
+.deverino-scratch/
 repomix-output.xml
 .logfire/
