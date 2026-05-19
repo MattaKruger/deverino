@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from prompt_toolkit.completion import Completer, Completion
+from textual.suggester import Suggester
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -66,43 +67,69 @@ class ReplCommandCatalog:
         )
 
 
+class HarnessSuggester(Suggester):
+    def __init__(self, app_state: AppState) -> None:
+        super().__init__(use_cache=False, case_sensitive=True)
+        self.app_state = app_state
+
+    async def get_suggestion(self, value: str) -> str | None:
+        suggestion = first_completion(self.app_state, value)
+        if suggestion is None:
+            return None
+        current = _current_token(value)
+        return f"{value[: len(value) - len(current)]}{suggestion}"
+
+
 class HarnessCompleter(Completer):
     def __init__(self, app_state: AppState) -> None:
         self.app_state = app_state
 
     def get_completions(self, document: Document, complete_event: object) -> Iterable[Completion]:
         del complete_event
-        catalog = ReplCommandCatalog.from_app_state(self.app_state)
-        text = document.text_before_cursor
-        tokens = text.split()
-        current = _current_token(text)
-        root = tokens[0].removeprefix("/") if tokens else ""
+        yield from completions_for_text(self.app_state, document.text_before_cursor)
 
-        if not tokens or (len(tokens) == 1 and not text.endswith(" ")):
-            yield from _word_completions(ROOT_COMMANDS, current)
-            return
 
-        if root == "workflow":
-            if len(tokens) == ROOT_TOKEN_COUNT or (
-                len(tokens) == SUBCOMMAND_TOKEN_COUNT and not text.endswith(" ")
-            ):
-                yield from _word_completions(catalog.workflows, current)
-            return
+def first_completion(app_state: AppState, text_before_cursor: str) -> str | None:
+    return next(
+        (completion.text for completion in completions_for_text(app_state, text_before_cursor)),
+        None,
+    )
 
-        if root == "pipeline":
-            if len(tokens) == ROOT_TOKEN_COUNT or (
-                len(tokens) == SUBCOMMAND_TOKEN_COUNT and not text.endswith(" ")
-            ):
-                yield from _word_completions(catalog.pipelines, current)
-            return
 
-        if root == "state":
-            yield from _state_completions(tokens, current, text)
-            return
+def completions_for_text(
+    app_state: AppState,
+    text_before_cursor: str,
+) -> Iterable[Completion]:
+    catalog = ReplCommandCatalog.from_app_state(app_state)
+    tokens = text_before_cursor.split()
+    current = _current_token(text_before_cursor)
+    root = tokens[0].removeprefix("/") if tokens else ""
 
-        if root == "skill":
-            yield from _skill_completions(tokens, current, text, catalog)
-            return
+    if not tokens or (len(tokens) == 1 and not text_before_cursor.endswith(" ")):
+        yield from _word_completions(_root_words(catalog), current)
+        return
+
+    if root == "workflow":
+        if len(tokens) == ROOT_TOKEN_COUNT or (
+            len(tokens) == SUBCOMMAND_TOKEN_COUNT and not text_before_cursor.endswith(" ")
+        ):
+            yield from _word_completions(catalog.workflows, current)
+        return
+
+    if root == "pipeline":
+        if len(tokens) == ROOT_TOKEN_COUNT or (
+            len(tokens) == SUBCOMMAND_TOKEN_COUNT and not text_before_cursor.endswith(" ")
+        ):
+            yield from _word_completions(catalog.pipelines, current)
+        return
+
+    if root == "state":
+        yield from _state_completions(tokens, current, text_before_cursor)
+        return
+
+    if root == "skill":
+        yield from _skill_completions(tokens, current, text_before_cursor, catalog)
+        return
 
 
 def _state_completions(
@@ -143,6 +170,15 @@ def _word_completions(words: Iterable[str], current: str) -> Iterable[Completion
     for word in sorted(words):
         if word.startswith(current):
             yield Completion(word, start_position=-len(current))
+
+
+def _root_words(catalog: ReplCommandCatalog) -> tuple[str, ...]:
+    return (
+        *ROOT_COMMANDS,
+        *(f"/{name}" for name in catalog.skills),
+        *(f"/{name}" for name in catalog.workflows),
+        *(f"/{name}" for name in catalog.pipelines),
+    )
 
 
 def _current_token(text_before_cursor: str) -> str:

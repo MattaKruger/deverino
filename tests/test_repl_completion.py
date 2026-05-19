@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from prompt_toolkit.document import Document
 
-from harness_poc.repl_completion import HarnessCompleter
+from harness_poc.repl_completion import HarnessCompleter, HarnessSuggester
 
 if TYPE_CHECKING:
     from harness_poc.app_factory import AppState
@@ -39,6 +39,18 @@ def test_skill_command_completion_includes_executable_skill_names() -> None:
     completions = _completion_texts("/skill con")
 
     assert "consolidate_state" in completions
+
+
+def test_root_completion_includes_direct_resource_invocations() -> None:
+    completions = _completion_texts("/con")
+
+    assert "/consolidate_state" in completions
+
+
+async def test_tui_suggester_uses_repl_completions() -> None:
+    suggestion = await HarnessSuggester(cast("AppState", _FakeAppState())).get_suggestion("/con")
+
+    assert suggestion == "/consolidate_state"
 
 
 def _completion_texts(text: str) -> set[str]:

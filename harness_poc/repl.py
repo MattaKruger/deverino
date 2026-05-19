@@ -76,6 +76,9 @@ def handle_repl_input(app_state: AppState, user_input: str) -> None:  # noqa: PL
         handle_goal_command(app_state, user_input)
         return
 
+    if _handle_direct_resource_command(app_state, user_input):
+        return
+
     handle_chat_input(app_state, user_input)
 
 
@@ -262,7 +265,13 @@ def _parse_pipeline_command(user_input: str) -> tuple[str, dict[str, str]]:
     parts = normalized.split(maxsplit=1)
     if len(parts) < MIN_PIPELINE_PARTS:
         return "", {}
-    tokens = parts[1].split()
+    return _parse_pipeline_invocation(parts[1])
+
+
+def _parse_pipeline_invocation(argument: str) -> tuple[str, dict[str, str]]:
+    tokens = argument.split()
+    if not tokens:
+        return "", {}
     pipeline_name = tokens[0]
     inputs: dict[str, str] = {}
     current_key: str | None = None
@@ -298,6 +307,47 @@ def list_workflows(app_state: AppState) -> None:
         return
     for workflow_file in workflow_files:
         print_text(f"- {workflow_file.stem}")
+
+
+def _handle_direct_resource_command(app_state: AppState, user_input: str) -> bool:
+    handled = False
+    if user_input.startswith("/"):
+        normalized = user_input.removeprefix("/").strip()
+        if normalized:
+            name, _, argument = normalized.partition(" ")
+            matches = _direct_resource_matches(app_state, name)
+            handled = bool(matches)
+            if len(matches) > 1:
+                print_error(
+                    f"Ambiguous command '/{name}' matches: {', '.join(matches)}. "
+                    "Use /skill, /workflow, or /pipeline to disambiguate."
+                )
+            elif matches == ["skill"]:
+                execute_named_skill(app_state, name, argument)
+            elif matches == ["workflow"]:
+                run_workflow(app_state, name, argument)
+            elif matches == ["pipeline"]:
+                pipeline_name, inputs = _parse_pipeline_invocation(normalized)
+                run_pipeline(app_state, pipeline_name, inputs)
+    return handled
+
+
+def _direct_resource_matches(app_state: AppState, name: str) -> list[str]:
+    matches: list[str] = []
+    if is_skill_name(app_state, name):
+        matches.append("skill")
+    if name in _workflow_names(app_state):
+        matches.append("workflow")
+    if name in app_state.pipeline_runner.list_pipelines():
+        matches.append("pipeline")
+    return matches
+
+
+def _workflow_names(app_state: AppState) -> set[str]:
+    workflows_dir = app_state.config.paths.workflows
+    if not workflows_dir.exists():
+        return set()
+    return {path.stem for path in workflows_dir.glob("*.yaml")}
 
 
 def _is_state_command(user_input: str) -> bool:

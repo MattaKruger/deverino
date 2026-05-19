@@ -14,9 +14,10 @@ from typing import TYPE_CHECKING, ClassVar
 
 from textual.app import App, Binding, ComposeResult
 from textual.containers import Vertical, VerticalScroll
-from textual.widgets import Input, Markdown, Static
+from textual.widgets import Markdown, OptionList, Static, TextArea
 
 from harness_poc.console import clear_tui_handlers, set_tui_handlers
+from harness_poc.repl_completion import completions_for_text
 
 if TYPE_CHECKING:
     from textual.timer import Timer
@@ -69,9 +70,70 @@ def _linkify_file_refs(text: str, project_root: str) -> str:
     return _FILE_REF_PATTERN.sub(_replace, text)
 
 
+def _should_show_completions(line_before_cursor: str) -> bool:
+    stripped = line_before_cursor.lstrip()
+    return stripped.startswith("/") and "\t" not in stripped
+
+
+def _special_resource_completion(line_before_cursor: str) -> str | None:
+    normalized = line_before_cursor.strip()
+    if normalized in {"/skill", "skill"}:
+        return "skills"
+    if normalized in {"/workflow", "workflow"}:
+        return "workflows"
+    if normalized in {"/pipeline", "pipeline"}:
+        return "pipelines"
+    return None
+
+
+def _apply_completion(before: str, after: str, completion: str) -> tuple[str, int]:
+    special = _special_resource_completion(before)
+    if special is not None:
+        replacement = f"{before} {completion}"
+        return f"{replacement}{after}", len(replacement)
+
+    token_start = len(before) - len(before.rsplit(maxsplit=1)[-1]) if before.strip() else 0
+    replacement = f"{before[:token_start]}{completion}"
+    return f"{replacement}{after}", len(replacement)
+
+
+def _workflow_names(app_state: AppState) -> tuple[str, ...]:
+    workflows_dir = app_state.config.paths.workflows
+    if not workflows_dir.exists():
+        return ()
+    return tuple(sorted(path.stem for path in workflows_dir.glob("*.yaml")))
+
+
+def _skill_names(app_state: AppState) -> tuple[str, ...]:
+    names: list[str] = []
+    for tool in app_state.skill_runner.discover_skills():
+        function = tool.get("function", {})
+        if isinstance(function, dict) and isinstance(function.get("name"), str):
+            names.append(function["name"])
+    return tuple(sorted(names))
+
+
 class ChatApp(App[None]):
     BINDINGS: ClassVar[list] = [
         Binding("super+c", "copy_smart", "Copy", priority=True, show=False),
+        Binding("ctrl+d", "submit_editor", "Submit", priority=True, show=False),
+        Binding("alt+enter", "submit_editor", "Submit", priority=True, show=False),
+        Binding("super+enter", "submit_editor", "Submit", priority=True, show=False),
+        Binding("tab", "cycle_completion_forward", "Next completion", priority=True, show=False),
+        Binding(
+            "shift+tab",
+            "cycle_completion_backward",
+            "Previous completion",
+            priority=True,
+            show=False,
+        ),
+        Binding(
+            "enter",
+            "accept_completion_or_newline",
+            "Accept completion",
+            priority=True,
+            show=False,
+        ),
     ]
 
     DEFAULT_CSS = """
@@ -100,7 +162,7 @@ class ChatApp(App[None]):
     }
     #footer {
         dock: bottom;
-        height: 4;
+        height: 10;
     }
     #spinner {
         height: 1;
@@ -108,8 +170,13 @@ class ChatApp(App[None]):
         padding: 0 1;
     }
     #input {
-        height: 3;
+        height: 5;
         border: tall $accent;
+    }
+    #completion-menu {
+        height: 4;
+        display: none;
+        border: tall $surface;
     }
     """
 
@@ -123,7 +190,15 @@ class ChatApp(App[None]):
         yield VerticalScroll(id="chat")
         with Vertical(id="footer"):
             yield Static("", id="spinner")
-            yield Input(placeholder="> ", id="input")
+            yield TextArea(
+                "",
+                placeholder="> ",
+                id="input",
+                show_line_numbers=False,
+                soft_wrap=True,
+                tab_behavior="focus",
+            )
+            yield OptionList(id="completion-menu")
 
     def on_mount(self) -> None:
         set_tui_handlers(
@@ -132,7 +207,7 @@ class ChatApp(App[None]):
             on_text=self._tui_print_text,
         )
         self._update_header()
-        self.query_one(Input).focus()
+        self.query_one(TextArea).focus()
 
     def on_unmount(self) -> None:
         clear_tui_handlers()
@@ -150,7 +225,7 @@ class ChatApp(App[None]):
             self.copy_to_clipboard(selected)
         else:
             with contextlib.suppress(Exception):
-                self.query_one("#input", Input).action_copy()
+                self.query_one("#input", TextArea).action_copy()
 
     def on_markdown_link_clicked(self, event: Markdown.LinkClicked) -> None:
         """Open ``file-line:`` links in Zed editor."""
@@ -189,15 +264,128 @@ class ChatApp(App[None]):
             self._spinner_timer = None
         self.query_one("#spinner", Static).update("")
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        text = event.value.strip()
+    def action_submit_editor(self) -> None:
+        self._submit_editor_text()
+
+    def action_cycle_completion_forward(self) -> None:
+        self._cycle_completion(forward=True)
+
+    def action_cycle_completion_backward(self) -> None:
+        self._cycle_completion(forward=False)
+
+    def action_accept_completion_or_newline(self) -> None:
+        if self._completion_visible:
+            self._accept_completion()
+            return
+        self.query_one("#input", TextArea).insert("\n")
+
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        del event
+        if self._completion_visible:
+            self._refresh_completion_menu()
+
+    def on_text_area_selection_changed(self, event: TextArea.SelectionChanged) -> None:
+        del event
+        if self._completion_visible:
+            self._refresh_completion_menu()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        self._accept_completion()
+
+    def _submit_editor_text(self) -> None:
+        editor = self.query_one("#input", TextArea)
+        text = editor.text.strip()
         if not text:
             return
-        event.input.clear()
+        editor.load_text("")
+        self._hide_completion_menu()
         if text.lower() in {"exit", "quit", "/exit", "/quit"}:
             self.exit()
             return
         self._submit(text)
+
+    @property
+    def _completion_visible(self) -> bool:
+        return bool(self.query_one("#completion-menu", OptionList).display)
+
+    def _cycle_completion(self, *, forward: bool) -> None:
+        menu = self.query_one("#completion-menu", OptionList)
+        if not self._completion_visible:
+            self._refresh_completion_menu(force=True)
+            return
+        if menu.option_count == 0:
+            return
+        highlighted = menu.highlighted
+        if highlighted is None:
+            menu.highlighted = 0
+            return
+        delta = 1 if forward else -1
+        menu.highlighted = (highlighted + delta) % menu.option_count
+
+    def _accept_completion(self) -> None:
+        menu = self.query_one("#completion-menu", OptionList)
+        highlighted = menu.highlighted
+        if highlighted is None or menu.option_count == 0:
+            return
+        option = menu.get_option_at_index(highlighted)
+        self._replace_current_completion_context(str(option.prompt))
+        self._hide_completion_menu()
+        self.query_one("#input", TextArea).focus()
+
+    def _refresh_completion_menu(self, *, force: bool = False) -> None:
+        menu = self.query_one("#completion-menu", OptionList)
+        line = self._current_line_before_cursor()
+        completions = self._completion_texts(line, force=force)
+        if not completions:
+            self._hide_completion_menu()
+            return
+        menu.clear_options()
+        menu.add_options(completions)
+        menu.highlighted = 0
+        menu.display = True
+
+    def _completion_texts(self, line_before_cursor: str, *, force: bool) -> list[str]:
+        if not force and not _should_show_completions(line_before_cursor):
+            return []
+        special = _special_resource_completion(line_before_cursor)
+        if special == "skills":
+            return list(_skill_names(self._app_state))
+        if special == "workflows":
+            return list(_workflow_names(self._app_state))
+        if special == "pipelines":
+            return list(self._app_state.pipeline_runner.list_pipelines())
+        return [
+            completion.text
+            for completion in completions_for_text(self._app_state, line_before_cursor)
+        ]
+
+    def _hide_completion_menu(self) -> None:
+        menu = self.query_one("#completion-menu", OptionList)
+        menu.clear_options()
+        menu.display = False
+
+    def _current_line_before_cursor(self) -> str:
+        editor = self.query_one("#input", TextArea)
+        row, column = editor.cursor_location
+        lines = editor.text.splitlines() or [""]
+        if row >= len(lines):
+            return ""
+        return lines[row][:column]
+
+    def _replace_current_completion_context(self, completion: str) -> None:
+        editor = self.query_one("#input", TextArea)
+        row, column = editor.cursor_location
+        lines = editor.text.splitlines() or [""]
+        while row >= len(lines):
+            lines.append("")
+        line = lines[row]
+        before = line[:column]
+        after = line[column:]
+        replacement_line, cursor_column = _apply_completion(before, after, completion)
+        lines[row] = replacement_line
+        editor.load_text("\n".join(lines))
+        editor.move_cursor((row, cursor_column))
 
     def _submit(self, text: str) -> None:
         chat = self.query_one("#chat", VerticalScroll)
