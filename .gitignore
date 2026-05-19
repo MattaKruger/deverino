@@ -8,3 +8,4 @@ harness_poc/blackboard.db
 .harness_repl_history
 .harness/
 repomix-output.xml
+.logfire/
