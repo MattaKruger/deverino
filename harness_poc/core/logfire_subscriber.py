@@ -19,9 +19,9 @@ if TYPE_CHECKING:
     from harness_poc.core.event_bus import EventBus
 
 
-def configure_logfire() -> None:
+def configure_logfire(*, include_content: bool = False) -> None:
     logfire.configure()
-    logfire.instrument_pydantic_ai()
+    logfire.instrument_pydantic_ai(include_content=include_content)
 
 
 def wire_logfire(event_bus: EventBus) -> None:

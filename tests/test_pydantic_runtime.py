@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic_ai.models.test import TestModel
 
@@ -15,15 +15,19 @@ from harness_poc.core.config import (
 )
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.pydantic_runtime import (
+    MAX_SEMBLE_SEARCH_CALLS_PER_RUN,
     AgentDeps,
     build_model,
     build_runtime,
     build_skill_tools,
     execute_skill_as_tool,
 )
+from harness_poc.core.skill_context import SkillResult
 from harness_poc.core.skill_runner import SkillRunner
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import pytest
     from pydantic_ai import RunContext
 
@@ -32,9 +36,7 @@ def test_build_model_uses_test_model_without_api_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("harness_poc.core.config._find_dotenv", lambda: None)
-    config = LLMConfig(
-        provider="deepseek", model="deepseek-v4-flash", base_url=None
-    )
+    config = LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None)
 
     model = build_model(config)
 
@@ -54,10 +56,7 @@ def test_build_skill_tools_reuses_discovered_skill_schema(
     assert read_memory_tool.description is not None
     assert read_memory_tool.description.startswith("Retrieves data")
     assert (
-        read_memory_tool.function_schema.json_schema["properties"][
-            "memory_key"
-        ]["type"]
-        == "string"
+        read_memory_tool.function_schema.json_schema["properties"]["memory_key"]["type"] == "string"
     )
 
 
@@ -75,9 +74,7 @@ def test_execute_skill_as_tool_returns_raw_content_for_success(
         ),
     )
 
-    raw_result = execute_skill_as_tool(
-        ctx, "read_memory", {"memory_key": "note"}
-    )
+    raw_result = execute_skill_as_tool(ctx, "read_memory", {"memory_key": "note"})
 
     # Success returns raw content, not JSON-wrapped
     assert isinstance(raw_result, str)
@@ -103,6 +100,46 @@ def test_execute_skill_as_tool_marks_human_action_required(
     assert result["status"] == "needs_orchestrator_action"
     assert result["orchestrator_action_required"] is True
     assert "Stop and surface content" in result["orchestrator_instruction"]
+
+
+def test_execute_skill_as_tool_enforces_semble_search_budget(
+    tmp_path: Path,
+) -> None:
+    _skill_runner, database, config, session_id = _runtime_parts(tmp_path)
+    calls = 0
+
+    def fake_execute_skill(
+        tool_name: str,
+        arguments: dict[str, Any],
+        session_id: str,
+        on_text: Callable[[str], None] | None = None,
+        on_tool_event: Callable[[str], None] | None = None,
+    ) -> SkillResult:
+        del tool_name, arguments, session_id, on_text, on_tool_event
+        nonlocal calls
+        calls += 1
+        return SkillResult(status="success", content="search result")
+
+    skill_runner = cast("SkillRunner", _FakeSkillRunner(fake_execute_skill))
+    ctx = _fake_run_context(
+        AgentDeps(
+            session_id=session_id,
+            database=database,
+            config=config,
+            skill_runner=skill_runner,
+        ),
+    )
+
+    outputs = [
+        execute_skill_as_tool(ctx, "semble_search", {"query": f"q{i}"})
+        for i in range(MAX_SEMBLE_SEARCH_CALLS_PER_RUN + 1)
+    ]
+
+    assert outputs[:MAX_SEMBLE_SEARCH_CALLS_PER_RUN] == (
+        ["search result"] * MAX_SEMBLE_SEARCH_CALLS_PER_RUN
+    )
+    assert outputs[-1].startswith("[blocked] semble_search call budget reached")
+    assert calls == MAX_SEMBLE_SEARCH_CALLS_PER_RUN
 
 
 def test_runtime_can_run_with_test_model(tmp_path: Path) -> None:
@@ -166,9 +203,7 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             pipelines=project_root / "pipelines",
             personas=project_root / "personas",
         ),
-        llm=LLMConfig(
-            provider="deepseek", model="deepseek-v4-flash", base_url=None
-        ),
+        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
         runtime=RuntimeConfig(
             database_path=tmp_path / "blackboard.db",
             default_container_image="python:3.12-slim",
@@ -184,3 +219,8 @@ def _fake_run_context(deps: AgentDeps) -> RunContext[AgentDeps]:
 class _FakeRunContext:
     def __init__(self, *, deps: AgentDeps) -> None:
         self.deps = deps
+
+
+class _FakeSkillRunner:
+    def __init__(self, execute_skill: object) -> None:
+        self.execute_skill = execute_skill

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -18,16 +17,20 @@ from harness_poc.core.pydantic_runtime import (
     build_runtime,
 )
 from harness_poc.core.skill_runner import SkillRunner
-
-# Skills excluded from the agent's auto-invokable toolset because they
-# have workspace=read_write and could mutate project source files.
-# The user can still invoke them explicitly via /skill <name>.
-_TUI_BLOCKED_SKILLS: frozenset[str] = frozenset({"execute_python", "spec_writer"})
 from harness_poc.core.skill_scaffolder import SkillScaffolder
 from harness_poc.core.state import build_state_context
 from harness_poc.core.workflow_runner import WorkflowRunner
 
+# Skills excluded from the agent's auto-invokable toolset because they
+# have workspace=read_write and could mutate project source files.
+# The user can still invoke them explicitly via /skill <name>.
+_TUI_BLOCKED_SKILLS: frozenset[str] = frozenset(
+    {"execute_python", "spec_writer"}
+)
+
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pydantic_ai.messages import ModelMessage
     from pydantic_ai.models import Model
 
@@ -45,9 +48,13 @@ def _default_on_finish(content: str) -> None:
 
 @dataclass
 class StreamingContext:
-    on_text: Callable[[str], None] = field(default_factory=lambda: _default_on_text)
+    on_text: Callable[[str], None] = field(
+        default_factory=lambda: _default_on_text
+    )
     on_tool_event: Callable[[str], None] | None = None
-    on_finish: Callable[[str], None] = field(default_factory=lambda: _default_on_finish)
+    on_finish: Callable[[str], None] = field(
+        default_factory=lambda: _default_on_finish
+    )
     session_tokens: int = 0
 
     def reset_callbacks(self) -> None:
@@ -123,7 +130,9 @@ def build_app_state() -> AppState:
             wire_logfire,
         )
 
-        configure_logfire()
+        configure_logfire(
+            include_content=config.observability.logfire_include_content
+        )
         wire_logfire(event_bus)
 
     return AppState(

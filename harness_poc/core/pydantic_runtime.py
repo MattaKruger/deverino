@@ -9,7 +9,9 @@ from typing import TYPE_CHECKING, Any, cast
 from pydantic_ai import (
     Agent,
     PartDeltaEvent,
+    PartStartEvent,
     RunContext,
+    TextPart,
     TextPartDelta,
     Tool,
     ToolCallPartDelta,
@@ -36,6 +38,8 @@ if TYPE_CHECKING:
 from harness_poc.core.config import APISettings
 
 HUMAN_ACTION_REQUIRED_STATUS = "needs_orchestrator_action"
+SEMBLE_SEARCH_TOOL_NAME = "semble_search"
+MAX_SEMBLE_SEARCH_CALLS_PER_RUN = 3
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +51,7 @@ class AgentDeps:
     skill_runner: SkillRunner
     stream_text: Callable[[str], None] | None = None
     on_tool_event: Callable[[str], None] | None = None
+    tool_call_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,9 +79,10 @@ class PydanticAgentRuntime:
                 "history_length": len(message_history or []),
             },
         )
+        deps = replace(self.deps, tool_call_counts={})
         result = self.agent.run_sync(
             prompt,
-            deps=self.deps,
+            deps=deps,
             message_history=message_history,
         )
 
@@ -120,7 +126,12 @@ class PydanticAgentRuntime:
     ) -> AgentRunResult:
         max_consecutive_tool_rounds = 10
 
-        deps = replace(self.deps, stream_text=on_text, on_tool_event=on_tool_event)
+        deps = replace(
+            self.deps,
+            stream_text=on_text,
+            on_tool_event=on_tool_event,
+            tool_call_counts={},
+        )
         all_output_parts: list[str] = []
         usage: Usage | None = None
         consecutive_tool_rounds = 0
@@ -144,7 +155,15 @@ class PydanticAgentRuntime:
 
                     async with node.stream(agent_run.ctx) as request_stream:
                         async for event in request_stream:
-                            if isinstance(event, PartDeltaEvent):
+                            if isinstance(event, PartStartEvent):
+                                if (
+                                    isinstance(event.part, TextPart)
+                                    and event.part.content
+                                ):
+                                    if on_text is not None:
+                                        on_text(event.part.content)
+                                    turn_chunks.append(event.part.content)
+                            elif isinstance(event, PartDeltaEvent):
                                 if isinstance(event.delta, TextPartDelta):
                                     delta = event.delta.content_delta
                                     if delta:
@@ -176,8 +195,14 @@ class PydanticAgentRuntime:
                     "Refine your query for better results.]"
                 )
 
-            result_output = agent_run.result.output if agent_run.result else None
-            output = str(result_output) if result_output is not None else "".join(all_output_parts)
+            result_output = (
+                agent_run.result.output if agent_run.result else None
+            )
+            output = (
+                str(result_output)
+                if result_output is not None
+                else "".join(all_output_parts)
+            )
 
             if not capped and agent_run.result is not None:
                 usage = _usage_to_dict(agent_run.result.usage)
@@ -205,7 +230,9 @@ def build_model(  # noqa: PLR0911
     if config.provider == "anthropic":
         api_key = api_settings.anthropic_api_key
         if not api_key:
-            logger.info("No Anthropic API key configured; using fallback PydanticAI model")
+            logger.info(
+                "No Anthropic API key configured; using fallback PydanticAI model"
+            )
             return fallback_model or TestModel(call_tools=[])
         logger.debug(
             "Building Anthropic-backed PydanticAI model",
@@ -219,7 +246,9 @@ def build_model(  # noqa: PLR0911
     if config.provider == "deepseek":
         api_key = api_settings.deepseek_api_key
         if not api_key:
-            logger.info("No DeepSeek API key configured; using fallback PydanticAI model")
+            logger.info(
+                "No DeepSeek API key configured; using fallback PydanticAI model"
+            )
             return fallback_model or TestModel(call_tools=[])
         logger.debug(
             "Building DeepSeek-backed PydanticAI model",
@@ -234,7 +263,9 @@ def build_model(  # noqa: PLR0911
     if config.provider == "openai":
         api_key = api_settings.openai_api_key
         if not api_key:
-            logger.info("No OpenAI API key configured; using fallback PydanticAI model")
+            logger.info(
+                "No OpenAI API key configured; using fallback PydanticAI model"
+            )
             return fallback_model or TestModel(call_tools=[])
         provider_kwargs: dict[str, Any] = {"api_key": api_key}
         if config.base_url:
@@ -255,7 +286,7 @@ def build_model(  # noqa: PLR0911
     raise ValueError(msg)
 
 
-def build_primary_agent(
+def build_primary_agent(  # noqa: PLR0913
     *,
     system_prompt: str,
     skill_runner: SkillRunner,
@@ -264,10 +295,15 @@ def build_primary_agent(
     enable_tools: bool = True,
     blocked_skills: frozenset[str] | None = None,
 ) -> Agent[AgentDeps, str]:
+    tools = (
+        build_skill_tools(skill_runner, blocked_skills=blocked_skills)
+        if enable_tools
+        else []
+    )
     return Agent(
         model or build_model(llm),
         deps_type=AgentDeps,
-        tools=build_skill_tools(skill_runner, blocked_skills=blocked_skills) if enable_tools else [],
+        tools=tools,
         system_prompt=_with_tool_policy(system_prompt),
         end_strategy="early",
     )
@@ -384,8 +420,28 @@ def execute_skill_as_tool(
             "arguments": arguments,
         },
     )
+    if skill_name == SEMBLE_SEARCH_TOOL_NAME and _tool_budget_exhausted(
+        ctx,
+        skill_name,
+        MAX_SEMBLE_SEARCH_CALLS_PER_RUN,
+    ):
+        _emit_tool_progress(
+            ctx,
+            (
+                "  semble_search: blocked - per-run budget reached "
+                f"({MAX_SEMBLE_SEARCH_CALLS_PER_RUN})"
+            ),
+        )
+        return (
+            "[blocked] semble_search call budget reached for this agent run "
+            f"({MAX_SEMBLE_SEARCH_CALLS_PER_RUN} calls). Use the search results already "
+            "available in this run to answer the user instead of searching again."
+        )
+
     # Stream progress so the user sees tool activity during execution.
-    _emit_tool_progress(ctx, f"  {skill_name}: {_summarise_args(arguments)} ...")
+    _emit_tool_progress(
+        ctx, f"  {skill_name}: {_summarise_args(arguments)} ..."
+    )
     try:
         result = ctx.deps.skill_runner.execute_skill(
             tool_name=skill_name,
@@ -477,7 +533,9 @@ def _usage_to_dict(usage: RunUsage) -> Usage:
     return {
         "prompt_tokens": int(usage.input_tokens or 0),
         "completion_tokens": int(usage.output_tokens or 0),
-        "total_tokens": int((usage.input_tokens or 0) + (usage.output_tokens or 0)),
+        "total_tokens": int(
+            (usage.input_tokens or 0) + (usage.output_tokens or 0)
+        ),
     }
 
 
@@ -485,6 +543,18 @@ def _emit_tool_progress(ctx: RunContext[AgentDeps], message: str) -> None:
     handler = ctx.deps.on_tool_event
     if handler is not None:
         handler(message)
+
+
+def _tool_budget_exhausted(
+    ctx: RunContext[AgentDeps],
+    skill_name: str,
+    max_calls: int,
+) -> bool:
+    current = ctx.deps.tool_call_counts.get(skill_name, 0)
+    if current >= max_calls:
+        return True
+    ctx.deps.tool_call_counts[skill_name] = current + 1
+    return False
 
 
 ARG_SUMMARY_MAX_LEN = 60
@@ -521,7 +591,9 @@ def chat_text(
             user_parts.append(msg["content"])
 
     system_prompt = "\n\n".join(system_parts)
-    prompt = "\n\n".join(msg["content"] for msg in messages if msg["role"] != "system")
+    prompt = "\n\n".join(
+        msg["content"] for msg in messages if msg["role"] != "system"
+    )
 
     agent = Agent(model, system_prompt=system_prompt)
     result = agent.run_sync(prompt)
