@@ -7,6 +7,7 @@ from rich.markdown import Markdown
 from rich.table import Table
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from harness_poc.core.skill_runner import SkillRunner
@@ -15,18 +16,54 @@ if TYPE_CHECKING:
 
 console = Console()
 
+_tui_on_markdown: Callable[[str], None] | None = None
+_tui_on_error: Callable[[str], None] | None = None
+_tui_on_text: Callable[[str, bool], None] | None = None
+
+
+def set_tui_handlers(
+    *,
+    on_markdown: Callable[[str], None],
+    on_error: Callable[[str], None],
+    on_text: Callable[[str, bool], None],
+) -> None:
+    global _tui_on_markdown, _tui_on_error, _tui_on_text  # noqa: PLW0603
+    _tui_on_markdown = on_markdown
+    _tui_on_error = on_error
+    _tui_on_text = on_text
+
+
+def clear_tui_handlers() -> None:
+    global _tui_on_markdown, _tui_on_error, _tui_on_text  # noqa: PLW0603
+    _tui_on_markdown = None
+    _tui_on_error = None
+    _tui_on_text = None
+
 
 def print_markdown(markdown: str) -> None:
-    console.print(Markdown(markdown))
+    if _tui_on_markdown is not None:
+        _tui_on_markdown(markdown)
+    else:
+        console.print(Markdown(markdown))
 
 
 def print_error(message: str) -> None:
-    console.print(f"[red]{message}[/red]")
+    if _tui_on_error is not None:
+        _tui_on_error(message)
+    else:
+        console.print(f"[red]{message}[/red]")
+
+
+def print_text(text: str, *, markup: bool = True) -> None:
+    if _tui_on_text is not None:
+        _tui_on_text(text, markup)
+    else:
+        console.print(text, markup=markup)
 
 
 def print_skill_table(skill_files: list[Path], skill_runner: SkillRunner) -> None:
     if not skill_files:
-        console.print("No skills found.")
+        print_text("No skills found.")
         return
 
     table = Table(title="Skills")
@@ -42,17 +79,13 @@ def print_skill_table(skill_files: list[Path], skill_runner: SkillRunner) -> Non
             if skill_file.is_relative_to(skill_runner.config.paths.system_skills)
             else "project"
         )
-        table.add_row(
-            metadata["name"],
-            source,
-            metadata["description"],
-        )
+        table.add_row(metadata["name"], source, metadata["description"])
 
     console.print(table)
 
 
 def print_workflow_result(result: WorkflowRunResult) -> None:
-    console.print(
+    print_text(
         f"Workflow [cyan]{result.workflow_name}[/cyan] completed with status: "
         f"[green]{result.status}[/green]"
     )
@@ -62,10 +95,6 @@ def print_workflow_result(result: WorkflowRunResult) -> None:
         table.add_column("Skill", no_wrap=True)
         table.add_column("Status", no_wrap=True)
         for output in result.outputs:
-            table.add_row(
-                output.state_name,
-                output.skill_name,
-                output.result.status,
-            )
+            table.add_row(output.state_name, output.skill_name, output.result.status)
         console.print(table)
-    console.print(result.final_content)
+    print_text(result.final_content)

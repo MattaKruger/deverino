@@ -12,7 +12,7 @@ from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import FileHistory
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
-from harness_poc.console import console, print_error, print_markdown, print_skill_table
+from harness_poc.console import print_error, print_markdown, print_skill_table, print_text
 from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
 from harness_poc.core.state import StateSection, build_state_context
 from harness_poc.repl_completion import HarnessCompleter
@@ -39,14 +39,14 @@ def _track_tokens(usage: Usage | None, app_state: AppState) -> None:
 
 
 def run_repl(app_state: AppState) -> None:
-    console.print(f"Started session: [cyan]{app_state.session_id}[/cyan]")
-    console.print("Type 'exit' or 'quit' to stop.")
-    console.print("Run an explicit workflow with: workflow research_task <objective>")
-    console.print("Run a pipeline with: pipeline <name> [key=value ...]")
-    console.print("Run an autonomous goal loop with: /goal <objective>")
-    console.print("Manage STATE with: state show | state note <text> | state propose")
-    console.print("Manage skills with: skill list | skill create <name> <description>")
-    console.print("Type '/' and press Tab to discover slash commands.")
+    print_text(f"Started session: [cyan]{app_state.session_id}[/cyan]")
+    print_text("Type 'exit' or 'quit' to stop.")
+    print_text("Run an explicit workflow with: workflow research_task <objective>")
+    print_text("Run a pipeline with: pipeline <name> [key=value ...]")
+    print_text("Run an autonomous goal loop with: /goal <objective>")
+    print_text("Manage STATE with: state show | state note <text> | state propose")
+    print_text("Manage skills with: skill list | skill create <name> <description>")
+    print_text("Type '/' and press Tab to discover slash commands.")
     session: PromptSession[str] = PromptSession(
         completer=HarnessCompleter(app_state),
         complete_while_typing=True,
@@ -57,7 +57,7 @@ def run_repl(app_state: AppState) -> None:
         try:
             user_input = session.prompt(_build_prompt_bar(app_state)).strip()
         except (EOFError, KeyboardInterrupt):
-            console.print("\nExiting.")
+            print_text("\nExiting.")
             break
 
         if user_input.lower() in {"exit", "quit", "/exit", "/quit"}:
@@ -125,7 +125,7 @@ def _is_skills_command(user_input: str) -> bool:
 
 
 def print_repl_help() -> None:
-    console.print(
+    print_text(
         """REPL commands:
   /goal <objective>
   /workflow <name> <objective>
@@ -148,7 +148,7 @@ Non-slash forms still work: goal, workflow, state, skill, exit, quit.""",
 
 def run_workflow(app_state: AppState, workflow_name: str, objective: str) -> bool:
     if not workflow_name or not objective:
-        console.print("Usage: workflow <name> <objective>")
+        print_text("Usage: workflow <name> <objective>")
         return False
 
     try:
@@ -169,7 +169,7 @@ def run_workflow(app_state: AppState, workflow_name: str, objective: str) -> boo
         return False
 
     summary = workflow_result.summary()
-    console.print(summary)
+    print_text(summary)
     app_state.messages.append({"role": "assistant", "content": summary})
     return True
 
@@ -182,15 +182,15 @@ def handle_workflow_command(app_state: AppState, user_input: str) -> None:
 def list_pipelines(app_state: AppState) -> None:
     names = app_state.pipeline_runner.list_pipelines()
     if not names:
-        console.print("[dim]No pipelines found.[/dim]")
+        print_text("[dim]No pipelines found.[/dim]")
         return
     for name in names:
-        console.print(f"  {name}")
+        print_text(f"  {name}")
 
 
 def run_pipeline(app_state: AppState, pipeline_name: str, inputs: dict[str, str]) -> bool:
     if not pipeline_name:
-        console.print("Usage: pipeline <name> [key=value ...]")
+        print_text("Usage: pipeline <name> [key=value ...]")
         return False
     try:
         result = app_state.pipeline_runner.run(pipeline_name, inputs, app_state)
@@ -202,7 +202,7 @@ def run_pipeline(app_state: AppState, pipeline_name: str, inputs: dict[str, str]
         return False
 
     status_color = "green" if result.status == "completed" else "red"
-    console.print(
+    print_text(
         f"\n[{status_color}]Pipeline '{pipeline_name}': {result.status}[/{status_color}]"
         f" ({result.duration_s:.1f}s)\n"
     )
@@ -210,7 +210,7 @@ def run_pipeline(app_state: AppState, pipeline_name: str, inputs: dict[str, str]
         node_color = {"completed": "green", "failed": "red", "skipped": "yellow"}.get(
             node_result.status, "white"
         )
-        console.print(f"  [{node_color}]{node_id}: {node_result.status}[/{node_color}]")
+        print_text(f"  [{node_color}]{node_id}: {node_result.status}[/{node_color}]")
         if node_result.output:
             print_markdown(node_result.output)
 
@@ -298,10 +298,10 @@ def _parse_workflow_command(user_input: str) -> tuple[str, str]:
 def list_workflows(app_state: AppState) -> None:
     workflow_files = sorted(app_state.config.paths.workflows.glob("*.yaml"))
     if not workflow_files:
-        console.print("No workflows found.")
+        print_text("No workflows found.")
         return
     for workflow_file in workflow_files:
-        console.print(f"- {workflow_file.stem}")
+        print_text(f"- {workflow_file.stem}")
 
 
 def _is_state_command(user_input: str) -> bool:
@@ -318,7 +318,7 @@ def handle_state_command(app_state: AppState, user_input: str) -> None:
         return
 
     if not handled:
-        console.print(f"Unknown state command: {command}")
+        print_text(f"Unknown state command: {command}")
         print_state_help()
 
 
@@ -378,12 +378,12 @@ def append_session_state(app_state: AppState, command: str, argument: str) -> No
         section=section,
         text=argument,
     )
-    console.print(f"Added session state {section}: {argument}")
+    print_text(f"Added session state {section}: {argument}")
 
 
 def propose_state(app_state: AppState) -> None:
     proposal = app_state.database.create_state_proposal(app_state.session_id)
-    console.print(f"Created state proposal: [cyan]{proposal.proposal_id}[/cyan]")
+    print_text(f"Created state proposal: [cyan]{proposal.proposal_id}[/cyan]")
     print_markdown(proposal.payload.to_markdown("Proposed Project State Additions"))
 
 
@@ -393,7 +393,7 @@ def approve_state(app_state: AppState, proposal_id: str) -> None:
         print_markdown(next_state.to_markdown("Updated Project State"))
         return
     app_state.database.approve_state_proposal(proposal_id)
-    console.print(f"Approved state proposal: {proposal_id}")
+    print_text(f"Approved state proposal: {proposal_id}")
 
 
 def reject_state(app_state: AppState, proposal_id: str) -> None:
@@ -401,7 +401,7 @@ def reject_state(app_state: AppState, proposal_id: str) -> None:
         msg = "state reject requires a proposal_id"
         raise ValueError(msg)
     app_state.database.reject_state_proposal(proposal_id)
-    console.print(f"Rejected state proposal: {proposal_id}")
+    print_text(f"Rejected state proposal: {proposal_id}")
 
 
 def consolidate_state(app_state: AppState, argument: str) -> None:
@@ -414,7 +414,7 @@ def consolidate_state(app_state: AppState, argument: str) -> None:
     if result.content.lstrip().startswith("##"):
         print_markdown(result.content)
         return
-    console.print(result.content)
+    print_text(result.content)
 
 
 def _state_section_for_command(command: str) -> StateSection:
@@ -433,7 +433,7 @@ def _state_section_for_command(command: str) -> StateSection:
 
 
 def print_state_help() -> None:
-    console.print(
+    print_text(
         """State commands:
   state show [project|session]
   state note <text>
@@ -468,7 +468,7 @@ def handle_skill_command(app_state: AppState, user_input: str) -> None:
         return
 
     if not handled:
-        console.print(f"Unknown skill command: {command}")
+        print_text(f"Unknown skill command: {command}")
         print_skill_help()
 
 
@@ -530,7 +530,7 @@ def execute_named_skill(app_state: AppState, skill_name: str, argument: str) -> 
     if result.content.lstrip().startswith("##"):
         print_markdown(result.content)
         return
-    console.print(result.content)
+    print_text(result.content)
 
 
 def show_skill(app_state: AppState, skill_name: str) -> None:
@@ -554,9 +554,9 @@ def create_skill(app_state: AppState, argument: str) -> None:
     skill_name, description = _parse_create_skill_args(argument)
     scaffolded = app_state.skill_scaffolder.create_skill(skill_name, description)
     app_state.tools = app_state.skill_runner.discover_skills()
-    console.print(f"Created skill: [cyan]{scaffolded.skill_name}[/cyan]")
+    print_text(f"Created skill: [cyan]{scaffolded.skill_name}[/cyan]")
     for path in scaffolded.created_files:
-        console.print(f"- {path.relative_to(app_state.config.project_root)}")
+        print_text(f"- {path.relative_to(app_state.config.project_root)}")
 
 
 def _parse_create_skill_args(argument: str) -> tuple[str, str]:
@@ -626,7 +626,7 @@ def _find_skill_file(app_state: AppState, skill_name: str) -> Path | None:
 
 
 def print_skill_help() -> None:
-    console.print(
+    print_text(
         """Skill commands:
   skill list
   skill show <name>
@@ -648,12 +648,12 @@ def _is_goal_command(user_input: str) -> bool:
 def handle_goal_command(app_state: AppState, user_input: str) -> None:
     objective = user_input.removeprefix("/").removeprefix("goal").strip()
     if not objective:
-        console.print("Usage: /goal <objective>")
+        print_text("Usage: /goal <objective>")
         return
 
-    console.print("[cyan]Starting autonomous goal loop...[/cyan]")
-    console.print(f"Goal: [bold]{objective}[/bold]")
-    console.print()
+    print_text("[cyan]Starting autonomous goal loop...[/cyan]")
+    print_text(f"Goal: [bold]{objective}[/bold]")
+    print_text("")
 
     runner = GoalRunner()
     try:
@@ -685,22 +685,22 @@ def _print_goal_result(result: object) -> None:
     }
     color = status_style.get(result.status, "white")
 
-    console.print()
-    console.print(f"[{color}]Status: {result.status}[/{color}]")
-    console.print(f"Iterations: {result.iterations}")
-    console.print(f"Total tokens: {result.total_tokens}")
-    console.print()
+    print_text("")
+    print_text(f"[{color}]Status: {result.status}[/{color}]")
+    print_text(f"Iterations: {result.iterations}")
+    print_text(f"Total tokens: {result.total_tokens}")
+    print_text("")
     print_markdown(result.content)
 
     if result.events:
-        console.print()
-        console.print("[dim]--- Event Log ---[/dim]")
+        print_text("")
+        print_text("[dim]--- Event Log ---[/dim]")
         for i, event in enumerate(result.events, 1):
             event_type = event.get("type", "?")
             tool = event.get("tool", "?")
             status = event.get("status", "")
             extra = f" ({status})" if status else ""
-            console.print(f"[dim]{i}. [{event_type}] {tool}{extra}[/dim]")
+            print_text(f"[dim]{i}. [{event_type}] {tool}{extra}[/dim]")
 
 
 def _append_goal_result_to_chat_history(
@@ -733,8 +733,8 @@ def _append_pydantic_chat_exchange(
 
 
 def _build_prompt_bar(app_state: AppState) -> FormattedText:
-    """Build a styled prompt bar showing provider, model, and token usage."""
     llm = app_state.config.llm
+    tokens = app_state.streaming.session_tokens
 
     parts: list[tuple[str, str]] = [
         ("fg:ansicyan", "["),
@@ -743,12 +743,8 @@ def _build_prompt_bar(app_state: AppState) -> FormattedText:
         ("fg:ansigreen bold", llm.model),
     ]
 
-    if _session_token_count > 0:
-        token_text = _format_tokens(_session_token_count)
-        if _session_cache_hit_tokens > 0:
-            cached = _format_tokens(_session_cache_hit_tokens)
-            token_text = f"{token_text} (cache {cached})"
-        parts.append(("fg:ansiblue", f" · {token_text}"))
+    if tokens > 0:
+        parts.append(("fg:ansiblue", f" · {_format_tokens(tokens)}"))
 
     parts.append(("fg:ansicyan", "]"))
     parts.append(("", " > "))
