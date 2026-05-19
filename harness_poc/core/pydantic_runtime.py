@@ -6,7 +6,14 @@ import logging
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
-from pydantic_ai import Agent, PartDeltaEvent, RunContext, TextPartDelta, Tool, ToolCallPartDelta
+from pydantic_ai import (
+    Agent,
+    PartDeltaEvent,
+    RunContext,
+    TextPartDelta,
+    Tool,
+    ToolCallPartDelta,
+)
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
@@ -255,11 +262,12 @@ def build_primary_agent(
     llm: LLMConfig | None = None,
     model: Model | None = None,
     enable_tools: bool = True,
+    blocked_skills: frozenset[str] | None = None,
 ) -> Agent[AgentDeps, str]:
     return Agent(
         model or build_model(llm),
         deps_type=AgentDeps,
-        tools=build_skill_tools(skill_runner) if enable_tools else [],
+        tools=build_skill_tools(skill_runner, blocked_skills=blocked_skills) if enable_tools else [],
         system_prompt=_with_tool_policy(system_prompt),
         end_strategy="early",
     )
@@ -275,6 +283,7 @@ def build_runtime(  # noqa: PLR0913
     llm: LLMConfig | None = None,
     model: Model | None = None,
     enable_tools: bool = True,
+    blocked_skills: frozenset[str] | None = None,
 ) -> PydanticAgentRuntime:
     deps = AgentDeps(
         session_id=session_id,
@@ -290,13 +299,19 @@ def build_runtime(  # noqa: PLR0913
             llm=llm,
             model=model,
             enable_tools=enable_tools,
+            blocked_skills=blocked_skills,
         ),
         deps=deps,
     )
 
 
-def build_skill_tools(skill_runner: SkillRunner) -> list[Tool[AgentDeps]]:
+def build_skill_tools(
+    skill_runner: SkillRunner,
+    *,
+    blocked_skills: frozenset[str] | None = None,
+) -> list[Tool[AgentDeps]]:
     tools: list[Tool[AgentDeps]] = []
+    blocked = blocked_skills or frozenset()
     for discovered_skill in skill_runner.discover_skills():
         function = discovered_skill.get("function", {})
 
@@ -315,6 +330,12 @@ def build_skill_tools(skill_runner: SkillRunner) -> list[Tool[AgentDeps]]:
         if not auto_invokable:
             logger.debug(
                 "Skipping non-auto-invokable skill",
+                extra={"skill_name": name},
+            )
+            continue
+        if name in blocked:
+            logger.debug(
+                "Skipping blocked skill",
                 extra={"skill_name": name},
             )
             continue

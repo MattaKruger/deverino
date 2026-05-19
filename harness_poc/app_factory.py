@@ -18,6 +18,11 @@ from harness_poc.core.pydantic_runtime import (
     build_runtime,
 )
 from harness_poc.core.skill_runner import SkillRunner
+
+# Skills excluded from the agent's auto-invokable toolset because they
+# have workspace=read_write and could mutate project source files.
+# The user can still invoke them explicitly via /skill <name>.
+_TUI_BLOCKED_SKILLS: frozenset[str] = frozenset({"execute_python", "spec_writer"})
 from harness_poc.core.skill_scaffolder import SkillScaffolder
 from harness_poc.core.state import build_state_context
 from harness_poc.core.workflow_runner import WorkflowRunner
@@ -137,6 +142,7 @@ def build_app_state() -> AppState:
             system_prompt=full_system_prompt,
             llm=config.llm,
             enable_tools=True,
+            blocked_skills=_TUI_BLOCKED_SKILLS,
         ),
         pydantic_messages=[],
         goal_decision_model=None,
