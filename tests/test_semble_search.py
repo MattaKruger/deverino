@@ -18,8 +18,8 @@ from skills.semble_search import skill as semble_skill
 if TYPE_CHECKING:
     import pytest
 
-EXPECTED_DEFAULT_TOP_K = 15
-EXPECTED_MAX_TOP_K = 50
+EXPECTED_DEFAULT_TOP_K = 5
+EXPECTED_MAX_TOP_K = 10
 MIN_TOP_K = 1
 OVERSIZED_TOP_K = 100
 SUCCESS_EXIT_CODE = 0
@@ -143,6 +143,45 @@ def test_semble_search_emits_subprocess_progress(
     assert result.status == "success"
     assert events[0] == "semble_search: running query='find runtime'"
     assert events[1].startswith("semble_search: finished in ")
+    assert "returned 11 chars" in events[1]
+    assert "current run receives 11 chars" in events[1]
+    assert "before history pruning" in events[1]
+    assert "~2 tokens before history pruning" in events[1]
+
+
+def test_semble_search_caps_large_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _runner_instance, _session_id, database = _runner(tmp_path)
+    ctx = SkillContext(
+        session_id="s",
+        skill_name="semble_search",
+        database=database,
+        config=_test_config(tmp_path),
+    )
+    large_output = "x" * (semble_skill.MAX_OUTPUT_CHARS + 100)
+
+    class FakeProcess:
+        returncode = SUCCESS_EXIT_CODE
+
+        def poll(self) -> int:
+            return SUCCESS_EXIT_CODE
+
+        def communicate(self) -> tuple[str, str]:
+            return large_output, ""
+
+    monkeypatch.setattr(semble_skill.subprocess, "Popen", lambda *_, **__: FakeProcess())
+
+    result = semble_skill._run_semble(  # noqa: SLF001
+        ctx, ["semble", "search"], query="find runtime"
+    )
+
+    assert result.status == "success"
+    assert len(result.content) < len(large_output)
+    assert "semble output truncated" in result.content
+    assert result.artifacts["output_truncated"] is True
+    assert result.artifacts["output_original_chars"] == len(large_output)
 
 
 def test_semble_search_times_out_with_progress(

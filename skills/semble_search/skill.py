@@ -8,10 +8,13 @@ from typing import Any, Literal
 from harness_poc.core.skill_context import SkillContext, SkillResult
 
 SEARCH_MODES = {"hybrid", "semantic", "bm25"}
-DEFAULT_TOP_K = 15
+DEFAULT_TOP_K = 5
+MAX_TOP_K = 10
+MAX_OUTPUT_CHARS = 12_000
 DEFAULT_MODE = "hybrid"
 SEMBLE_TIMEOUT_SECONDS = 30
 SEMBLE_PROGRESS_INTERVAL_SECONDS = 10
+APPROX_CHARS_PER_TOKEN = 4
 
 SemSearchAction = Literal["search", "find_related"]
 
@@ -169,14 +172,17 @@ def _run_semble(  # noqa: PLR0911
         )
 
     elapsed = time.monotonic() - started_at
-    ctx.emit_tool_event(f"semble_search: finished in {elapsed:.1f}s")
-
     output = stdout.strip()
+    visible_output, output_meta = _cap_output(output, MAX_OUTPUT_CHARS)
+    ctx.emit_tool_event(
+        f"semble_search: finished in {elapsed:.1f}s; "
+        f"{_format_output_size(output_meta)}"
+    )
     if proc.returncode != 0:
         stderr = stderr.strip()
         return SkillResult(
             status="failed",
-            content=f"Semble exited with code {proc.returncode}.\n\n{stderr or output}",
+            content=f"Semble exited with code {proc.returncode}.\n\n{stderr or visible_output}",
             artifacts={"query": query, "error": stderr, "exit_code": proc.returncode},
         )
 
@@ -189,10 +195,11 @@ def _run_semble(  # noqa: PLR0911
 
     return SkillResult(
         status="success",
-        content=output,
+        content=visible_output,
         artifacts={
             "query": query,
-            "results": output.splitlines(),
+            "results": visible_output.splitlines(),
+            **output_meta,
         },
     )
 
@@ -239,7 +246,44 @@ def _parse_top_k(raw: object) -> int:
         val = int(str(raw))
     except (ValueError, TypeError):
         return DEFAULT_TOP_K
-    return max(1, min(val, 50))
+    return max(1, min(val, MAX_TOP_K))
+
+
+def _cap_output(output: str, max_chars: int) -> tuple[str, dict[str, int | bool]]:
+    original_chars = len(output)
+    if original_chars <= max_chars:
+        return output, {
+            "output_original_chars": original_chars,
+            "output_retained_chars": original_chars,
+            "output_truncated": False,
+        }
+
+    notice = (
+        f"\n\n[semble output truncated: original_chars={original_chars} "
+        f"retained_chars={max_chars}]"
+    )
+    return output[:max_chars] + notice, {
+        "output_original_chars": original_chars,
+        "output_retained_chars": max_chars,
+        "output_truncated": True,
+    }
+
+
+def _format_output_size(meta: dict[str, int | bool]) -> str:
+    original_chars = int(meta["output_original_chars"])
+    retained_chars = int(meta["output_retained_chars"])
+    estimated_tokens = _estimate_tokens(retained_chars)
+    size = (
+        f"returned {original_chars:,} chars; current run receives {retained_chars:,} chars "
+        f"(~{estimated_tokens:,} tokens before history pruning)"
+    )
+    if meta["output_truncated"]:
+        return f"{size}, truncated"
+    return size
+
+
+def _estimate_tokens(chars: int) -> int:
+    return max(1, chars // APPROX_CHARS_PER_TOKEN) if chars else 0
 
 
 def _parse_mode(raw: object) -> str:
