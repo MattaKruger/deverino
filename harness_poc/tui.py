@@ -265,8 +265,11 @@ class ChatApp(App[None]):
         loop = asyncio.get_running_loop()
         try:
             await loop.run_in_executor(None, handle_repl_input, self._app_state, text)
-        except Exception:
+        except Exception as exc:
             logger.exception("ChatApp worker raised", extra={"text": text})
+            self._stop_spinner()
+            await chat.mount(Static(f"[red]Error: {exc}[/red]", markup=True))
+            chat.scroll_end(animate=False)
 
         # Flush any tokens buffered in the last throttle window
         if buffer and state["widget"] is not None:
