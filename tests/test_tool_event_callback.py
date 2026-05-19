@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
 from harness_poc.core.pydantic_runtime import AgentDeps, _emit_tool_progress
+from harness_poc.core.skill_context import SkillContext
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from pydantic_ai import RunContext
 
 
-def _make_ctx(on_tool_event: object = None) -> object:
+def _make_ctx(
+    on_tool_event: Callable[[str], None] | None = None,
+) -> RunContext[AgentDeps]:
     deps = AgentDeps(
         session_id="test",
         database=MagicMock(),
@@ -15,7 +24,7 @@ def _make_ctx(on_tool_event: object = None) -> object:
     )
     ctx = MagicMock()
     ctx.deps = deps
-    return ctx
+    return cast("RunContext[AgentDeps]", ctx)
 
 
 def test_emit_tool_progress_calls_handler() -> None:
@@ -38,3 +47,18 @@ def test_agent_deps_on_tool_event_defaults_none() -> None:
         skill_runner=MagicMock(),
     )
     assert deps.on_tool_event is None
+
+
+def test_skill_context_emits_tool_events() -> None:
+    events: list[str] = []
+    ctx = SkillContext(
+        session_id="s",
+        skill_name="sample",
+        database=MagicMock(),
+        config=MagicMock(),
+        on_tool_event=events.append,
+    )
+
+    ctx.emit_tool_event("sample: running")
+
+    assert events == ["sample: running"]

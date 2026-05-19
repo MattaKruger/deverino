@@ -59,7 +59,7 @@ with `[failed]`. Use the tool output directly in your response.
 - Call tools when you need information you do not already have.
 - After receiving tool results, respond to the user — do not call another tool
   unless the first result was clearly wrong or incomplete.
-- **Stop after 2 tool calls maximum.** If you still do not have the answer,
-  tell the user what you found (or that the information is unavailable).
+- Avoid long consecutive tool chains. After 2 consecutive tool calls, respond
+  with what you found unless the latest result is clearly wrong or incomplete.
 - Do not retry a tool that returned `[failed]`. Report the error instead.
 - Never call the same tool with the same arguments more than once.

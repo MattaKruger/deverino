@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 from harness_poc.app_factory import STARTUP_ERRORS, AppState, build_app_state
 from harness_poc.console import console, print_error
+from harness_poc.core.config import HarnessConfig
+from harness_poc.core.event_log_observer import (
+    fetch_event_log_rows,
+    fetch_latest_event_log_rows,
+    render_event_log_row,
+)
 from harness_poc.core.events import (
     AgentInputAdded,
     BaseEvent,
@@ -38,6 +46,20 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
+
+
+@dataclass(frozen=True, slots=True)
+class EventLogOptions:
+    database_path: Path | str
+    session_id: str | None
+    event_types: list[str]
+    since_id: int | None
+    limit: int
+    follow: bool
+    poll_interval: float
+    json_output: bool
+    include_payload: bool
 
 
 app = typer.Typer(
@@ -330,9 +352,7 @@ async def _run_event_sourced_goal(
         await asyncio.wait_for(terminal_event.wait(), timeout=max_seconds)
     except TimeoutError:
         status = "budget_exhausted"
-        output_parts.append(
-            f"Time budget ({max_seconds}s) exhausted before the goal completed."
-        )
+        output_parts.append(f"Time budget ({max_seconds}s) exhausted before the goal completed.")
     finally:
         await app_state.event_bus.publish_async(
             StreamPaused(
@@ -355,6 +375,132 @@ async def _run_event_sourced_goal(
         total_tokens=total_tokens,
         events=[_event_log_entry(event) for event in recent_events],
     )
+
+
+@app.command("events")
+def events_log(  # noqa: PLR0913
+    session_id: Annotated[
+        str | None,
+        typer.Option(
+            "--session-id",
+            "-s",
+            help="Only show events for this session id.",
+        ),
+    ] = None,
+    event_types: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--type",
+            "-e",
+            help="Only show this event type. Repeat to include multiple types.",
+        ),
+    ] = None,
+    since_id: Annotated[
+        int | None,
+        typer.Option(
+            "--since-id",
+            help="Replay events after this id. Omit to tail the latest rows.",
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option(
+            "--limit",
+            "-n",
+            help="Maximum rows to print per query.",
+        ),
+    ] = 50,
+    follow: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option(
+            "--follow",
+            "-f",
+            help="Keep polling and print new events as processors emit them.",
+        ),
+    ] = False,
+    poll_interval: Annotated[
+        float,
+        typer.Option(
+            "--poll-interval",
+            help="Seconds between polls when following.",
+        ),
+    ] = 0.5,
+    json_output: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option(
+            "--json",
+            help="Print newline-delimited JSON.",
+        ),
+    ] = False,
+    include_payload: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option(
+            "--payload/--summary-only",
+            help="Print the full decoded event payload under each event.",
+        ),
+    ] = True,
+) -> None:
+    """Observe processor events written to the durable event log."""
+    try:
+        config = HarnessConfig.load()
+        _print_events_log(
+            EventLogOptions(
+                database_path=config.runtime.database_path,
+                session_id=session_id,
+                event_types=event_types or [],
+                since_id=since_id,
+                limit=limit,
+                follow=follow,
+                poll_interval=poll_interval,
+                json_output=json_output,
+                include_payload=include_payload,
+            )
+        )
+    except KeyboardInterrupt:
+        raise typer.Exit from None
+    except Exception as exc:
+        logger.exception("Event log observer failed")
+        print_error(str(exc))
+        raise typer.Exit(1) from exc
+
+
+def _print_events_log(options: EventLogOptions) -> None:
+    last_seen_id = options.since_id
+    printed_any = False
+    while True:
+        if last_seen_id is None:
+            rows = fetch_latest_event_log_rows(
+                options.database_path,
+                session_id=options.session_id,
+                event_types=options.event_types,
+                limit=options.limit,
+            )
+        else:
+            rows = fetch_event_log_rows(
+                options.database_path,
+                after_id=last_seen_id,
+                session_id=options.session_id,
+                event_types=options.event_types,
+                limit=options.limit,
+            )
+        for row in rows:
+            console.print(
+                render_event_log_row(
+                    row,
+                    include_payload=options.include_payload,
+                    json_output=options.json_output,
+                ),
+                markup=False,
+            )
+            last_seen_id = row.id
+            printed_any = True
+
+        if not options.follow:
+            if not printed_any:
+                console.print("[dim]No events matched.[/dim]")
+            return
+
+        time.sleep(options.poll_interval)
 
 
 def _event_log_entry(event: BaseEvent) -> dict[str, str]:

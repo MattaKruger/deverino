@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from harness_poc.core.config import (
     HarnessConfig,
@@ -10,7 +11,18 @@ from harness_poc.core.config import (
     RuntimeConfig,
 )
 from harness_poc.core.database import BlackboardDatabase
+from harness_poc.core.skill_context import SkillContext
 from harness_poc.core.skill_runner import SkillRunner
+from skills.semble_search import skill as semble_skill
+
+if TYPE_CHECKING:
+    import pytest
+
+EXPECTED_DEFAULT_TOP_K = 5
+EXPECTED_MAX_TOP_K = 50
+MIN_TOP_K = 1
+OVERSIZED_TOP_K = 100
+SUCCESS_EXIT_CODE = 0
 
 
 def test_semble_search_requires_query(tmp_path: Path) -> None:
@@ -82,25 +94,100 @@ def test_semble_search_find_related_rejects_invalid_line(tmp_path: Path) -> None
     assert "Invalid line number" in result.content
 
 
-def test_semble_search_respects_top_k(tmp_path: Path) -> None:
+def test_semble_search_respects_top_k() -> None:
     """Top-k is validated as an int between 1-50."""
-    from skills.semble_search.skill import _parse_top_k
-
-    assert _parse_top_k(5) == 5
-    assert _parse_top_k("abc") == 5  # default
-    assert _parse_top_k(0) == 1  # clamped to 1
-    assert _parse_top_k(100) == 50  # clamped to 50
+    assert semble_skill._parse_top_k(EXPECTED_DEFAULT_TOP_K) == EXPECTED_DEFAULT_TOP_K  # noqa: SLF001
+    assert semble_skill._parse_top_k("abc") == EXPECTED_DEFAULT_TOP_K  # noqa: SLF001
+    assert semble_skill._parse_top_k(0) == MIN_TOP_K  # noqa: SLF001
+    assert semble_skill._parse_top_k(OVERSIZED_TOP_K) == EXPECTED_MAX_TOP_K  # noqa: SLF001
 
 
-def test_semble_search_mode_validation(tmp_path: Path) -> None:
+def test_semble_search_mode_validation() -> None:
     """Search mode defaults to hybrid for invalid values."""
-    from skills.semble_search.skill import _parse_mode
+    assert semble_skill._parse_mode("hybrid") == "hybrid"  # noqa: SLF001
+    assert semble_skill._parse_mode("semantic") == "semantic"  # noqa: SLF001
+    assert semble_skill._parse_mode("bm25") == "bm25"  # noqa: SLF001
+    assert semble_skill._parse_mode("invalid") == "hybrid"  # noqa: SLF001
+    assert semble_skill._parse_mode(None) == "hybrid"  # noqa: SLF001
 
-    assert _parse_mode("hybrid") == "hybrid"
-    assert _parse_mode("semantic") == "semantic"
-    assert _parse_mode("bm25") == "bm25"
-    assert _parse_mode("invalid") == "hybrid"  # default
-    assert _parse_mode(None) == "hybrid"
+
+def test_semble_search_emits_subprocess_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    _runner_instance, _session_id, database = _runner(tmp_path)
+    ctx = SkillContext(
+        session_id="s",
+        skill_name="semble_search",
+        database=database,
+        config=_test_config(tmp_path),
+        on_tool_event=events.append,
+    )
+
+    class FakeProcess:
+        returncode = SUCCESS_EXIT_CODE
+
+        def poll(self) -> int:
+            return SUCCESS_EXIT_CODE
+
+        def communicate(self) -> tuple[str, str]:
+            return "result line", ""
+
+    monkeypatch.setattr(semble_skill.subprocess, "Popen", lambda *_, **__: FakeProcess())
+
+    result = semble_skill._run_semble(  # noqa: SLF001
+        ctx, ["semble", "search"], query="find runtime"
+    )
+
+    assert result.status == "success"
+    assert events[0] == "semble_search: running query='find runtime'"
+    assert events[1].startswith("semble_search: finished in ")
+
+
+def test_semble_search_times_out_with_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    _runner_instance, _session_id, database = _runner(tmp_path)
+    ctx = SkillContext(
+        session_id="s",
+        skill_name="semble_search",
+        database=database,
+        config=_test_config(tmp_path),
+        on_tool_event=events.append,
+    )
+
+    class FakeProcess:
+        returncode = None
+
+        def __init__(self) -> None:
+            self.killed = False
+
+        def poll(self) -> None:
+            return None
+
+        def kill(self) -> None:
+            self.killed = True
+
+        def communicate(self) -> tuple[str, str]:
+            return "partial", "slow"
+
+    ticks = iter([0.0, 0.0, 11.0, 11.0, 31.0, 31.0])
+    fake_process = FakeProcess()
+    monkeypatch.setattr(semble_skill.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(semble_skill.time, "sleep", lambda _: None)
+    monkeypatch.setattr(semble_skill.subprocess, "Popen", lambda *_, **__: fake_process)
+
+    result = semble_skill._run_semble(  # noqa: SLF001
+        ctx, ["semble", "search"], query="find runtime"
+    )
+
+    assert result.status == "failed"
+    assert result.artifacts["error"] == "timeout"
+    assert fake_process.killed is True
+    assert "still running" in events[1]
 
 
 def _runner(tmp_path: Path) -> tuple[SkillRunner, str, BlackboardDatabase]:

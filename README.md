@@ -95,7 +95,9 @@ harness_poc/
 │   ├── pipeline_runner.py  # DAG pipeline executor — wave-based parallelism, skill + agent nodes
 │   ├── logfire_subscriber.py # EventBus → Logfire span wiring for observability
 │   ├── llm_client.py       # Shared type definitions (Message, Usage, ToolCall, LLMResponse)
-│   ├── pydantic_runtime.py # Agent runtime — agent.iter() streaming, tool call cap (5 rounds), raw tool results
+│   ├── event_log_observer.py # Durable event log reader — query and render events from state_events
+│   ├── pydantic_runtime.py # Agent runtime — agent.iter() streaming, consecutive tool call cap, raw tool results
+│   ├── skill_context.py    # SkillContext dataclass, SkillResult, tool event progress emission
 │   ├── skill_runner.py     # Discovers and executes skills from SKILL.md + skill.py
 │   ├── state.py            # StatePayload, StateProposal, state context builder
 │   └── workflow_runner.py  # Executes YAML workflow state machines
@@ -205,13 +207,13 @@ The REPL and pipeline agent nodes use `PydanticAgentRuntime` (`core/pydantic_run
 
 **Streaming:** Uses `agent.iter()` (PydanticAI's full-graph iterator) instead of `agent.run_stream()`. `run_stream()` stops at the first text output matching the return type — when the model emits text before a tool call, that pre-tool text is treated as the "final output" and post-tool responses are lost. `agent.iter()` runs the complete graph (text → tool calls → more text) and text is streamed as diffs against previously-seen output.
 
-**Tool call cap:** Maximum 5 tool-call rounds per turn. If the model exceeds this (e.g. refining a web search query repeatedly), the loop breaks and a `[Tool call limit reached]` warning is surfaced. The cap prevents infinite search loops when API results are poor.
+**Tool call cap:** Maximum 5 consecutive tool-call rounds per turn. Normal final text responses reset the counter, so longer sessions can keep using tools as long as the model is making progress. If the model exceeds the consecutive cap (e.g. refining a web search query repeatedly), the loop breaks and a `[Consecutive tool call limit reached]` warning is surfaced.
 
 **Tool result format:** Successful tool calls return raw content directly (no JSON wrapper). Failures are prefixed `[failed]`. The `needs_orchestrator_action` status still returns JSON with orchestration flags. This change lets the model read search results and other tool output without JSON parsing overhead.
 
 **End strategy:** `"early"` (PydanticAI default) — the agent stops as soon as a model response contains no tool calls. The previous `"exhaustive"` strategy caused excessive tool calling.
 
-**System prompt** (`system_prompts/SOUL.md`): Includes a tool use strategy — respond after results, stop after 2 tool calls maximum, do not retry failures, never call the same tool with the same arguments twice.
+**System prompt** (`system_prompts/SOUL.md`): Includes a tool use strategy — respond after results, avoid long consecutive tool chains, do not retry failures, never call the same tool with the same arguments twice.
 
 ### The blackboard
 
@@ -283,6 +285,10 @@ uv run harness-poc goal "Summarize the event-sourced architecture" --max-iterati
 # State management
 uv run harness-poc state show project    # durable project state
 uv run harness-poc state show session    # ephemeral session state
+
+# Inspect processor events (reads the durable state_events table)
+uv run harness-poc events --session-id <id> --follow --type LLMActionEmitted
+uv run harness-poc events --limit 10 --json
 ```
 
 ## Skills
@@ -469,7 +475,7 @@ states:
 ## Development
 
 ```bash
-uv run pytest                  # full test suite (173 tests)
+uv run pytest                  # full test suite (184 tests)
 uv run pytest tests/test_goal_runner.py -v  # goal runner + event bus integration
 uv run pytest tests/test_event_bus.py tests/test_event_store.py -v  # event system
 uv run ruff check .            # lint

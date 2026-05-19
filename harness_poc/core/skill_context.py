@@ -11,9 +11,7 @@ if TYPE_CHECKING:
     from harness_poc.core.database import BlackboardDatabase
 
 
-SkillStatus = Literal[
-    "success", "failed", "blocked", "needs_orchestrator_action"
-]
+SkillStatus = Literal["success", "failed", "blocked", "needs_orchestrator_action"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +51,7 @@ class SkillContext:
     database: BlackboardDatabase
     config: HarnessConfig
     stream_text: Callable[[str], None] | None = None
+    on_tool_event: Callable[[str], None] | None = None
 
     @property
     def project_root(self) -> Path:
@@ -74,3 +73,7 @@ class SkillContext:
     def emit_text(self, chunk: str) -> None:
         if self.stream_text is not None and chunk:
             self.stream_text(chunk)
+
+    def emit_tool_event(self, message: str) -> None:
+        if self.on_tool_event is not None and message:
+            self.on_tool_event(message)

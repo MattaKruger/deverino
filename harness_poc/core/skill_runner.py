@@ -72,9 +72,7 @@ class SkillRunner:
                             "name": skill_name,
                             "description": skill["metadata"]["description"],
                             "parameters": skill["metadata"]["parameters"],
-                            "auto_invokable": skill["metadata"][
-                                "auto_invokable"
-                            ],
+                            "auto_invokable": skill["metadata"]["auto_invokable"],
                         },
                     },
                 )
@@ -103,6 +101,7 @@ class SkillRunner:
         arguments: dict[str, Any],
         session_id: str,
         on_text: Callable[[str], None] | None = None,
+        on_tool_event: Callable[[str], None] | None = None,
     ) -> SkillResult:
         resolved_tool_name = self._resolve_alias(tool_name)
         logger.debug(
@@ -125,10 +124,9 @@ class SkillRunner:
                 database=self.database,
                 config=self.config,
                 stream_text=on_text,
+                on_tool_event=on_tool_event,
             )
-            normalized_arguments = self._normalize_arguments(
-                resolved_tool_name, arguments
-            )
+            normalized_arguments = self._normalize_arguments(resolved_tool_name, arguments)
 
             result = execute(context, normalized_arguments)
         except Exception:
@@ -186,9 +184,7 @@ class SkillRunner:
         return aliases.get(tool_name, tool_name)
 
     @staticmethod
-    def _normalize_arguments(
-        tool_name: str, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _normalize_arguments(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(arguments)
         if (
             tool_name == "delegate_task"
@@ -246,12 +242,8 @@ class SkillRunner:
 
         name = frontmatter.get("name")
         description = frontmatter.get("description")
-        parameters = frontmatter.get(
-            "parameters", {"type": "object", "properties": {}}
-        )
-        entrypoint = frontmatter.get(
-            "entrypoint", {"module": "skill", "function": "execute"}
-        )
+        parameters = frontmatter.get("parameters", {"type": "object", "properties": {}})
+        entrypoint = frontmatter.get("entrypoint", {"module": "skill", "function": "execute"})
         auto_invokable = bool(frontmatter.get("auto_invokable", False))
         if not isinstance(name, str) or not isinstance(description, str):
             msg = f"Skill {skill_file} must define string name and description"
@@ -265,9 +257,7 @@ class SkillRunner:
 
         entrypoint_module = entrypoint.get("module", "skill")
         entrypoint_function = entrypoint.get("function", "execute")
-        if not isinstance(entrypoint_module, str) or not isinstance(
-            entrypoint_function, str
-        ):
+        if not isinstance(entrypoint_module, str) or not isinstance(entrypoint_function, str):
             msg = f"Skill {skill_file} entrypoint module and function must be strings"
             raise TypeError(msg)
 
@@ -295,6 +285,4 @@ def _get_execute_function(
     if not callable(execute):
         msg = f"Skill module does not define callable {function_name}"
         raise TypeError(msg)
-    return cast(
-        "Callable[[SkillContext, dict[str, Any]], SkillResult]", execute
-    )
+    return cast("Callable[[SkillContext, dict[str, Any]], SkillResult]", execute)

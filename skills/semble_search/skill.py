@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from typing import Any, Literal
 
 from harness_poc.core.skill_context import SkillContext, SkillResult
@@ -9,6 +10,8 @@ from harness_poc.core.skill_context import SkillContext, SkillResult
 SEARCH_MODES = {"hybrid", "semantic", "bm25"}
 DEFAULT_TOP_K = 5
 DEFAULT_MODE = "hybrid"
+SEMBLE_TIMEOUT_SECONDS = 30
+SEMBLE_PROGRESS_INTERVAL_SECONDS = 10
 
 SemSearchAction = Literal["search", "find_related"]
 
@@ -55,7 +58,7 @@ def _search(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     if include_text_files:
         cmd.append("--include-text-files")
 
-    return _run_semble(cmd, query=query)
+    return _run_semble(ctx, cmd, query=query)
 
 
 # --------------------------------------------------------------------------- #
@@ -107,7 +110,7 @@ def _find_related(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     if include_text_files:
         cmd.append("--include-text-files")
 
-    return _run_semble(cmd, query=f"{file_path}:{line}")
+    return _run_semble(ctx, cmd, query=f"{file_path}:{line}")
 
 
 # --------------------------------------------------------------------------- #
@@ -115,7 +118,9 @@ def _find_related(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 # --------------------------------------------------------------------------- #
 
 
-def _run_semble(cmd: list[str], *, query: str) -> SkillResult:
+def _run_semble(  # noqa: PLR0911
+    ctx: SkillContext, cmd: list[str], *, query: str
+) -> SkillResult:
     binary = cmd[0]
     if binary == "semble-not-found":
         return SkillResult(
@@ -128,18 +133,32 @@ def _run_semble(cmd: list[str], *, query: str) -> SkillResult:
             artifacts={"query": query, "error": "semble_not_installed"},
         )
 
+    ctx.emit_tool_event(f"semble_search: running query={query!r}")
+    started_at = time.monotonic()
+    next_progress_at = started_at + SEMBLE_PROGRESS_INTERVAL_SECONDS
+
     try:
-        proc = subprocess.run(  # noqa: S603
+        proc = subprocess.Popen(  # noqa: S603
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=120,
-            check=False,
         )
+        while proc.poll() is None:
+            elapsed = time.monotonic() - started_at
+            if elapsed >= SEMBLE_TIMEOUT_SECONDS:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+                return _timed_out_result(query, stdout, stderr)
+            if time.monotonic() >= next_progress_at:
+                ctx.emit_tool_event(f"semble_search: still running ({int(elapsed)}s elapsed)")
+                next_progress_at += SEMBLE_PROGRESS_INTERVAL_SECONDS
+            time.sleep(0.2)
+        stdout, stderr = proc.communicate()
     except subprocess.TimeoutExpired:
         return SkillResult(
             status="failed",
-            content="Semble search timed out after 120s.",
+            content=f"Semble search timed out after {SEMBLE_TIMEOUT_SECONDS}s.",
             artifacts={"query": query, "error": "timeout"},
         )
     except OSError as exc:
@@ -149,9 +168,12 @@ def _run_semble(cmd: list[str], *, query: str) -> SkillResult:
             artifacts={"query": query, "error": str(exc)},
         )
 
-    output = proc.stdout.strip()
+    elapsed = time.monotonic() - started_at
+    ctx.emit_tool_event(f"semble_search: finished in {elapsed:.1f}s")
+
+    output = stdout.strip()
     if proc.returncode != 0:
-        stderr = proc.stderr.strip()
+        stderr = stderr.strip()
         return SkillResult(
             status="failed",
             content=f"Semble exited with code {proc.returncode}.\n\n{stderr or output}",
@@ -171,6 +193,24 @@ def _run_semble(cmd: list[str], *, query: str) -> SkillResult:
         artifacts={
             "query": query,
             "results": output.splitlines(),
+        },
+    )
+
+
+def _timed_out_result(query: str, stdout: str, stderr: str) -> SkillResult:
+    output = stdout.strip()
+    error = stderr.strip()
+    detail = f"\n\nPartial output:\n{output}" if output else ""
+    if error:
+        detail = f"{detail}\n\nstderr:\n{error}"
+    return SkillResult(
+        status="failed",
+        content=f"Semble search timed out after {SEMBLE_TIMEOUT_SECONDS}s.{detail}",
+        artifacts={
+            "query": query,
+            "error": "timeout",
+            "partial_stdout": output,
+            "stderr": error,
         },
     )
 

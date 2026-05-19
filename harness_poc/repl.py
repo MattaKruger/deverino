@@ -10,6 +10,7 @@ import yaml
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 from harness_poc.console import print_error, print_markdown, print_skill_table, print_text
+from harness_poc.core.events import AgentInputAdded, LLMActionEmitted, LLMTextEmitted
 from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
 from harness_poc.core.state import StateSection, build_state_context
 
@@ -199,6 +200,9 @@ MAX_PYDANTIC_MESSAGES = 50
 
 def handle_chat_input(app_state: AppState, user_input: str) -> None:
     app_state.messages.append({"role": "user", "content": user_input})
+    app_state.event_bus.publish(
+        AgentInputAdded(session_id=app_state.session_id, user_content=user_input)
+    )
 
     try:
         response = app_state.pydantic_runtime.stream_text(
@@ -208,6 +212,7 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
             on_tool_event=app_state.streaming.on_tool_event,
         )
         _track_tokens(response.usage, app_state)
+        _publish_llm_usage_event(app_state, response.usage)
         if response.messages:
             app_state.pydantic_messages.extend(response.messages)
             if len(app_state.pydantic_messages) > MAX_PYDANTIC_MESSAGES:
@@ -216,11 +221,32 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
         else:
             _append_pydantic_chat_exchange(app_state, user_input, response.content)
         app_state.messages.append({"role": "assistant", "content": response.content})
+        if response.content:
+            app_state.event_bus.publish(
+                LLMTextEmitted(
+                    session_id=app_state.session_id,
+                    content=response.content,
+                )
+            )
         app_state.streaming.on_finish(response.content)
     except sqlite3.OperationalError as exc:
         print_error(f"Database operation failed: {exc}")
     except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
         print_error(f"Tool execution failed: {exc}")
+
+
+def _publish_llm_usage_event(app_state: AppState, usage: Usage | None) -> None:
+    if usage is None:
+        return
+
+    model = app_state.config.llm.model
+    app_state.event_bus.publish(
+        LLMActionEmitted(
+            session_id=app_state.session_id,
+            model=model,
+            tokens_used=usage.get("total_tokens", 0),
+        )
+    )
 
 
 def _is_workflow_command(user_input: str) -> bool:
@@ -700,5 +726,3 @@ def _append_pydantic_chat_exchange(
             ModelResponse(parts=[TextPart(content=assistant_content)]),
         ],
     )
-
-

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
 from pydantic_ai import Agent, RunContext, Tool
-from pydantic_ai.messages import TextPart
+from pydantic_ai.messages import TextPart, ToolCallPart
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
@@ -119,13 +119,13 @@ class PydanticAgentRuntime:
         # post-tool text is lost.  agent.iter() runs the full agent graph
         # to completion, giving us all model responses including those
         # after tool calls.
-        max_tool_rounds = 5
+        max_consecutive_tool_rounds = 5
 
         deps = replace(self.deps, stream_text=on_text, on_tool_event=on_tool_event)
         all_output_parts: list[str] = []
         seen_text: str = ""
         usage: Usage | None = None
-        tool_rounds = 0
+        consecutive_tool_rounds = 0
         capped = False
 
         async with self.agent.iter(
@@ -138,22 +138,20 @@ class PydanticAgentRuntime:
                 mr = getattr(node, "model_response", None)
                 if mr is None:
                     continue
-                # Count tool-call rounds (each CallToolsNode is one round)
-                tool_rounds += 1
-                if tool_rounds > max_tool_rounds:
+                # Collect text parts from this model response
+                new_text = "".join(part.content for part in mr.parts if isinstance(part, TextPart))
+                consecutive_tool_rounds = _next_consecutive_tool_rounds(
+                    mr.parts,
+                    consecutive_tool_rounds,
+                )
+                if consecutive_tool_rounds > max_consecutive_tool_rounds:
                     capped = True
                     logger.warning(
-                        "Tool call limit (%d) reached, stopping agent loop",
-                        max_tool_rounds,
+                        "Consecutive tool call limit (%d) reached, stopping agent loop",
+                        max_consecutive_tool_rounds,
                         extra={"session_id": self.deps.session_id},
                     )
                     break
-                # Collect text parts from this model response
-                new_text = "".join(
-                    part.content
-                    for part in mr.parts
-                    if isinstance(part, TextPart)
-                )
                 # Stream only the NEW portion (diff against seen)
                 if new_text and on_text is not None:
                     if new_text.startswith(seen_text):
@@ -168,7 +166,7 @@ class PydanticAgentRuntime:
 
             if capped and on_text is not None:
                 on_text(
-                    "\n\n[Tool call limit reached — stopping. "
+                    "\n\n[Consecutive tool call limit reached — stopping. "
                     "Refine your query for better results.]"
                 )
 
@@ -207,9 +205,7 @@ def build_model(  # noqa: PLR0911
     if config.provider == "anthropic":
         api_key = api_settings.anthropic_api_key
         if not api_key:
-            logger.info(
-                "No Anthropic API key configured; using fallback PydanticAI model"
-            )
+            logger.info("No Anthropic API key configured; using fallback PydanticAI model")
             return fallback_model or TestModel(call_tools=[])
         logger.debug(
             "Building Anthropic-backed PydanticAI model",
@@ -223,9 +219,7 @@ def build_model(  # noqa: PLR0911
     if config.provider == "deepseek":
         api_key = api_settings.deepseek_api_key
         if not api_key:
-            logger.info(
-                "No DeepSeek API key configured; using fallback PydanticAI model"
-            )
+            logger.info("No DeepSeek API key configured; using fallback PydanticAI model")
             return fallback_model or TestModel(call_tools=[])
         logger.debug(
             "Building DeepSeek-backed PydanticAI model",
@@ -240,9 +234,7 @@ def build_model(  # noqa: PLR0911
     if config.provider == "openai":
         api_key = api_settings.openai_api_key
         if not api_key:
-            logger.info(
-                "No OpenAI API key configured; using fallback PydanticAI model"
-            )
+            logger.info("No OpenAI API key configured; using fallback PydanticAI model")
             return fallback_model or TestModel(call_tools=[])
         provider_kwargs: dict[str, Any] = {"api_key": api_key}
         if config.base_url:
@@ -365,6 +357,12 @@ def _make_skill_tool(
     return execute_skill_tool
 
 
+def _next_consecutive_tool_rounds(parts: list[object], current_count: int) -> int:
+    if any(isinstance(part, ToolCallPart) for part in parts):
+        return current_count + 1
+    return 0
+
+
 def execute_skill_as_tool(
     ctx: RunContext[AgentDeps],
     skill_name: str,
@@ -379,15 +377,14 @@ def execute_skill_as_tool(
         },
     )
     # Stream progress so the user sees tool activity during execution.
-    _emit_tool_progress(
-        ctx, f"  {skill_name}: {_summarise_args(arguments)} ..."
-    )
+    _emit_tool_progress(ctx, f"  {skill_name}: {_summarise_args(arguments)} ...")
     try:
         result = ctx.deps.skill_runner.execute_skill(
             tool_name=skill_name,
             arguments=arguments,
             session_id=ctx.deps.session_id,
             on_text=ctx.deps.stream_text,
+            on_tool_event=ctx.deps.on_tool_event,
         )
     except Exception:
         _emit_tool_progress(ctx, f"  {skill_name}: FAILED")
@@ -412,8 +409,7 @@ def execute_skill_as_tool(
                 "content": result.content,
                 "orchestrator_action_required": True,
                 "orchestrator_instruction": (
-                    "Stop and surface content to the user unchanged. "
-                    "Do not summarize."
+                    "Stop and surface content to the user unchanged. Do not summarize."
                 ),
             },
             sort_keys=True,
@@ -473,9 +469,7 @@ def _usage_to_dict(usage: RunUsage) -> Usage:
     return {
         "prompt_tokens": int(usage.input_tokens or 0),
         "completion_tokens": int(usage.output_tokens or 0),
-        "total_tokens": int(
-            (usage.input_tokens or 0) + (usage.output_tokens or 0)
-        ),
+        "total_tokens": int((usage.input_tokens or 0) + (usage.output_tokens or 0)),
     }
 
 
@@ -519,9 +513,7 @@ def chat_text(
             user_parts.append(msg["content"])
 
     system_prompt = "\n\n".join(system_parts)
-    prompt = "\n\n".join(
-        msg["content"] for msg in messages if msg["role"] != "system"
-    )
+    prompt = "\n\n".join(msg["content"] for msg in messages if msg["role"] != "system")
 
     agent = Agent(model, system_prompt=system_prompt)
     result = agent.run_sync(prompt)

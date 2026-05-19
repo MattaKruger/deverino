@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -8,16 +9,17 @@ if TYPE_CHECKING:
     import pytest
 
 from harness_poc.app_factory import StreamingContext
+from harness_poc.core.events import AgentInputAdded, LLMActionEmitted, LLMTextEmitted
 from harness_poc.core.goal_runner import GoalRunResult
 from harness_poc.core.pydantic_runtime import AgentRunResult
 from harness_poc.repl import handle_chat_input, handle_goal_command
+from tests.helpers import RecordingEventBus
 
 CHAT_EXCHANGE_MESSAGE_COUNT = 2
+EXPECTED_TOTAL_TOKENS = 5
 
 
-def test_handle_chat_input_uses_pydantic_runtime(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_handle_chat_input_uses_pydantic_runtime() -> None:
     chunks: list[str] = []
     app_state = _FakeAppState()
     app_state.streaming.on_text = chunks.append
@@ -35,6 +37,27 @@ def test_handle_chat_input_uses_pydantic_runtime(
     assert chunks == ["Pydantic response"]
 
 
+def test_handle_chat_input_publishes_chat_events() -> None:
+    app_state = _FakeAppState()
+    app_state.streaming.on_finish = lambda _: None
+
+    handle_chat_input(cast("Any", app_state), "hey")
+
+    events = app_state.event_bus.events
+    assert [event.event_type for event in events] == [
+        "AgentInputAdded",
+        "LLMActionEmitted",
+        "LLMTextEmitted",
+    ]
+    assert isinstance(events[0], AgentInputAdded)
+    assert events[0].user_content == "hey"
+    assert isinstance(events[1], LLMActionEmitted)
+    assert events[1].model == "fake-model"
+    assert events[1].tokens_used == EXPECTED_TOTAL_TOKENS
+    assert isinstance(events[2], LLMTextEmitted)
+    assert events[2].content == "Pydantic response"
+
+
 def test_handle_goal_command_adds_result_to_chat_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -42,9 +65,7 @@ def test_handle_goal_command_adds_result_to_chat_history(
 
     monkeypatch.setattr("harness_poc.repl.GoalRunner", _FakeGoalRunner)
 
-    handle_goal_command(
-        cast("Any", app_state), '/goal "write a commit message"'
-    )
+    handle_goal_command(cast("Any", app_state), '/goal "write a commit message"')
 
     assert app_state.messages[-2:] == [
         {"role": "user", "content": '/goal "write a commit message"'},
@@ -74,6 +95,7 @@ class _FakeRuntime:
         on_text: Callable[[str], None] | None = None,
         on_tool_event: Callable[[str], None] | None = None,
     ) -> AgentRunResult:
+        del on_tool_event
         self.prompts.append(prompt)
         self.histories.append(list(message_history or []))
         if on_text is not None:
@@ -97,6 +119,8 @@ class _FakeAppState:
         self.pydantic_messages: list[Any] = []
         self.pydantic_runtime = _FakeRuntime()
         self.streaming = StreamingContext()
+        self.event_bus = RecordingEventBus()
+        self.config = SimpleNamespace(llm=SimpleNamespace(model="fake-model"))
 
 
 class _FakeGoalRunner:

@@ -14,6 +14,7 @@ def test_help_lists_command_groups() -> None:
     assert "workflow" in result.output
     assert "state" in result.output
     assert "skill" in result.output
+    assert "events" in result.output
 
 
 def test_state_show_project_renders_project_state() -> None:
