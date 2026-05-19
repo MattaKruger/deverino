@@ -13,6 +13,7 @@ dependencies = [
     "rich>=15.0.0",
     "typer>=0.25.1",
     "pydantic-ai>=1.97.0",
+    "logfire[pydantic-ai]>=4.33.0",
 ]
 
 [dependency-groups]
