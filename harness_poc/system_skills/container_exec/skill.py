@@ -9,6 +9,8 @@ from typing import Any
 from harness_poc.core.skill_context import SkillContext, SkillResult
 
 BACKENDS = ("podman", "docker")
+DEFAULT_TIMEOUT_SECONDS = 120
+MAX_TIMEOUT_SECONDS = 300
 logger = logging.getLogger(__name__)
 
 
@@ -19,6 +21,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     container = str(arguments.get("container") or "").strip()
     backend_arg = str(arguments.get("backend") or "auto").strip().lower()
     workdir = str(arguments.get("workdir") or "").strip()
+    timeout_seconds = _parse_timeout(arguments.get("timeout_seconds"))
 
     if not command:
         logger.error("Container exec missing command")
@@ -66,7 +69,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             exec_cmd,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout_seconds,
             check=False,
         )
     except subprocess.TimeoutExpired:
@@ -76,8 +79,12 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         )
         return SkillResult(
             status="failed",
-            content=f"Command timed out after 120s in container '{container}'.",
-            artifacts={"backend": backend, "container": container},
+            content=f"Command timed out after {timeout_seconds}s in container '{container}'.",
+            artifacts={
+                "backend": backend,
+                "container": container,
+                "timeout_seconds": timeout_seconds,
+            },
         )
     except OSError as exc:
         logger.exception(
@@ -97,6 +104,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         "exit_code": result.returncode,
         "stdout": result.stdout.strip(),
         "stderr": result.stderr.strip(),
+        "timeout_seconds": timeout_seconds,
     }
     status: str = "success" if result.returncode == 0 else "failed"
     if result.returncode == 0:
@@ -132,3 +140,11 @@ def _resolve_backend(backend_arg: str) -> str | None:
         if shutil.which(backend):
             return backend
     return None
+
+
+def _parse_timeout(raw: object) -> int:
+    try:
+        timeout = int(str(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_TIMEOUT_SECONDS
+    return max(1, min(timeout, MAX_TIMEOUT_SECONDS))

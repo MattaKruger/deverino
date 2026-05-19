@@ -21,6 +21,9 @@ parameters:
     workdir:
       type: string
       description: Optional working directory inside the container (relative to /workspace).
+    timeout_seconds:
+      type: integer
+      description: Optional command timeout in seconds (default 120, max 300).
   required:
     - command
     - container
@@ -41,6 +44,7 @@ Run commands inside an existing container. The container should be created by `c
 1. Resolves the container backend (auto-detect or explicit).
 2. Invokes `<backend> exec -w <workdir> <container> sh -c <command>`.
 3. Captures and returns stdout, stderr, and exit code.
+4. Enforces a bounded timeout.
 
 ## Expected Output
 Returns a `SkillResult` with the command output, exit code, and backend used.
