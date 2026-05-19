@@ -1,11 +1,11 @@
 # Deverino
 
-A Python 3.12 proof-of-concept for autonomous LLM agent workflows. It provides a Textual chat TUI, a CLI goal runner, and a typed event-driven architecture where agents publish lifecycle events to a shared bus — enabling multi-agent coordination, structured observability, and future async upgrades without rewriting callers.
+A Python 3.12 proof-of-concept for autonomous LLM agent workflows. It provides a Textual chat TUI, a CLI goal runner, and an event-sourced async runtime backed by a SQLite blackboard. Agents, skills, reducers, and safety processors communicate through typed durable events, which gives the harness a clear path toward multi-agent coordination, replayable state, and structured observability.
 
 ## Quickstart
 
 ```bash
-# Start the interactive REPL
+# Start the interactive TUI
 uv run harness-poc
 
 # Run an autonomous goal
@@ -65,7 +65,7 @@ llm:
   base_url: http://localhost:11434/v1
 ```
 
-If no API key is found for the configured provider, the harness falls back to mock mode — the REPL prompt bar shows `[mock]` and all LLM calls use deterministic test responses.
+If no API key is found for the configured provider, the harness falls back to mock mode — the TUI prompt bar shows `[mock]` and all LLM calls use deterministic test responses.
 
 To enable Logfire observability, set `observability.logfire: true` in `harness.yaml`
 and provide your token (via env var or `.env` file):
@@ -88,8 +88,10 @@ harness_poc/
 │   ├── database.py         # BlackboardDatabase — SQLite-backed session/memory/state tables
 │   ├── events.py           # Typed Pydantic event hierarchy with EVENT_REGISTRY
 │   ├── event_store.py      # SQLite persistence for events — owns the state_events table
-│   ├── event_bus.py        # In-process pub/sub — dispatches to subscribers, persists via EventStore
-│   ├── goal_runner.py      # Autonomous ReAct loop — publishes events via EventBus
+│   ├── event_bus.py        # Durable event writer + async in-process session subscriptions
+│   ├── reducers.py         # Polars reducer — derives and snapshots session state from events
+│   ├── processors/         # Async workers: circuit breaker, LLM worker, skill worker
+│   ├── goal_runner.py      # Legacy synchronous ReAct loop — still used by existing flows
 │   ├── pipeline_runner.py  # DAG pipeline executor — wave-based parallelism, skill + agent nodes
 │   ├── logfire_subscriber.py # EventBus → Logfire span wiring for observability
 │   ├── llm_client.py       # Shared type definitions (Message, Usage, ToolCall, LLMResponse)
@@ -105,19 +107,25 @@ pipelines/                  # YAML pipeline DAG definitions
 personas/                   # Prompt templates for sub-agents
 ```
 
-### Event-Driven Architecture
+### Event-Sourced Async Runtime
 
-All agent lifecycle events flow through a typed, Pydantic-based event bus. This replaces the previous pattern of direct `BlackboardDatabase` method calls (`record_llm_action`, `record_tool_observation`, `get_recent_events`) with a structured pub/sub system that is the foundation for multi-agent coordination, observability, and future async upgrades.
+The harness is moving from an in-memory loop with database side effects toward an event-sourced runtime. The durable record is the `state_events` table; processors publish typed events, subscribe to session streams, and derive their working context from reducer snapshots rather than private mutable state.
+
+SQLite runs in WAL mode, so readers and async writers can coexist during processor execution. The older project/session state tables remain for the current TUI command handler and state commands, but new async runtime state is captured in `session_snapshots`.
 
 **Event hierarchy** (`core/events.py`):
 
 | Event                   | Published when                                            |
 | ----------------------- | --------------------------------------------------------- |
 | `AgentStarted`          | A `GoalRunner.run()` loop begins                          |
+| `AgentInputAdded`       | A user prompt enters the async runtime                    |
 | `SkillCalled`           | A skill is about to be executed                           |
-| `SkillCompleted`        | A skill finishes (`success` / `error` / `blocked`)        |
+| `SkillRequested`        | The LLM requests a skill in the async runtime             |
+| `SkillCompleted`        | A skill finishes (`success` / `failed` / `blocked`)       |
 | `GoalEvaluated`         | The LLM calls `evaluate_goal` to assess completion        |
+| `LLMActionEmitted`      | Token usage is recorded for budget tracking               |
 | `LLMTextEmitted`        | The LLM emits text without a tool call                    |
+| `StreamPaused`          | A safety or budget processor pauses the event stream      |
 | `SubAgentDispatched`    | A sub-agent is spawned                                    |
 | `SubAgentCompleted`     | A sub-agent finishes                                      |
 | `PipelineStarted`       | A `PipelineRunner.run()` begins                           |
@@ -125,22 +133,25 @@ All agent lifecycle events flow through a typed, Pydantic-based event bus. This 
 | `PipelineNodeCompleted` | A pipeline node finishes (`completed`/`failed`/`skipped`) |
 | `PipelineCompleted`     | All pipeline waves finish                                 |
 
-Each event is a Pydantic `BaseModel` with `event_id`, `session_id`, `created_at`, plus type-specific fields (e.g. `goal: str` on `AgentStarted`, `tool_name` + `arguments` on `SkillCalled`). A `EVENT_REGISTRY: dict[str, type[BaseEvent]]` maps type names to classes so deserialization never needs `if/elif` chains.
+Each event is a Pydantic `BaseModel` with a database offset (`id`, populated after persistence), `event_id`, `session_id`, `timestamp`, `created_at`, and `type_name`, plus type-specific fields. A `EVENT_REGISTRY: dict[str, type[BaseEvent]]` maps type names to classes so deserialization never needs `if/elif` chains.
 
 **Storage** (`core/event_store.py`):
 
-`EventStore` persists events to the existing `state_events` SQLite table using the format `{"event_type": "SkillCalled", "payload": {...}}`. During retrieval, rows are deserialized through `EVENT_REGISTRY` into typed Pydantic objects. Corrupted or legacy rows are skipped with a warning — they don't crash context window builds. `BlackboardDatabase` no longer writes to `state_events`; `EventStore` now fully owns that table (proposal state-change events are written with direct inlined INSERTs).
+`EventStore` persists events to the `state_events` SQLite table using the format `{"event_type": "SkillCalled", "payload": {...}}`. It supports both `persist()` for compatibility with existing synchronous callers and `persist_async()` for processor workers. During retrieval, rows are deserialized through `EVENT_REGISTRY` into typed Pydantic objects and the database offset is restored onto `event.id`. Corrupted or legacy rows are skipped with a warning, so context-window builds do not crash on malformed history.
 
 **Pub/sub** (`core/event_bus.py`):
 
 ```python
 class EventBus:
-    def publish(self, event: BaseEvent) -> None:
-        # 1. Persist to EventStore (hard failure if this fails)
-        # 2. Dispatch to registered subscribers synchronously
-        # 3. Catch subscriber exceptions individually — log, continue
+    def publish(self, event: BaseEvent) -> Awaitable[None]:
+        # Synchronous-compatible publish:
+        # 1. Persist via EventStore
+        # 2. Dispatch to sync handlers
+        # 3. Push to async session subscribers
 
     def subscribe(self, event_type: type[E], handler: Callable[[E], None]) -> None: ...
+    def subscribe_session(self, session_id: str) -> AsyncGenerator[BaseEvent, None]: ...
+    async def publish_async(self, event: BaseEvent) -> None: ...
 
     def get_recent_events(
         self, session_id: str, limit: int = 20,
@@ -148,37 +159,45 @@ class EventBus:
     ) -> list[BaseEvent]: ...
 ```
 
-Subscribers register by event type. A failing handler never blocks other handlers. The synchronous dispatch loop can be swapped for `asyncio.create_task()` later without changing any callers.
+Existing subscribers still register by event type and run synchronously, which keeps Logfire and legacy tests compatible. Async processors subscribe by `session_id`; each session subscriber receives only matching events from the in-process queue after the event has been durably written.
 
-**Data flow in a GoalRunner loop**:
+**Reducer snapshots** (`core/reducers.py`):
+
+`derive_session_state(db, session_id)` reads the latest row from `session_snapshots`, fetches only events with `id > last_offset`, loads them into a Polars `DataFrame`, and folds them into a compact session state:
+
+- `total_tokens` from `LLMActionEmitted.tokens_used`
+- `consecutive_skill_failures` from `SkillCompleted.status`
+- `recent_message_history` from the latest normalized events
+- pause metadata from `StreamPaused`
+
+The reducer persists the new snapshot back to `session_snapshots` with the latest offset. This gives workers fast incremental state reconstruction without holding cross-loop mutable state.
+
+**Async processor flow**:
 
 ```
-GoalRunner.run(goal, app_state)
-  ├─ bus.publish(AgentStarted(session_id, goal))
-  │
-  └─ [each iteration]
-       ├─ bus.get_recent_events(session_id, limit=20,
-       │       event_types=[SkillCalled, SkillCompleted, GoalEvaluated, LLMTextEmitted])
-       ├─ _build_messages(goal, events)       # events → formatted context window
-       ├─ _decide_next_action(...)            # PydanticAI structured decision
-       │
-       ├─ [tool call path]
-       │    ├─ bus.publish(SkillCalled(tool_name, arguments))
-       │    ├─ skill_runner.execute_skill(...)
-       │    └─ bus.publish(SkillCompleted(tool_name, status, content, artifacts))
-       │
-       ├─ [evaluate_goal intercept]
-       │    └─ bus.publish(GoalEvaluated(is_complete, reasoning, final_answer))
-       │
-       └─ [_llm_text path]
-            └─ bus.publish(LLMTextEmitted(content))
+AgentInputAdded
+  ├─ EventBus.publish_async(...) persists the event and queues it
+  ├─ run_llm_worker(...)
+  │    ├─ derives session state from snapshots + new events
+  │    ├─ runs one PydanticAI turn
+  │    └─ emits LLMActionEmitted, SkillRequested, or LLMTextEmitted
+  ├─ run_skill_worker(...)
+  │    ├─ listens for SkillRequested / SkillCalled
+  │    ├─ executes SkillRunner.execute_skill(...)
+  │    └─ emits SkillCompleted
+  └─ run_circuit_breaker(...)
+       ├─ tracks token budget and consecutive failures from events
+       └─ emits StreamPaused when a threshold is breached
 ```
+
+All workers stop when they observe `StreamPaused`.
 
 **Testing** (`tests/test_event_bus.py`, `tests/test_event_store.py`):
 
 - `EventStore` tests use temp-file SQLite — no mocking, real round-trips
 - `RecordingEventBus` (in `tests/helpers.py`) collects events in memory, no persistence — used in `test_goal_runner.py` to assert event sequences without disk I/O
 - Full integration: `GoalRunner` with real `EventBus` + `EventStore`, verifying typed event retrieval after completed goal loops
+- Async runtime event types round-trip through Pydantic models and `EVENT_REGISTRY`
 
 ### Agent Runtime
 
@@ -202,9 +221,14 @@ The **blackboard** (`harness_poc/blackboard.db`) is the shared state store. Skil
 
 Skills are discovered at startup by scanning `harness_poc/system_skills/` and `skills/`. Each skill is a directory containing `SKILL.md` (metadata + parameter schema) and `skill.py` (an `execute(ctx, arguments) -> SkillResult` function). Skills with `auto_invokable: true` in their frontmatter are registered as PydanticAI tools so the LLM can invoke them autonomously during goal runs.
 
-### GoalRunner
+### Goal Execution
 
-`GoalRunner` (`core/goal_runner.py`) runs an autonomous ReAct loop: build context → LLM decides next action → execute → publish events → repeat. It supports:
+There are currently two goal execution paths while the migration settles:
+
+- `uv run harness-poc goal ...` uses the new async event processor loop (`AgentInputAdded` → LLM worker → skill worker → circuit breaker).
+- The TUI slash command `/goal ...` and pipeline agent nodes still use `GoalRunner` (`core/goal_runner.py`), the legacy synchronous ReAct loop.
+
+`GoalRunner` remains useful and tested. It runs: build context → LLM decides next action → execute → publish events → repeat. It supports:
 
 - **Stuck detection**: identical (tool, args) repeated N times → injects a `blocked` `SkillCompleted` event
 - **Budget enforcement**: max iterations, max tokens (tiktoken estimate), max wall-clock seconds
@@ -253,8 +277,8 @@ Skills accept arguments as JSON, key=value pairs, or a bare string (mapped to th
 # Autonomous goal execution
 uv run harness-poc goal "Search the web for the capital of France" --max-iterations 5
 
-# Goal with streaming progress
-uv run harness-poc goal "Summarize the event-driven architecture" --max-iterations 10 --max-tokens 8000
+# Goal with a token budget
+uv run harness-poc goal "Summarize the event-sourced architecture" --max-iterations 10 --max-tokens 8000
 
 # State management
 uv run harness-poc state show project    # durable project state
@@ -325,7 +349,7 @@ The agent calls `spec_writer` with `mode=gather`, presents each question to you,
 > /skill spec_writer {"mode": "gather", "gather_key": "my_spec", "answer": "A Python LLM harness backed by SQLite."}
 ```
 
-Use the same `gather_key` across REPL restarts — state is persisted in the blackboard.
+Use the same `gather_key` across TUI restarts — state is persisted in the blackboard.
 
 ### Phase 2 — draft (generate the spec)
 
@@ -351,7 +375,7 @@ Pipelines are declarative DAGs in `pipelines/`. Unlike workflows (linear, skill-
 uv run harness-poc pipeline list
 uv run harness-poc pipeline run research_and_write --input topic="black holes"
 
-# In the REPL:
+# In the TUI:
 # /pipeline research_and_write topic=black holes
 ```
 
@@ -445,7 +469,7 @@ states:
 ## Development
 
 ```bash
-uv run pytest                  # full test suite (172 tests)
+uv run pytest                  # full test suite (173 tests)
 uv run pytest tests/test_goal_runner.py -v  # goal runner + event bus integration
 uv run pytest tests/test_event_bus.py tests/test_event_store.py -v  # event system
 uv run ruff check .            # lint
