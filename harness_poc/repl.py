@@ -729,6 +729,7 @@ def handle_goal_command(app_state: AppState, user_input: str) -> None:
             goal=objective,
             app_state=app_state,
             on_text=app_state.streaming.on_text,
+            on_tool_event=app_state.streaming.on_tool_event,
         )
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
         logger.exception(

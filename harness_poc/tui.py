@@ -457,11 +457,17 @@ class ChatApp(App[None]):
                     _flush_to_ui()
 
         tool_lines: list[str] = []
+        MAX_TOOL_LINES = 5  # Show last N tool iterations, collapse older ones
         tool_state: dict[str, Static | None] = {"widget": None}
 
         def on_tool_event(message: str) -> None:
             tool_lines.append(message)
-            combined = "\n".join(f"  ⚙ {line}" for line in tool_lines)
+            display_lines = list(tool_lines)
+            if len(display_lines) > MAX_TOOL_LINES:
+                older = len(display_lines) - MAX_TOOL_LINES
+                summary = f"  ... ({older} earlier tool calls) ..."
+                display_lines = [summary] + display_lines[-MAX_TOOL_LINES:]
+            combined = "\n".join(f"  ⚙ {line}" for line in display_lines)
 
             def _update_tool() -> None:
                 if tool_state["widget"] is None:

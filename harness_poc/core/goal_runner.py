@@ -63,8 +63,13 @@ def count_tokens(messages: Any) -> int:  # noqa: ANN401
 def _emit_goal_progress(
     on_text: Callable[[str], None] | None,
     content: str,
+    *,
+    on_tool_event: Callable[[str], None] | None = None,
+    tool_event: bool = False,
 ) -> None:
-    if on_text is not None and content:
+    if tool_event and on_tool_event is not None and content:
+        on_tool_event(content)
+    elif on_text is not None and content:
         on_text(content)
 
 
@@ -471,15 +476,17 @@ class GoalRunner:
         goal: str,
         app_state: AppState,
         on_text: Callable[[str], None] | None = None,
+        on_tool_event: Callable[[str], None] | None = None,
     ) -> GoalRunResult:
         """Synchronous wrapper for backward compatibility. Use run_async() for new code."""
-        return asyncio.run(self.run_async(goal, app_state, on_text))
+        return asyncio.run(self.run_async(goal, app_state, on_text, on_tool_event))
 
     async def run_async(  # noqa: PLR0915
         self,
         goal: str,
         app_state: AppState,
         on_text: Callable[[str], None] | None = None,
+        on_tool_event: Callable[[str], None] | None = None,
     ) -> GoalRunResult:
         """Execute the autonomous ReAct loop for the given goal (async)."""
         logger.info(
@@ -596,7 +603,9 @@ class GoalRunner:
             arguments = action.arguments
             _emit_goal_progress(
                 on_text,
-                f"\n[goal] iteration {iteration}: {tool_name}\n",
+                f"iteration {iteration}: {tool_name}",
+                on_tool_event=on_tool_event,
+                tool_event=True,
             )
             logger.info(
                 "Goal action selected",

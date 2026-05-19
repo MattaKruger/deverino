@@ -164,8 +164,9 @@ class _FakeGoalRunner:
         goal: str,
         app_state: object,
         on_text: Callable[[str], None] | None = None,
+        on_tool_event: Callable[[str], None] | None = None,
     ) -> GoalRunResult:
-        del goal, app_state, on_text
+        del goal, app_state, on_text, on_tool_event
         return GoalRunResult(
             status="completed",
             content="feat: migrate to pydantic-ai",
