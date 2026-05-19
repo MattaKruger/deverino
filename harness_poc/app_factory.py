@@ -12,11 +12,11 @@ from harness_poc.core.event_bus import EventBus
 from harness_poc.core.event_store import EventStore
 from harness_poc.core.llm_client import LLMClient
 from harness_poc.core.logging import configure_logging
+from harness_poc.core.pipeline_runner import PipelineRunner
 from harness_poc.core.pydantic_runtime import (
     PydanticAgentRuntime,
     build_runtime,
 )
-from harness_poc.core.pipeline_runner import PipelineRunner
 from harness_poc.core.skill_runner import SkillRunner
 from harness_poc.core.skill_scaffolder import SkillScaffolder
 from harness_poc.core.state import build_state_context
@@ -91,7 +91,10 @@ def build_app_state() -> AppState:
     event_bus = EventBus(event_store)
 
     if config.observability.logfire_enabled:
-        from harness_poc.core.logfire_subscriber import configure_logfire, wire_logfire
+        from harness_poc.core.logfire_subscriber import (  # noqa: PLC0415
+            configure_logfire,
+            wire_logfire,
+        )
 
         configure_logfire()
         wire_logfire(event_bus)

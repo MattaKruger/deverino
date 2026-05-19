@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
 
+from harness_poc.core.events import (
+    PipelineCompleted,
+    PipelineNodeCompleted,
+    PipelineNodeStarted,
+    PipelineStarted,
+)
 from harness_poc.core.pipeline_runner import PipelineRunner, build_waves
 from harness_poc.core.skill_context import SkillResult
 from tests.helpers import RecordingEventBus
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # --- build_waves ---
@@ -31,7 +40,7 @@ def test_build_waves_sequential() -> None:
         {"id": "c", "type": "skill", "depends_on": ["b"]},
     ]
     waves = build_waves(nodes)
-    assert len(waves) == 3
+    assert len(waves) == 3  # noqa: PLR2004
     assert waves[0][0]["id"] == "a"
     assert waves[1][0]["id"] == "b"
     assert waves[2][0]["id"] == "c"
@@ -44,7 +53,7 @@ def test_build_waves_mixed() -> None:
         {"id": "synth", "type": "agent", "depends_on": ["web", "mem"]},
     ]
     waves = build_waves(nodes)
-    assert len(waves) == 2
+    assert len(waves) == 2  # noqa: PLR2004
     assert {n["id"] for n in waves[0]} == {"web", "mem"}
     assert waves[1][0]["id"] == "synth"
 
@@ -227,17 +236,10 @@ def test_independent_nodes_in_same_wave_both_run(tmp_path: Path) -> None:
     assert result.status == "completed"
     assert result.node_results["step1"].status == "completed"
     assert result.node_results["step2"].status == "completed"
-    assert app_state.skill_runner.execute_skill.call_count == 2
+    assert app_state.skill_runner.execute_skill.call_count == 2  # noqa: PLR2004
 
 
 def test_pipeline_events_published(tmp_path: Path) -> None:
-    from harness_poc.core.events import (
-        PipelineCompleted,
-        PipelineNodeCompleted,
-        PipelineNodeStarted,
-        PipelineStarted,
-    )
-
     pipelines_dir = _write_pipeline(
         tmp_path,
         """

@@ -1,0 +1,25 @@
+name: research-and-write
+description: |
+  Research a topic using memory lookup, then synthesize findings into a document.
+  memory_research runs first; synthesize depends on it.
+
+inputs:
+  topic: string
+
+nodes:
+  - id: memory_research
+    type: skill
+    skill: read_memory
+    arguments:
+      query: "{{inputs.topic}}"
+
+  - id: synthesize
+    type: agent
+    goal: |
+      Write a short summary document about: {{inputs.topic}}
+
+      Available research from memory:
+      {{nodes.memory_research.output}}
+
+      Produce a clear, concise summary with key points.
+    depends_on: [memory_research]
