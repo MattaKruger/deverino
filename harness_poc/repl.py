@@ -32,20 +32,10 @@ MIN_PIPELINE_PARTS = 2
 TOKEN_MILLION = 1_000_000
 TOKEN_THOUSAND = 1_000
 
-_session_token_count: int = 0
-_session_cache_hit_tokens: int = 0
 
-
-def _track_tokens(usage: Usage | None) -> None:
-    """Accumulate API-reported token usage into the session counter.
-
-    Falls back to 0 when usage is unavailable (mock mode).
-    Uses total_tokens from the API, which already accounts for cache discounts.
-    """
-    global _session_token_count, _session_cache_hit_tokens  # noqa: PLW0603
+def _track_tokens(usage: Usage | None, app_state: AppState) -> None:
     if usage is not None:
-        _session_token_count += usage.get("total_tokens", 0)
-        _session_cache_hit_tokens += usage.get("cache_hit_tokens", 0)
+        app_state.streaming.session_tokens += usage.get("total_tokens", 0)
 
 
 def run_repl(app_state: AppState) -> None:
@@ -244,20 +234,19 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
         response = app_state.pydantic_runtime.stream_text(
             user_input,
             message_history=app_state.pydantic_messages,
-            on_text=_print_stream_chunk,
+            on_text=app_state.streaming.on_text,
+            on_tool_event=app_state.streaming.on_tool_event,
         )
-        _track_tokens(response.usage)
+        _track_tokens(response.usage, app_state)
         if response.messages:
             app_state.pydantic_messages.extend(response.messages)
-            # Prune old messages to prevent context bloat from
-            # accumulated tool calls/results across turns.
             if len(app_state.pydantic_messages) > MAX_PYDANTIC_MESSAGES:
                 excess = len(app_state.pydantic_messages) - MAX_PYDANTIC_MESSAGES
                 app_state.pydantic_messages = app_state.pydantic_messages[excess:]
         else:
             _append_pydantic_chat_exchange(app_state, user_input, response.content)
         app_state.messages.append({"role": "assistant", "content": response.content})
-        _finish_stream_line(response.content)
+        app_state.streaming.on_finish(response.content)
     except sqlite3.OperationalError as exc:
         print_error(f"Database operation failed: {exc}")
     except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
@@ -647,15 +636,6 @@ def print_skill_help() -> None:
     )
 
 
-def _print_stream_chunk(chunk: str) -> None:
-    print(chunk, end="", flush=True)
-
-
-def _finish_stream_line(content: str) -> None:
-    if content:
-        print()
-
-
 # ------------------------------------------------------------------
 # /goal command
 # ------------------------------------------------------------------
@@ -680,7 +660,7 @@ def handle_goal_command(app_state: AppState, user_input: str) -> None:
         result = runner.run(
             goal=objective,
             app_state=app_state,
-            on_text=_print_stream_chunk,
+            on_text=app_state.streaming.on_text,
         )
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
         logger.exception(

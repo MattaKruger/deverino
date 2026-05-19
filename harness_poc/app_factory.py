@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -26,6 +27,28 @@ if TYPE_CHECKING:
     from pydantic_ai.models import Model
 
     from harness_poc.core.llm_client import Message
+
+
+def _default_on_text(chunk: str) -> None:
+    print(chunk, end="", flush=True)
+
+
+def _default_on_finish(content: str) -> None:
+    if content:
+        print()
+
+
+@dataclass
+class StreamingContext:
+    on_text: Callable[[str], None] = field(default_factory=lambda: _default_on_text)
+    on_tool_event: Callable[[str], None] | None = None
+    on_finish: Callable[[str], None] = field(default_factory=lambda: _default_on_finish)
+    session_tokens: int = 0
+
+    def reset_callbacks(self) -> None:
+        self.on_text = _default_on_text
+        self.on_tool_event = None
+        self.on_finish = _default_on_finish
 
 
 STARTUP_ERRORS = (
@@ -53,6 +76,7 @@ class AppState:
     messages: list[Message]
     tools: list[dict[str, Any]]
     event_bus: EventBus
+    streaming: StreamingContext
 
 
 def build_app_state() -> AppState:
@@ -119,4 +143,5 @@ def build_app_state() -> AppState:
         messages=messages,
         tools=tools,
         event_bus=event_bus,
+        streaming=StreamingContext(),
     )

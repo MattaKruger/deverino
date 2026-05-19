@@ -7,6 +7,7 @@ if TYPE_CHECKING:
 
     import pytest
 
+from harness_poc.app_factory import StreamingContext
 from harness_poc.core.goal_runner import GoalRunResult
 from harness_poc.core.pydantic_runtime import AgentRunResult
 from harness_poc.repl import handle_chat_input, handle_goal_command
@@ -19,11 +20,8 @@ def test_handle_chat_input_uses_pydantic_runtime(
 ) -> None:
     chunks: list[str] = []
     app_state = _FakeAppState()
-
-    monkeypatch.setattr("harness_poc.repl._print_stream_chunk", chunks.append)
-    monkeypatch.setattr(
-        "harness_poc.repl._finish_stream_line", lambda _content: None
-    )
+    app_state.streaming.on_text = chunks.append
+    app_state.streaming.on_finish = lambda _: None
 
     handle_chat_input(cast("Any", app_state), "hello")
 
@@ -74,6 +72,7 @@ class _FakeRuntime:
         *,
         message_history: list[Any] | None = None,
         on_text: Callable[[str], None] | None = None,
+        on_tool_event: Callable[[str], None] | None = None,
     ) -> AgentRunResult:
         self.prompts.append(prompt)
         self.histories.append(list(message_history or []))
@@ -97,6 +96,7 @@ class _FakeAppState:
         self.messages: list[dict[str, str]] = []
         self.pydantic_messages: list[Any] = []
         self.pydantic_runtime = _FakeRuntime()
+        self.streaming = StreamingContext()
 
 
 class _FakeGoalRunner:
