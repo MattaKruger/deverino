@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
+from harness_poc.core.permissions import SkillPermissions  # noqa: TC001
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
@@ -50,12 +52,38 @@ class SkillContext:
     skill_name: str
     database: BlackboardDatabase
     config: HarnessConfig
+    permissions: SkillPermissions = field(default_factory=SkillPermissions)
     stream_text: Callable[[str], None] | None = None
     on_tool_event: Callable[[str], None] | None = None
 
     @property
     def project_root(self) -> Path:
+        """Read-only view of the project directory.
+
+        Raises PermissionError when the skill's workspace permission is ``"none"``.
+        """
+        if not self.permissions.can_read_workspace:
+            raise PermissionError(
+                f"Skill '{self.skill_name}' has workspace="
+                f"{self.permissions.workspace!r} — cannot access project files."
+            )
         return self.config.project_root
+
+    @property
+    def scratch_dir(self) -> Path:
+        """Writable scratch directory for skills with ``workspace=read_write``.
+
+        Created on first access. Scoped to the session so concurrent sessions
+        don't collide.
+        """
+        if not self.permissions.can_write_workspace:
+            raise PermissionError(
+                f"Skill '{self.skill_name}' has workspace="
+                f"{self.permissions.workspace!r} — cannot write files."
+            )
+        scratch = self.config.project_root / ".deverino-scratch" / self.session_id
+        scratch.mkdir(parents=True, exist_ok=True)
+        return scratch
 
     def read_subagent_template(self, persona: str) -> str:
         normalized = persona.removesuffix(".md")

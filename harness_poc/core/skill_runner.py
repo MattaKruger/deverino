@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from harness_poc.core.skill_context import SkillResult
 
 from harness_poc.core.skill_context import SkillContext
+from harness_poc.core.permissions import SkillPermissions
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,9 @@ class SkillRunner:
         try:
             skill_file = self._find_skill_file(resolved_tool_name)
             skill = self.parse_skill_document(skill_file)
+            skill_permissions = SkillPermissions.from_yaml(
+                skill["metadata"].get("permissions", {})
+            )
             execute = self._load_entrypoint(skill)
 
             context = SkillContext(
@@ -125,6 +129,7 @@ class SkillRunner:
                 skill_name=resolved_tool_name,
                 database=self.database,
                 config=self.config,
+                permissions=skill_permissions,
                 stream_text=on_text,
                 on_tool_event=on_tool_event,
             )
