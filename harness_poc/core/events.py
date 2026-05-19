@@ -55,6 +55,28 @@ class SubAgentCompleted(BaseEvent):
     content: str
 
 
+class PipelineStarted(BaseEvent):
+    pipeline_name: str
+    node_count: int
+
+
+class PipelineNodeStarted(BaseEvent):
+    node_id: str
+    node_type: str  # "skill" | "agent"
+
+
+class PipelineNodeCompleted(BaseEvent):
+    node_id: str
+    status: str  # "completed" | "failed" | "skipped"
+    output_preview: str
+
+
+class PipelineCompleted(BaseEvent):
+    pipeline_name: str
+    status: str  # "completed" | "failed"
+    duration_s: float
+
+
 EVENT_REGISTRY: dict[str, type[BaseEvent]] = {
     cls.__name__: cls  # type: ignore[misc]
     for cls in [
@@ -65,5 +87,9 @@ EVENT_REGISTRY: dict[str, type[BaseEvent]] = {
         LLMTextEmitted,
         SubAgentDispatched,
         SubAgentCompleted,
+        PipelineStarted,
+        PipelineNodeStarted,
+        PipelineNodeCompleted,
+        PipelineCompleted,
     ]
 }

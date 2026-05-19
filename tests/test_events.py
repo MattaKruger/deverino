@@ -4,6 +4,10 @@ from harness_poc.core.events import (
     EVENT_REGISTRY,
     AgentStarted,
     GoalEvaluated,
+    PipelineCompleted,
+    PipelineNodeCompleted,
+    PipelineNodeStarted,
+    PipelineStarted,
     SkillCalled,
     SkillCompleted,
 )
@@ -24,6 +28,7 @@ def test_event_registry_covers_all_concrete_types() -> None:
     expected = {
         "AgentStarted", "SkillCalled", "SkillCompleted", "GoalEvaluated",
         "LLMTextEmitted", "SubAgentDispatched", "SubAgentCompleted",
+        "PipelineStarted", "PipelineNodeStarted", "PipelineNodeCompleted", "PipelineCompleted",
     }
     assert set(EVENT_REGISTRY.keys()) == expected
 
@@ -46,3 +51,40 @@ def test_skill_completed_round_trips_via_model_dump() -> None:
 def test_goal_evaluated_default_final_answer_is_empty() -> None:
     event = GoalEvaluated(session_id="s1", is_complete=True, reasoning="done")
     assert event.final_answer == ""
+
+
+def test_pipeline_started_roundtrip() -> None:
+    event = PipelineStarted(session_id="s1", pipeline_name="my-pipe", node_count=3)
+    assert event.event_type == "PipelineStarted"
+    restored = PipelineStarted.model_validate(event.model_dump())
+    assert restored.pipeline_name == "my-pipe"
+    assert restored.node_count == 3
+
+
+def test_pipeline_node_started_roundtrip() -> None:
+    event = PipelineNodeStarted(session_id="s1", node_id="web_research", node_type="agent")
+    assert event.event_type == "PipelineNodeStarted"
+    restored = PipelineNodeStarted.model_validate(event.model_dump())
+    assert restored.node_id == "web_research"
+    assert restored.node_type == "agent"
+
+
+def test_pipeline_node_completed_roundtrip() -> None:
+    event = PipelineNodeCompleted(
+        session_id="s1", node_id="web_research", status="completed", output_preview="done"
+    )
+    restored = PipelineNodeCompleted.model_validate(event.model_dump())
+    assert restored.status == "completed"
+
+
+def test_pipeline_completed_roundtrip() -> None:
+    event = PipelineCompleted(
+        session_id="s1", pipeline_name="my-pipe", status="completed", duration_s=1.5
+    )
+    restored = PipelineCompleted.model_validate(event.model_dump())
+    assert restored.duration_s == 1.5
+
+
+def test_pipeline_events_in_registry() -> None:
+    for name in ("PipelineStarted", "PipelineNodeStarted", "PipelineNodeCompleted", "PipelineCompleted"):
+        assert name in EVENT_REGISTRY
