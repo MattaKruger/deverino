@@ -131,8 +131,9 @@ class PydanticAgentRuntime:
                     turn_chunks: list[str] = []
                     had_tool_call = False
 
-                    # Emit separator between model turns (after tool calls)
-                    if model_turn_index > 0 and on_text is not None:
+                    # Emit separator between model turns (after tool calls),
+                    # but only when the previous turn actually produced visible text.
+                    if all_output_parts and on_text is not None:
                         on_text("\n\n")
 
                     async with node.stream(agent_run.ctx) as request_stream:

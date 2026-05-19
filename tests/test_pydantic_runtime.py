@@ -138,7 +138,7 @@ def test_stream_text_calls_on_text_callback(tmp_path: Path) -> None:
     result = runtime.stream_text("hello", on_text=chunks.append)
 
     assert chunks, "on_text callback must be called at least once"
-    assert result.content  # content non-empty
+    assert result.content == "".join(chunks)
 
 
 def _runtime_parts(
