@@ -29,17 +29,30 @@ logger = logging.getLogger(__name__)
 _TOKEN_MILLION = 1_000_000
 _TOKEN_THOUSAND = 1_000
 
-_SPINNER_FRAMES = [
-    "( ͡° ͜ʖ ͡°)  cooking",
-    "(ง •̀_•́)ง  doing the thing",
-    "¯\\_(ツ)_/¯  it depends",
-    "(•̀ᴗ•́)و   manifesting",
-    "ʕ•ᴥ•ʔ     big brain time",  # noqa: RUF001
-    "(╯°□°）╯  consulting the oracle",  # noqa: RUF001
-    "(*￣▽￣)b  works on my machine",
-    "ヽ(•‿•)ノ  sending it",  # noqa: RUF001
-    "(◕‿◕)✿   on it chief",
-    "(งツ)ว     staring into the void",
+_SPINNER_ICONS = [
+    "( ͡° ͜ʖ ͡°)",
+    "(ง •̀_•́)ง",
+    "¯\\_(ツ)_/¯",
+    "(•̀ᴗ•́)و",
+    "ʕ•ᴥ•ʔ",  # noqa: RUF001
+    "(╯°□°）╯",  # noqa: RUF001
+    "(*￣▽￣)b",
+    "ヽ(•‿•)ノ",  # noqa: RUF001
+    "(◕‿◕)✿",
+    "(งツ)ว",
+]
+
+_SPINNER_PHRASES = [
+    "cooking",
+    "doing the thing",
+    "it depends",
+    "manifesting",
+    "big brain time",
+    "consulting the oracle",
+    "works on my machine",
+    "sending it",
+    "on it chief",
+    "staring into the void",
 ]
 
 
@@ -51,13 +64,17 @@ def _format_tokens(count: int) -> str:
     return str(count)
 
 
-_FILE_REF_PATTERN = re.compile(
-    r"\b([\w./-]+\.\w{1,10}):(\d+)(?:-(\d+))?\b"
-)
+def _format_spinner_status(icon: str, phrase: str, dots: str) -> str:
+    return f"{icon:<12}  {phrase}{dots}"
+
+
+_FILE_REF_PATTERN = re.compile(r"\b([\w./-]+\.\w{1,10}):(\d+)(?:-(\d+))?\b")
+_MARKDOWN_BLOCK_PATTERN = re.compile(r"(^|\n)(#{1,6}\s|[-*]\s|\d+\.\s|```|>\s|\|.+\|)")
 
 
 def _linkify_file_refs(text: str, project_root: str) -> str:
     """Convert ``path/file.py:123`` patterns into clickable Markdown links."""
+
     def _replace(match: re.Match[str]) -> str:
         rel = match.group(1)
         line = match.group(2)
@@ -67,7 +84,12 @@ def _linkify_file_refs(text: str, project_root: str) -> str:
         if not candidate.is_file():
             return raw  # don't linkify non-existent paths
         return f"[{raw}](file-line:{candidate}:{line})"
+
     return _FILE_REF_PATTERN.sub(_replace, text)
+
+
+def _should_render_markdown(text: str) -> bool:
+    return bool(_MARKDOWN_BLOCK_PATTERN.search(text))
 
 
 def _should_show_completions(line_before_cursor: str) -> bool:
@@ -244,18 +266,24 @@ class ChatApp(App[None]):
 
     def _start_spinner(self) -> None:
         spinner = self.query_one("#spinner", Static)
-        frame_cycle = itertools.cycle(_SPINNER_FRAMES)
+        icon_cycle = itertools.cycle(_SPINNER_ICONS)
+        phrase_cycle = itertools.cycle(_SPINNER_PHRASES)
         dot_cycle = itertools.cycle([".", "..", "..."])
-        current_frame = [next(frame_cycle)]
+        current_icon = [next(icon_cycle)]
+        current_phrase = [next(phrase_cycle)]
         tick = [0]
 
         def _tick() -> None:
             tick[0] += 1
-            if tick[0] % 8 == 0:  # switch phrase every ~3.2 s
-                current_frame[0] = next(frame_cycle)
-            spinner.update(f"{current_frame[0]}{next(dot_cycle)}")
+            if tick[0] % 4 == 0:
+                current_icon[0] = next(icon_cycle)
+            if tick[0] % 8 == 0:
+                current_phrase[0] = next(phrase_cycle)
+            spinner.update(
+                _format_spinner_status(current_icon[0], current_phrase[0], next(dot_cycle))
+            )
 
-        spinner.update(f"{current_frame[0]}.")
+        spinner.update(_format_spinner_status(current_icon[0], current_phrase[0], "."))
         self._spinner_timer = self.set_interval(0.4, _tick)
 
     def _stop_spinner(self) -> None:
@@ -472,8 +500,11 @@ class ChatApp(App[None]):
                 # no streaming happened — add the label now
                 label = Static("[green]Agent:[/green]", classes="agent-label", markup=True)
                 await chat.mount(label)
-            linkified = _linkify_file_refs(response, str(self._app_state.config.project_root))
-            await chat.mount(Markdown(linkified, open_links=False))
+            if _should_render_markdown(response):
+                linkified = _linkify_file_refs(response, str(self._app_state.config.project_root))
+                await chat.mount(Markdown(linkified, open_links=False))
+            else:
+                await chat.mount(Static(response, markup=False))
         self._stop_spinner()
         chat.scroll_end(animate=False)
         self._app_state.streaming.reset_callbacks()

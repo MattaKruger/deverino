@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 from textual.widgets import OptionList, TextArea
 
 from harness_poc.app_factory import StreamingContext
-from harness_poc.tui import ChatApp
+from harness_poc.tui import ChatApp, _format_spinner_status, _should_render_markdown
 
 if TYPE_CHECKING:
     import pytest
@@ -80,3 +80,22 @@ async def test_chat_app_enter_inserts_newline_and_ctrl_d_submits(
 
         assert submitted == ["hi\nthere"]
         assert editor.text == ""
+
+
+def test_tui_renders_plain_first_paragraph_without_markdown() -> None:
+    assert _should_render_markdown("Hey! Welcome. What can I help with?") is False
+    assert _should_render_markdown("Question. The project is a natural fit.") is False
+
+
+def test_tui_keeps_markdown_for_block_content() -> None:
+    assert _should_render_markdown("| A | B |\n|---|---|") is True
+    assert _should_render_markdown("```python\nprint('x')\n```") is True
+    assert _should_render_markdown("- item") is True
+
+
+def test_spinner_status_combines_independent_icon_phrase_and_dots() -> None:
+    status = _format_spinner_status("(งツ)ว", "doing the thing", "...")
+
+    assert status.startswith("(งツ)ว")
+    assert status.endswith("doing the thing...")
+    assert "  doing the thing" in status
