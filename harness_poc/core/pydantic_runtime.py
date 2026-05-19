@@ -118,7 +118,6 @@ class PydanticAgentRuntime:
         usage: Usage | None = None
         consecutive_tool_rounds = 0
         capped = False
-        model_turn_index = 0
 
         async with self.agent.iter(
             prompt,
@@ -152,7 +151,6 @@ class PydanticAgentRuntime:
                         consecutive_tool_rounds = 0
                     if turn_chunks:
                         all_output_parts.append("".join(turn_chunks))
-                    model_turn_index += 1
 
                 elif Agent.is_call_tools_node(node):
                     consecutive_tool_rounds += 1
