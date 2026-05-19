@@ -222,7 +222,7 @@ def run_pipeline(app_state: AppState, pipeline_name: str, inputs: dict[str, str]
         )
         console.print(f"  [{node_color}]{node_id}: {node_result.status}[/{node_color}]")
         if node_result.output:
-            console.print(f"    {node_result.output[:300]}")
+            print_markdown(node_result.output)
 
     summary = f"Pipeline '{pipeline_name}' {result.status}."
     app_state.messages.append({"role": "assistant", "content": summary})
