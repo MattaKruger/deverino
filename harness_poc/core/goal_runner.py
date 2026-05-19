@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import hashlib
+import asyncio
 import json
 import logging
 import re
@@ -219,6 +219,217 @@ def _looks_like_generation_goal(goal: str) -> bool:
     )
 
 
+def _semantic_key(tool_name: str, arguments: dict[str, Any]) -> str:
+    """Build a normalized key for semantic comparison of actions.
+
+    Normalizes string values so that minor phrasing differences
+    (whitespace, casing, punctuation) do not produce distinct hashes.
+    For example, "BlackboardDatabase schema" and "BlackboardDatabase  schema"
+    produce the same key.
+    """
+    normalized: dict[str, Any] = {}
+    for k, v in sorted(arguments.items()):
+        if isinstance(v, str):
+            normalized[k] = " ".join(v.lower().split())
+        elif isinstance(v, (int, float, bool)):
+            normalized[k] = v
+        elif isinstance(v, list):
+            normalized[k] = [
+                " ".join(str(x).lower().split()) if isinstance(x, str) else x
+                for x in v
+            ]
+        elif isinstance(v, dict):
+            inner: dict[str, Any] = {}
+            for ik, iv in sorted(v.items()):
+                if isinstance(iv, str):
+                    inner[ik] = " ".join(iv.lower().split())
+                elif isinstance(iv, (int, float, bool)):
+                    inner[ik] = iv
+                else:
+                    inner[ik] = str(iv)
+            normalized[k] = json.dumps(inner, sort_keys=True)
+        else:
+            normalized[k] = str(v)
+    return f"{tool_name}:{json.dumps(normalized, sort_keys=True)}"
+
+
+# ---------------------------------------------------------------------------
+# Context Window Compression (Phase 2)
+# ---------------------------------------------------------------------------
+
+_SKILL_CONTENT_MAX_CHARS = 500
+_EVENT_SUMMARY_MAX_TOOLS = 10
+
+
+def _format_event_compact(event: BaseEvent) -> str:
+    """Format a single event compactly for the decision prompt.
+
+    SkillCompleted events get their content compressed; other events
+    get a compact one-line representation.
+    """
+    event_type = event.event_type
+
+    if isinstance(event, SkillCalled):
+        return (
+            f"- {event_type}: {event.tool_name}"
+            f"({json.dumps(event.arguments, sort_keys=True)})"
+        )
+    if isinstance(event, SkillCompleted):
+        compressed = _compress_skill_content(event.tool_name, event.content)
+        return (
+            f"- {event_type}({event.tool_name}): [{event.status}] {compressed}"
+        )
+    if isinstance(event, GoalEvaluated):
+        return (
+            f"- {event_type}: is_complete={event.is_complete}"
+            f" {event.reasoning[:200]}"
+        )
+    if isinstance(event, LLMTextEmitted):
+        return f"- {event_type}: {event.content[:200]}"
+
+    # Fallback: compact JSON representation
+    return f"- {event_type}: {event.model_dump_json(exclude={'timestamp','created_at','id'})}"[:500]
+
+
+def _compress_skill_content(tool_name: str, content: str) -> str:
+    """Compress SkillCompleted content to fit within a character budget.
+
+    For JSON content, extracts key fields. For text content, truncates.
+    """
+    if not content:
+        return "(empty)"
+
+    # For very long content, try JSON extraction first
+    if len(content) > _SKILL_CONTENT_MAX_CHARS and content.strip().startswith("{"):
+        try:
+            decoded = json.loads(content)
+            if isinstance(decoded, dict):
+                return _extract_skill_json_summary(tool_name, decoded)
+        except json.JSONDecodeError:
+            pass
+
+    # Truncate plain text
+    if len(content) <= _SKILL_CONTENT_MAX_CHARS:
+        return content.replace("\n", " ")
+
+    truncated = content[:_SKILL_CONTENT_MAX_CHARS].replace("\n", " ")
+    return f"{truncated}... [truncated, {len(content)} total chars]"
+
+
+def _extract_skill_json_summary(
+    tool_name: str, data: dict[str, Any]
+) -> str:
+    """Extract a compact summary from JSON skill output."""
+    parts: list[str] = []
+
+    # Common fields for container/exec outputs
+    if "exit_code" in data:
+        parts.append(f"exit={data['exit_code']}")
+    if "stdout" in data and isinstance(data["stdout"], str):
+        stdout = data["stdout"]
+        if len(stdout) <= 200:
+            parts.append(f'stdout="{stdout}"')
+        else:
+            parts.append(f"stdout={len(stdout)}chars")
+    if "stderr" in data and isinstance(data["stderr"], str):
+        stderr = data["stderr"]
+        if stderr.strip():
+            parts.append(f"stderr={len(stderr)}chars")
+
+    # For search results, count results
+    if "results" in data and isinstance(data["results"], list):
+        parts.append(f"results={len(data['results'])}")
+    if "count" in data:
+        parts.append(f"count={data['count']}")
+
+    # Fallback: key fields
+    if not parts:
+        for key in ("summary", "content", "result", "message"):
+            if key in data and isinstance(data[key], str):
+                val = data[key].replace("\n", " ")
+                parts.append(f"{key}={val[:300]}")
+                break
+        if not parts:
+            parts.append(f"keys={sorted(data.keys())}")
+
+    return f"{tool_name}: " + ", ".join(parts)
+
+
+def _summarize_event_list(events: list[BaseEvent]) -> str:
+    """Create a dense summary of older events for context compression.
+
+    Reduces verbose event history to a compact narrative that preserves
+    semantic meaning while dropping serialized JSON bloat.
+    """
+    tool_calls: list[str] = []
+    tool_results: list[str] = []
+    goal_checks: list[str] = []
+
+    for event in events:
+        if isinstance(event, SkillCalled):
+            tool_calls.append(
+                f"{event.tool_name}({_summarise_args_compact(event.arguments)})"
+            )
+        elif isinstance(event, SkillCompleted):
+            result = _compress_skill_content(event.tool_name, event.content)
+            tool_results.append(
+                f"{event.tool_name} → {event.status}: {result}"
+            )
+        elif isinstance(event, GoalEvaluated):
+            goal_checks.append(
+                f"evaluate_goal(is_complete={event.is_complete}, "
+                f"reasoning={event.reasoning[:100]})"
+            )
+        elif isinstance(event, LLMTextEmitted):
+            tool_results.append(
+                f"_llm_text: {event.content[:150]}"
+            )
+
+    lines: list[str] = []
+
+    if tool_calls:
+        # Deduplicate and show only unique calls
+        seen: set[str] = set()
+        unique_calls: list[str] = []
+        for call in tool_calls:
+            if call not in seen:
+                seen.add(call)
+                unique_calls.append(call)
+        if len(unique_calls) > _EVENT_SUMMARY_MAX_TOOLS:
+            extra = len(unique_calls) - _EVENT_SUMMARY_MAX_TOOLS
+            unique_calls = unique_calls[:_EVENT_SUMMARY_MAX_TOOLS]
+            unique_calls.append(f"... and {extra} more tool calls")
+        lines.append("**Actions taken:** " + "; ".join(unique_calls))
+
+    if tool_results:
+        lines.append("**Results:** " + "; ".join(tool_results[-5:]))
+
+    if goal_checks:
+        lines.append("**Progress checks:** " + "; ".join(goal_checks[-3:]))
+
+    if not lines:
+        lines.append(f"(No significant events in {len(events)} history items)")
+
+    return "\n".join(lines)
+
+
+def _summarise_args_compact(arguments: dict[str, Any]) -> str:
+    """Ultra-compact argument summary for context compression."""
+    for key in ("query", "objective", "description", "code", "command"):
+        if key in arguments:
+            val = str(arguments[key])
+            truncated = val[:80].replace("\n", " ")
+            suffix = "..." if len(val) > 80 else ""
+            return f"{key}={truncated}{suffix}"
+    # Show first key with a short value
+    for k, v in sorted(arguments.items()):
+        s = str(v)
+        if len(s) < 40:
+            return f"{k}={s}"
+        return f"{k}={s[:40]}..."
+    return ""
+
+
 @dataclass
 class GoalRunResult:
     status: str  # "completed" | "budget_exhausted" | "error"
@@ -253,15 +464,24 @@ class GoalRunner:
     stuck_threshold: int = 3
     decision_model: Model | None = None
 
-    _stuck_hashes: deque[str] = field(default_factory=lambda: deque(maxlen=3))
+    _failed_action_keys: deque[str] = field(default_factory=lambda: deque(maxlen=5))
 
-    def run(  # noqa: PLR0915
+    def run(
         self,
         goal: str,
         app_state: AppState,
         on_text: Callable[[str], None] | None = None,
     ) -> GoalRunResult:
-        """Execute the autonomous ReAct loop for the given goal."""
+        """Synchronous wrapper for backward compatibility. Use run_async() for new code."""
+        return asyncio.run(self.run_async(goal, app_state, on_text))
+
+    async def run_async(  # noqa: PLR0915
+        self,
+        goal: str,
+        app_state: AppState,
+        on_text: Callable[[str], None] | None = None,
+    ) -> GoalRunResult:
+        """Execute the autonomous ReAct loop for the given goal (async)."""
         logger.info(
             "Goal run started",
             extra={
@@ -273,7 +493,7 @@ class GoalRunner:
             },
         )
         start_time = time.monotonic()
-        self._stuck_hashes.clear()
+        self._failed_action_keys.clear()
         total_tokens = 0
         events: list[dict[str, Any]] = []
 
@@ -346,8 +566,8 @@ class GoalRunner:
                         events=events,
                     )
 
-            # --- PydanticAI structured decision ---
-            action, response_tokens = self._decide_next_action(
+            # --- PydanticAI structured decision (async) ---
+            action, response_tokens = await self._decide_next_action_async(
                 goal=goal,
                 app_state=app_state,
                 recent_events=recent_events,
@@ -389,17 +609,15 @@ class GoalRunner:
                 },
             )
 
-            # --- Stuck detection ---
-            action_hash = self._hash_action(tool_name, arguments)
-            if self._is_stuck(action_hash):
+            # --- Stuck detection (semantic, only against FAILED actions) ---
+            if self._is_semantically_stuck(tool_name, arguments):
                 error_msg = (
-                    "STUCK DETECTION: You have attempted the same action "
-                    f"({tool_name}) with identical arguments "
-                    f"{self.stuck_threshold}+ times. The action was blocked. "
-                    "Step back and try a different approach."
+                    "Action rejected: You have already attempted this specific "
+                    f"approach ({tool_name}). It failed previously. You must "
+                    "pivot your strategy or use a different tool."
                 )
                 logger.warning(
-                    "Goal action blocked by stuck detection",
+                    "Goal action blocked by semantic stuck detection",
                     extra={
                         "session_id": app_state.session_id,
                         "goal": goal,
@@ -420,12 +638,10 @@ class GoalRunner:
                         "type": "tool_observation",
                         "tool": tool_name,
                         "status": "blocked",
-                        "content": "Stuck detection triggered.",
+                        "content": "Semantic stuck detection triggered.",
                     }
                 )
                 continue
-
-            self._stuck_hashes.append(action_hash)
 
             # --- Intercept evaluate_goal ---
             if tool_name == "evaluate_goal":
@@ -479,7 +695,7 @@ class GoalRunner:
                 )
                 continue
 
-            # --- Execute normal skill ---
+            # --- Execute normal skill (via asyncio.to_thread) ---
             app_state.event_bus.publish(
                 SkillCalled(
                     session_id=app_state.session_id,
@@ -495,7 +711,8 @@ class GoalRunner:
                 }
             )
             try:
-                result = app_state.skill_runner.execute_skill(
+                result = await asyncio.to_thread(
+                    app_state.skill_runner.execute_skill,
                     tool_name=tool_name,
                     arguments=arguments,
                     session_id=app_state.session_id,
@@ -510,6 +727,11 @@ class GoalRunner:
                         artifacts=result.artifacts,
                     )
                 )
+                # Track failed actions for semantic stuck detection
+                if result.status in ("failed", "error", "blocked"):
+                    self._failed_action_keys.append(
+                        _semantic_key(tool_name, arguments)
+                    )
                 events.append(
                     {
                         "type": "tool_observation",
@@ -536,6 +758,10 @@ class GoalRunner:
                         status="error",
                         content=error_msg,
                     )
+                )
+                # Track failed actions for semantic stuck detection
+                self._failed_action_keys.append(
+                    _semantic_key(tool_name, arguments)
                 )
                 events.append(
                     {
@@ -603,6 +829,22 @@ class GoalRunner:
         app_state: AppState,
         recent_events: list[BaseEvent],
     ) -> tuple[GoalAction, int]:
+        """Synchronous decision wrapper for backward compatibility."""
+        return asyncio.run(
+            self._decide_next_action_async(
+                goal=goal,
+                app_state=app_state,
+                recent_events=recent_events,
+            )
+        )
+
+    async def _decide_next_action_async(
+        self,
+        *,
+        goal: str,
+        app_state: AppState,
+        recent_events: list[BaseEvent],
+    ) -> tuple[GoalAction, int]:
         model = (
             self.decision_model
             or app_state.goal_decision_model
@@ -629,7 +871,7 @@ class GoalRunner:
             system_prompt=self._goal_system_prompt(goal),
             output_retries=2,
         )
-        result = agent.run_sync(
+        result = await agent.run(
             self._build_decision_prompt(recent_events, app_state.tools),
         )
         usage = result.usage
@@ -650,22 +892,49 @@ class GoalRunner:
         recent_events: list[BaseEvent],
         tools: list[dict[str, Any]],
     ) -> str:
+        # Character budget for event rendering — prevents context bloat
+        MAX_EVENT_CHARS = 8000
+        KEEP_RAW_LAST = 3  # preserve last N events uncompressed
+
         parts = [
             "Choose the next concrete action as structured output.",
             "",
             "## Available Tools",
             json.dumps(tools, indent=2, sort_keys=True),
             "",
-            "## Recent Events",
         ]
 
-        if recent_events:
-            parts.extend(
-                f"- {event.event_type}: {event.model_dump_json()}"
-                for event in recent_events
-            )
+        if not recent_events:
+            parts.append("## Recent Events\nNo prior events.")
         else:
-            parts.append("No prior events.")
+            # Split into older (summarizable) and recent (keep raw)
+            if len(recent_events) <= KEEP_RAW_LAST:
+                raw_events = recent_events
+                older_events: list[BaseEvent] = []
+            else:
+                raw_events = recent_events[-KEEP_RAW_LAST:]
+                older_events = recent_events[:-KEEP_RAW_LAST]
+
+            # Render older events as a compressed summary
+            if older_events:
+                summary = _summarize_event_list(older_events)
+                parts.append("## Prior Context Summary")
+                parts.append(summary)
+                parts.append("")
+
+            # Render recent raw events (with compression for large content)
+            parts.append("## Recent Events")
+            event_chars = 0
+            for event in raw_events:
+                line = _format_event_compact(event)
+                event_chars += len(line)
+                if event_chars > MAX_EVENT_CHARS:
+                    parts.append(
+                        f"[Context window overflow — {len(raw_events)} recent events, "
+                        f"total {event_chars} chars. See Prior Context Summary above.]"
+                    )
+                    break
+                parts.append(line)
 
         parts.extend(
             [
@@ -707,19 +976,17 @@ class GoalRunner:
             "that the goal is complete.\n"
             "- If you are stuck or cannot proceed, call `evaluate_goal` with "
             "`is_complete: false` and explain what is blocking you.\n"
-            "- Do not repeat the same action with identical arguments — the system "
-            "will block repeated patterns.\n"
+            "- Do not repeat a previously failed action — the system "
+            "will detect semantically similar attempts and block them.\n"
             "- Be concise. Focus on actions, not conversation.\n"
         )
 
-    @staticmethod
-    def _hash_action(tool_name: str, arguments: dict[str, Any]) -> str:
-        canonical = json.dumps(
-            {"tool": tool_name, "args": arguments}, sort_keys=True
-        )
-        return hashlib.sha256(canonical.encode()).hexdigest()
-
-    def _is_stuck(self, action_hash: str) -> bool:
-        if len(self._stuck_hashes) < self.stuck_threshold:
+    def _is_semantically_stuck(
+        self, tool_name: str, arguments: dict[str, Any]
+    ) -> bool:
+        """Check if this action is semantically similar to a recent failed action."""
+        if len(self._failed_action_keys) < self.stuck_threshold:
             return False
-        return all(h == action_hash for h in self._stuck_hashes)
+        key = _semantic_key(tool_name, arguments)
+        match_count = sum(1 for k in self._failed_action_keys if k == key)
+        return match_count >= self.stuck_threshold

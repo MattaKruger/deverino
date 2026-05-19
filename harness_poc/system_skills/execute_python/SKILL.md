@@ -46,7 +46,7 @@ Run Python code in a container-backed scratchpad. This is intended for skills an
 5. **Filesystem access:** The project directory (`/workspace`) is mounted read-only.
    The container cannot create, modify, or delete files in the project source tree
    (including `skills/`, `harness_poc/`, `harness.yaml`, `.env`, etc.).
-6. **Scratch writes:** Write temporary output to `/tmp/deverino` — a session-scoped
+6. **Scratch writes:** Write temporary output to `/scratch` — a session-scoped
    writable directory that is cleaned up when the container is destroyed.
 
 ## Expected Output

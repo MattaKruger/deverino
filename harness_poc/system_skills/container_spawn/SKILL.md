@@ -24,14 +24,16 @@ permissions:
 
 ## Purpose
 Creates an ephemeral container for workflow execution. Mounts the project root at `/workspace`
-read-only and a session scratch directory at `/tmp/deverino`.
+read-only and a session scratch directory at `/scratch` (read-write). Environment variables
+TMPDIR, TMP, TEMP, HOME, and PYTHONPYCACHEPREFIX are set to `/scratch` to ensure all
+temporary/cache output is confined to the writable scratch area.
 
 ## Behavior
 1. Resolves the container backend (podman → docker auto-detect).
 2. Generates a name from the session ID if none provided.
 3. Checks if the container already exists (idempotent).
 4. Removes stale harness-owned containers before creating a new one.
-5. If not: `<backend> run -d --name <name> -v <project_root>:/workspace:ro -v <scratch>:/tmp/deverino -w /workspace <image> sleep infinity`.
+5. If not: `<backend> run -d --name <name> -v <project_root>:/workspace:ro -v <scratch>:/scratch:rw -w /workspace -e TMPDIR=/scratch -e TMP=/scratch -e TEMP=/scratch -e HOME=/scratch -e PYTHONPYCACHEPREFIX=/scratch/pycache <image> sleep infinity`.
 6. Stores container name in blackboard memory.
 
 ## Expected Output

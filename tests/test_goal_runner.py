@@ -276,17 +276,41 @@ def test_token_budget_exhausted() -> None:
     assert result.iterations < 5  # should bail quickly
 
 
-def test_stuck_detection_blocks_fourth_identical_action() -> None:
-    """Identical (tool, args) 4 times in a row should trigger stuck detection."""
-    mock = _mock_response_factory([_tool_call_response("read_memory", {"memory_key": "x"})])
+def test_stuck_detection_blocks_repeated_failed_action() -> None:
+    """Semantic stuck detection blocks actions that previously failed (not successful ones)."""
+    # First attempt: nonexistent_skill fails
+    mock = _mock_response_factory(
+        [
+            _tool_call_response("nonexistent_skill", {}),
+            _tool_call_response("nonexistent_skill", {}),
+            _tool_call_response("nonexistent_skill", {}),
+            _tool_call_response("nonexistent_skill", {}),
+        ]
+    )
     state = _make_app_state(mock)
     runner = GoalRunner(max_iterations=10, stuck_threshold=3)
 
     result = runner.run("Test goal", state)
     assert result.status == "budget_exhausted"
     events = state.event_bus.get_recent_events(state.session_id)
-    blocked = [e for e in events if isinstance(e, SkillCompleted) and e.status == "blocked"]
+    blocked = [
+        e for e in events
+        if isinstance(e, SkillCompleted) and e.status == "blocked"
+    ]
     assert len(blocked) >= 1
+
+    # --- Verify semantic normalization: different whitespace/casing should
+    # --- produce the same semantic key.
+    from harness_poc.core.goal_runner import _semantic_key
+
+    key1 = _semantic_key("semble_search", {"query": "BlackboardDatabase schema"})
+    key2 = _semantic_key("semble_search", {"query": "BlackboardDatabase  schema"})
+    key3 = _semantic_key("semble_search", {"query": "BLACKBOARDDATABASE SCHEMA"})
+    assert key1 == key2 == key3
+
+    # Different tool should produce different key
+    key4 = _semantic_key("web_search", {"query": "BlackboardDatabase schema"})
+    assert key1 != key4
 
 
 def test_skill_execution_error_handled() -> None:

@@ -151,8 +151,13 @@ def test_container_spawn_mounts_scratch_outside_read_only_workspace(
     assert result.status == "success"
     create_cmd = calls[0]
     assert any(mount.endswith(":/workspace:ro") for mount in create_cmd)
-    assert any(mount.endswith(":/tmp/deverino") for mount in create_cmd)
-    assert not any(mount.endswith(":/workspace/tmp") for mount in create_cmd)
+    assert any(mount.endswith(":/scratch:rw") for mount in create_cmd)
+    # Verify read-only workspace is enforced
+    assert not any(mount.endswith(":/workspace:rw") for mount in create_cmd)
+    # Verify environment variables direct output to scratch
+    assert "-e" in create_cmd
+    assert "TMPDIR=/scratch" in create_cmd
+    assert "HOME=/scratch" in create_cmd
 
 
 def test_container_spawn_cleanup_removes_only_stale_harness_containers(

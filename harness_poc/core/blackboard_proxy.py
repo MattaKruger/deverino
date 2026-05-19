@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.permissions import SkillPermissions
@@ -77,3 +78,23 @@ class BlackboardAccessProxy:
     ) -> StatePayload:
         self._require_write()
         return self._db.approve_state_proposal(proposal_id, project_id)
+
+    # ---- async wrappers (Phase 3) ----
+
+    async def read_memory_async(
+        self, session_id: str, key: str
+    ) -> dict[str, Any] | str | None:
+        self._require_read()
+        return await asyncio.to_thread(self._db.read_memory, session_id, key)
+
+    async def list_memory_keys_async(self, session_id: str) -> list[str]:
+        self._require_read()
+        return await asyncio.to_thread(self._db.list_memory_keys, session_id)
+
+    async def write_memory_async(
+        self, session_id: str, key: str, payload: str | dict[str, Any]
+    ) -> None:
+        self._require_write()
+        await asyncio.to_thread(
+            self._db.write_memory, session_id, key, payload
+        )

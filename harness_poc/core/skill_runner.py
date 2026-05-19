@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import logging
 from typing import TYPE_CHECKING, Any, TypedDict, cast
@@ -97,6 +98,21 @@ class SkillRunner:
             session_id=session_id,
         )
 
+        return result.content
+
+    async def execute_tool_async(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        session_id: str,
+    ) -> str:
+        """Async wrapper that runs execute_skill in a thread to avoid blocking."""
+        result = await asyncio.to_thread(
+            self.execute_skill,
+            tool_name=tool_name,
+            arguments=arguments,
+            session_id=session_id,
+        )
         return result.content
 
     def execute_skill(

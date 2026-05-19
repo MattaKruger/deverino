@@ -91,7 +91,7 @@ harness_poc/
 │   ├── event_bus.py        # Durable event writer + async in-process session subscriptions
 │   ├── reducers.py         # Polars reducer — derives and snapshots session state from events
 │   ├── processors/         # Async workers: circuit breaker, LLM worker, skill worker
-│   ├── goal_runner.py      # Legacy synchronous ReAct loop — still used by existing flows
+│   ├── goal_runner.py      # Async ReAct loop — semantic stuck detection, context window compression
 │   ├── pipeline_runner.py  # DAG pipeline executor — wave-based parallelism, skill + agent nodes
 │   ├── logfire_subscriber.py # EventBus → Logfire span wiring for observability
 │   ├── llm_client.py       # Shared type definitions (Message, Usage, ToolCall, LLMResponse)
@@ -230,9 +230,10 @@ There are currently two goal execution paths while the migration settles:
 - `uv run harness-poc goal ...` uses the new async event processor loop (`AgentInputAdded` → LLM worker → skill worker → circuit breaker).
 - The TUI slash command `/goal ...` and pipeline agent nodes still use `GoalRunner` (`core/goal_runner.py`), the legacy synchronous ReAct loop.
 
-`GoalRunner` remains useful and tested. It runs: build context → LLM decides next action → execute → publish events → repeat. It supports:
+`GoalRunner` remains useful and tested. It runs asynchronously (delegating blocking skill execution to `asyncio.to_thread`) and supports:
 
-- **Stuck detection**: identical (tool, args) repeated N times → injects a `blocked` `SkillCompleted` event
+- **Semantic stuck detection**: normalizes action arguments (casing, whitespace) to detect semantically identical retries of previously failed actions — blocks with "Action rejected: pivoting required" feedback
+- **Context window compression**: a `Summarizer` compresses `SkillCompleted` event payloads (strips JSON wrappers, extracts key fields, truncates to 500 chars); older events are aggregated into a "Prior Context Summary" block with an 8000-char budget for recent events
 - **Budget enforcement**: max iterations, max tokens (tiktoken estimate), max wall-clock seconds
 - **Streaming progress**: optional `on_text` callback for TUI/CLI progress display
 - **`evaluate_goal` interception**: the LLM's self-evaluation is intercepted and not executed as a tool — the runner determines completion from the structured decision
@@ -310,7 +311,7 @@ uv run harness-poc events --limit 10 --json
 | `delegate_task`     | Spawns an isolated LLM sub-agent with a persona to handle a sub-task          |
 | `evaluate_goal`     | GoalRunner intercept — LLM signals completion/blockage with reasoning         |
 | `consolidate_state` | Promotes session state to durable project state (preview / propose / approve) |
-| `container_spawn`   | Creates a detached Docker/Podman container for the session                    |
+| `container_spawn`   | Creates a detached Docker/Podman container — `/workspace:ro`, `/scratch:rw` with env vars for isolation |
 | `container_exec`    | Runs a shell command inside an existing container                             |
 | `container_destroy` | Stops and removes a container                                                 |
 
@@ -475,7 +476,7 @@ states:
 ## Development
 
 ```bash
-uv run pytest                  # full test suite (184 tests)
+uv run pytest                  # full test suite (223 tests)
 uv run pytest tests/test_goal_runner.py -v  # goal runner + event bus integration
 uv run pytest tests/test_event_bus.py tests/test_event_store.py -v  # event system
 uv run ruff check .            # lint

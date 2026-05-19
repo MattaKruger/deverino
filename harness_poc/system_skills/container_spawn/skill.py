@@ -14,7 +14,7 @@ from harness_poc.core.skill_context import SkillContext, SkillResult
 BACKENDS = ("podman", "docker")
 KEEPALIVE_CMD: list[str] = ["sleep", "infinity"]
 HARNESS_CONTAINER_PREFIXES = ("harness-", "harness-python-")
-SCRATCH_TARGET = "/tmp/deverino"  # noqa: S108 - container-internal scratch mount target.
+SCRATCH_TARGET = "/scratch"
 logger = logging.getLogger(__name__)
 
 
@@ -82,9 +82,15 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         "-v",
         f"{project_root}:/workspace:ro",
         "-v",
-        f"{scratch_str}:{SCRATCH_TARGET}",
+        f"{scratch_str}:{SCRATCH_TARGET}:rw",
         "-w",
         "/workspace",
+        # Direct all temporary/cache output to the writable scratch
+        "-e", f"TMPDIR={SCRATCH_TARGET}",
+        "-e", f"TMP={SCRATCH_TARGET}",
+        "-e", f"TEMP={SCRATCH_TARGET}",
+        "-e", f"HOME={SCRATCH_TARGET}",
+        "-e", f"PYTHONPYCACHEPREFIX={SCRATCH_TARGET}/pycache",
         image,
     ]
     create_cmd.extend(KEEPALIVE_CMD)

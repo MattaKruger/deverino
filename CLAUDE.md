@@ -50,9 +50,13 @@ State promotion is a two-step process: a skill proposes a change (`state_proposa
 
 `app_factory.py` constructs the `AppState` dataclass that is threaded through every command and the REPL. It wires together: `HarnessConfig` (from `harness.yaml`), `BlackboardDatabase`, `LLMClient`, discovered skills, and loaded workflows.
 
-### LLM client
+### LLM runtime
 
-`core/llm_client.py` wraps the OpenAI SDK (also supports DeepSeek via base-URL override). It converts discovered skill definitions into tool schemas and manages the tool-call loop: send message → receive tool call → execute skill → send result → repeat until the model stops calling tools.
+`core/pydantic_runtime.py` (`PydanticAgentRuntime`) manages streaming agent execution with tool support. Uses `agent.iter()` (full-graph iterator) instead of `agent.run_stream()`. GoalRunner (`core/goal_runner.py`) runs the autonomous ReAct loop — now async internally with `await agent.run()`, semantic stuck detection (normalized argument comparison against failed actions), and context window compression (Summarizer + sliding window with 8000-char budget).
+
+### Container isolation
+
+`container_spawn` mounts `/workspace:ro` (read-only) and `/scratch:rw` (session-scoped writable). Environment variables `TMPDIR`, `HOME`, `PYTHONPYCACHEPREFIX` are set to `/scratch` — writes to `/workspace` produce "Read-only file system" errors.
 
 ### REPL
 
