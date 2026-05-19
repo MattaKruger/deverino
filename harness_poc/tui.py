@@ -1,22 +1,38 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 from typing import TYPE_CHECKING
 
 from textual.app import App, ComposeResult
-from textual.containers import VerticalScroll
-from textual.widgets import Input, LoadingIndicator, Markdown, Static
+from textual.containers import Vertical, VerticalScroll
+from textual.widgets import Input, Markdown, Static
 
 from harness_poc.console import clear_tui_handlers, set_tui_handlers
 
 if TYPE_CHECKING:
+    from textual.timer import Timer
+
     from harness_poc.app_factory import AppState
 
 logger = logging.getLogger(__name__)
 
 _TOKEN_MILLION = 1_000_000
 _TOKEN_THOUSAND = 1_000
+
+_SPINNER_FRAMES = [
+    "( ͡° ͜ʖ ͡°)  cooking",
+    "(ง •̀_•́)ง  doing the thing",
+    "¯\\_(ツ)_/¯  it depends",
+    "(•̀ᴗ•́)و   manifesting",
+    "ʕ•ᴥ•ʔ     big brain time",  # noqa: RUF001
+    "(╯°□°）╯  consulting the oracle",  # noqa: RUF001
+    "(*￣▽￣)b  works on my machine",
+    "ヽ(•‿•)ノ  sending it",  # noqa: RUF001
+    "(◕‿◕)✿   on it chief",
+    "(งツ)ว     staring into the void",
+]
 
 
 def _format_tokens(count: int) -> str:
@@ -44,12 +60,24 @@ class ChatApp(App[None]):
         margin-top: 1;
         color: $accent;
     }
+    .agent-label {
+        margin-top: 1;
+        color: $success;
+    }
     .tool-line {
         color: $text-muted;
         padding: 0 2;
     }
-    #input {
+    #footer {
         dock: bottom;
+        height: 4;
+    }
+    #spinner {
+        height: 1;
+        color: $text-muted;
+        padding: 0 1;
+    }
+    #input {
         height: 3;
         border: tall $accent;
     }
@@ -58,11 +86,14 @@ class ChatApp(App[None]):
     def __init__(self, app_state: AppState) -> None:
         super().__init__()
         self._app_state = app_state
+        self._spinner_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("", id="header")
         yield VerticalScroll(id="chat")
-        yield Input(placeholder="> ", id="input")
+        with Vertical(id="footer"):
+            yield Static("", id="spinner")
+            yield Input(placeholder="> ", id="input")
 
     def on_mount(self) -> None:
         set_tui_handlers(
@@ -82,6 +113,28 @@ class ChatApp(App[None]):
         token_part = f" · {_format_tokens(tokens)}" if tokens > 0 else ""
         self.query_one("#header", Static).update(f"{llm.provider} · {llm.model}{token_part}")
 
+    def _start_spinner(self) -> None:
+        spinner = self.query_one("#spinner", Static)
+        frame_cycle = itertools.cycle(_SPINNER_FRAMES)
+        dot_cycle = itertools.cycle([".", "..", "..."])
+        current_frame = [next(frame_cycle)]
+        tick = [0]
+
+        def _tick() -> None:
+            tick[0] += 1
+            if tick[0] % 8 == 0:  # switch phrase every ~3.2 s
+                current_frame[0] = next(frame_cycle)
+            spinner.update(f"{current_frame[0]}{next(dot_cycle)}")
+
+        spinner.update(f"{current_frame[0]}.")
+        self._spinner_timer = self.set_interval(0.4, _tick)
+
+    def _stop_spinner(self) -> None:
+        if self._spinner_timer is not None:
+            self._spinner_timer.stop()
+            self._spinner_timer = None
+        self.query_one("#spinner", Static).update("")
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         if not text:
@@ -95,27 +148,37 @@ class ChatApp(App[None]):
     def _submit(self, text: str) -> None:
         chat = self.query_one("#chat", VerticalScroll)
         chat.mount(Static(f"[cyan]You:[/cyan] {text}", classes="user-msg", markup=True))
-        loading = LoadingIndicator()
-        chat.mount(loading)
+        self._start_spinner()
         chat.scroll_end(animate=False)
-        self.run_worker(self._chat_worker(text, chat, loading))
+        self.run_worker(self._chat_worker(text, chat))
 
-    async def _chat_worker(
-        self,
-        text: str,
-        chat: VerticalScroll,
-        loading: LoadingIndicator,
-    ) -> None:
+    async def _chat_worker(self, text: str, chat: VerticalScroll) -> None:
         from harness_poc.repl import handle_repl_input  # noqa: PLC0415
 
         buffer: list[str] = []
+        state: dict[str, Static | None] = {"widget": None}
 
         def on_text_chunk(chunk: str) -> None:
             buffer.append(chunk)
+            current = "".join(buffer)
+
+            def _update() -> None:
+                if state["widget"] is None:
+                    self._stop_spinner()
+                    w = Static(current, markup=False)
+                    state["widget"] = w
+                    chat.mount(Static("[green]Agent:[/green]", classes="agent-label", markup=True))
+                    chat.mount(w)
+                else:
+                    state["widget"].update(current)
+                chat.scroll_end(animate=False)
+
+            self.call_from_thread(_update)
 
         def on_tool_event(message: str) -> None:
             def _mount() -> None:
                 chat.mount(Static(f"  ⚙ {message}", classes="tool-line"))
+                chat.scroll_end(animate=False)
 
             self.call_from_thread(_mount)
 
@@ -129,10 +192,17 @@ class ChatApp(App[None]):
         except Exception:
             logger.exception("ChatApp worker raised", extra={"text": text})
 
+        # Replace live streaming Static with rendered Markdown
         response = "".join(buffer)
-        await loading.remove()
+        if state["widget"] is not None:
+            await state["widget"].remove()
         if response:
+            if state["widget"] is None:
+                # no streaming happened — add the label now
+                label = Static("[green]Agent:[/green]", classes="agent-label", markup=True)
+                await chat.mount(label)
             await chat.mount(Markdown(response))
+        self._stop_spinner()
         chat.scroll_end(animate=False)
         self._app_state.streaming.reset_callbacks()
         self._update_header()

@@ -22,12 +22,12 @@ The change is entirely in the I/O layer. All existing logic — `handle_repl_inp
 
 ### Files changed
 
-| File | Change |
-|---|---|
-| `harness_poc/tui.py` | New — `ChatApp`, widgets, inline TCSS |
-| `harness_poc/repl.py` | `run_repl` becomes `ChatApp(app_state).run()` |
-| `harness_poc/console.py` | Add TUI adapter (module-level `_active_app`, patched print functions) |
-| `harness_poc/core/pydantic_runtime.py` | Add `on_tool_event` to `AgentDeps`; fix `_emit_tool_progress` |
+| File                                   | Change                                                                |
+| -------------------------------------- | --------------------------------------------------------------------- |
+| `harness_poc/tui.py`                   | New — `ChatApp`, widgets, inline TCSS                                 |
+| `harness_poc/repl.py`                  | `run_repl` becomes `ChatApp(app_state).run()`                         |
+| `harness_poc/console.py`               | Add TUI adapter (module-level `_active_app`, patched print functions) |
+| `harness_poc/core/pydantic_runtime.py` | Add `on_tool_event` to `AgentDeps`; fix `_emit_tool_progress`         |
 
 ### Files not changed
 
@@ -48,6 +48,7 @@ ChatApp
 ```
 
 Notes:
+
 - Header is a plain `Label`, not Textual's built-in `Header` widget.
 - TCSS lives as `DEFAULT_CSS` string in `tui.py` — no separate `.tcss` file.
 - Scroll container auto-scrolls to bottom after each new widget is mounted.

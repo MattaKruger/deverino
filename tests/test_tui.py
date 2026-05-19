@@ -19,6 +19,7 @@ async def test_chat_app_composes() -> None:
     async with app.run_test() as pilot:
         assert pilot.app.query_one("#header")
         assert pilot.app.query_one("#chat")
+        assert pilot.app.query_one("#spinner")
         assert pilot.app.query_one("#input")
 
 

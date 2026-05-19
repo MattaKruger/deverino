@@ -25,18 +25,18 @@ LLM provider and model are configured in `harness.yaml`:
 
 ```yaml
 llm:
-  provider: deepseek          # deepseek | openai | anthropic
+  provider: deepseek # deepseek | openai | anthropic
   model: deepseek-v4-flash
-  base_url: ~                 # optional — for custom OpenAI-compatible endpoints only
+  base_url: ~ # optional — for custom OpenAI-compatible endpoints only
 ```
 
 API keys come from environment variables (or a `.env` file at the project root):
 
-| Provider     | Env var            |
-| ------------ | ------------------ |
-| `deepseek`   | `DEEPSEEK_API_KEY` |
-| `openai`     | `OPENAI_API_KEY`   |
-| `anthropic`  | `ANTHROPIC_API_KEY`|
+| Provider    | Env var             |
+| ----------- | ------------------- |
+| `deepseek`  | `DEEPSEEK_API_KEY`  |
+| `openai`    | `OPENAI_API_KEY`    |
+| `anthropic` | `ANTHROPIC_API_KEY` |
 
 ### Provider examples
 
@@ -110,19 +110,19 @@ All agent lifecycle events flow through a typed, Pydantic-based event bus. This 
 
 **Event hierarchy** (`core/events.py`):
 
-| Event                  | Published when                                       |
-| ---------------------- | ---------------------------------------------------- |
-| `AgentStarted`         | A `GoalRunner.run()` loop begins                     |
-| `SkillCalled`          | A skill is about to be executed                      |
-| `SkillCompleted`       | A skill finishes (`success` / `error` / `blocked`)   |
-| `GoalEvaluated`        | The LLM calls `evaluate_goal` to assess completion   |
-| `LLMTextEmitted`       | The LLM emits text without a tool call               |
-| `SubAgentDispatched`   | A sub-agent is spawned                               |
-| `SubAgentCompleted`    | A sub-agent finishes                                 |
-| `PipelineStarted`      | A `PipelineRunner.run()` begins                      |
-| `PipelineNodeStarted`  | A pipeline node begins execution                     |
-| `PipelineNodeCompleted`| A pipeline node finishes (`completed`/`failed`/`skipped`) |
-| `PipelineCompleted`    | All pipeline waves finish                            |
+| Event                   | Published when                                            |
+| ----------------------- | --------------------------------------------------------- |
+| `AgentStarted`          | A `GoalRunner.run()` loop begins                          |
+| `SkillCalled`           | A skill is about to be executed                           |
+| `SkillCompleted`        | A skill finishes (`success` / `error` / `blocked`)        |
+| `GoalEvaluated`         | The LLM calls `evaluate_goal` to assess completion        |
+| `LLMTextEmitted`        | The LLM emits text without a tool call                    |
+| `SubAgentDispatched`    | A sub-agent is spawned                                    |
+| `SubAgentCompleted`     | A sub-agent finishes                                      |
+| `PipelineStarted`       | A `PipelineRunner.run()` begins                           |
+| `PipelineNodeStarted`   | A pipeline node begins execution                          |
+| `PipelineNodeCompleted` | A pipeline node finishes (`completed`/`failed`/`skipped`) |
+| `PipelineCompleted`     | All pipeline waves finish                                 |
 
 Each event is a Pydantic `BaseModel` with `event_id`, `session_id`, `created_at`, plus type-specific fields (e.g. `goal: str` on `AgentStarted`, `tool_name` + `arguments` on `SkillCalled`). A `EVENT_REGISTRY: dict[str, type[BaseEvent]]` maps type names to classes so deserialization never needs `if/elif` chains.
 
@@ -363,12 +363,12 @@ inputs:
 
 nodes:
   - id: web_research
-    type: agent                          # full autonomous ReAct loop
+    type: agent # full autonomous ReAct loop
     goal: "Research: {{inputs.topic}}"
-    allowed_skills: [read_memory]        # optional skill filter
+    allowed_skills: [read_memory] # optional skill filter
 
   - id: memory_research
-    type: skill                          # single skill call, no LLM loop
+    type: skill # single skill call, no LLM loop
     skill: read_memory
     arguments:
       query: "{{inputs.topic}}"

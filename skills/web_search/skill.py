@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -13,9 +14,18 @@ MAX_RESULTS = 20
 DEFAULT_COUNT = 5
 
 
+def _find_dotenv_for_skill() -> Path | None:
+    """Find .env walking up from cwd — replicated to avoid circular imports."""
+    for directory in (Path.cwd(), *Path.cwd().parents):
+        env_path = directory / ".env"
+        if env_path.exists():
+            return env_path
+    return None
+
+
 class LangSearchSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=None,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -23,6 +33,13 @@ class LangSearchSettings(BaseSettings):
         default=None,
         validation_alias="LANGSEARCH_API_KEY",
     )
+
+    @classmethod
+    def load(cls) -> LangSearchSettings:
+        env_path = _find_dotenv_for_skill()
+        if env_path is None:
+            return cls()
+        return cls(_env_file=env_path)  # type: ignore[call-arg]
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
@@ -37,7 +54,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     freshness = str(arguments.get("freshness", "noLimit"))
     summary = bool(arguments.get("summary", True))
 
-    settings = LangSearchSettings()  # type: ignore[call-arg]
+    settings = LangSearchSettings.load()  # type: ignore[call-arg]
 
     if settings.api_key is None:
         return _mock_result(query, count)

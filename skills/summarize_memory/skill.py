@@ -24,10 +24,17 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             artifacts={"memory_key": memory_key},
         )
 
-    response = chat_text(
-        _build_messages(memory_key=memory_key, payload=payload),
-        model=build_model(ctx.config.llm),
-    )
+    try:
+        response = chat_text(
+            _build_messages(memory_key=memory_key, payload=payload),
+            model=build_model(ctx.config.llm),
+        )
+    except Exception as exc:
+        return SkillResult(
+            status="failed",
+            content=f"LLM summarization failed: {exc}",
+            artifacts={"memory_key": memory_key, "error": str(exc)},
+        )
     summary = response.strip()
 
     return SkillResult(

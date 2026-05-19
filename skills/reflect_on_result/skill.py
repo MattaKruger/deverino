@@ -31,10 +31,20 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             "risks": ["Missing subagent result."],
         }
     else:
-        response = chat_text(
-            _build_reviewer_messages(objective=objective, payload=payload),
-            model=build_model(ctx.config.llm),
-        )
+        try:
+            response = chat_text(
+                _build_reviewer_messages(objective=objective, payload=payload),
+                model=build_model(ctx.config.llm),
+            )
+        except Exception as exc:
+            return SkillResult(
+                status="failed",
+                content=f"LLM reflection failed: {exc}",
+                artifacts={
+                    "memory_key": memory_key,
+                    "error": str(exc),
+                },
+            )
         reflection = _normalize_reflection(
             response,
             objective=objective,
