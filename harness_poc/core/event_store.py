@@ -5,6 +5,8 @@ import logging
 import sqlite3
 from pathlib import Path
 
+import aiosqlite
+
 from harness_poc.core.events import EVENT_REGISTRY, BaseEvent
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,32 @@ class EventStore:
                     event.created_at.isoformat(timespec="seconds"),
                 ),
             )
+            event.id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+    async def persist_async(self, event: BaseEvent) -> None:
+        payload = json.dumps(
+            {
+                "event_type": event.event_type,
+                "payload": event.model_dump(mode="json"),
+            },
+            sort_keys=True,
+        )
+        async with aiosqlite.connect(self.database_path, timeout=5.0) as conn:
+            cursor = await conn.execute(
+                """
+                INSERT INTO state_events (scope, scope_id, event_type, payload, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    "session",
+                    event.session_id,
+                    event.event_type,
+                    payload,
+                    event.created_at.isoformat(timespec="seconds"),
+                ),
+            )
+            await conn.commit()
+            event.id = int(cursor.lastrowid or 0)
 
     def get_recent_events(
         self,
@@ -53,7 +81,7 @@ class EventStore:
                 placeholders = ",".join("?" * len(type_names))
                 cursor = conn.execute(
                     f"""
-                    SELECT payload FROM state_events
+                    SELECT id, payload FROM state_events
                     WHERE scope = 'session'
                       AND scope_id = ?
                       AND event_type IN ({placeholders})
@@ -65,7 +93,7 @@ class EventStore:
             else:
                 cursor = conn.execute(
                     """
-                    SELECT payload FROM state_events
+                    SELECT id, payload FROM state_events
                     WHERE scope = 'session'
                       AND scope_id = ?
                     ORDER BY id DESC
@@ -87,7 +115,9 @@ class EventStore:
                         event_type_name,
                     )
                     continue
-                events.append(event_cls.model_validate(outer["payload"]))
+                event = event_cls.model_validate(outer["payload"])
+                event.id = int(row["id"])
+                events.append(event)
             except (json.JSONDecodeError, ValueError, KeyError):
                 logger.warning("Skipping malformed event row", exc_info=True)
 

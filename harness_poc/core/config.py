@@ -23,6 +23,8 @@ class HarnessPaths:
 class RuntimeConfig:
     database_path: Path
     default_container_image: str
+    max_retries: int = 3
+    max_tokens: int = 10_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +73,7 @@ class APISettings(BaseSettings):
         env_path = _find_dotenv()
         if env_path is None:
             return cls()
-        return cls(_env_file=env_path)  # type: ignore[call-arg]
+        return cls(_env_file=env_path)  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +129,8 @@ class HarnessConfig:
             default_container_image=str(
                 runtime_raw.get("default_container_image", "python:3.12-slim")
             ),
+            max_retries=int(runtime_raw.get("max_retries", 3)),
+            max_tokens=int(runtime_raw.get("max_tokens", 10_000)),
         )
         observability = ObservabilityConfig(
             logfire_enabled=bool(observability_raw.get("logfire", False)),

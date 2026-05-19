@@ -4,6 +4,8 @@
 __pycache__/
 *.py[cod]
 harness_poc/blackboard.db
+harness_poc/blackboard.db-shm
+harness_poc/blackboard.db-wal
 .env
 .harness_repl_history
 .harness/

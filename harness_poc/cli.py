@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Annotated
 
@@ -7,7 +8,18 @@ import typer
 
 from harness_poc.app_factory import STARTUP_ERRORS, AppState, build_app_state
 from harness_poc.console import console, print_error
-from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
+from harness_poc.core.events import (
+    AgentInputAdded,
+    BaseEvent,
+    LLMActionEmitted,
+    LLMTextEmitted,
+    SkillCompleted,
+    StreamPaused,
+)
+from harness_poc.core.goal_runner import GoalRunResult
+from harness_poc.core.processors.circuit_breaker import run_circuit_breaker
+from harness_poc.core.processors.llm_worker import run_llm_worker
+from harness_poc.core.processors.skill_worker import run_skill_worker
 from harness_poc.repl import (
     append_session_state,
     approve_state,
@@ -234,15 +246,18 @@ def goal(
         ),
     ] = None,
 ) -> None:
-    """Run an autonomous ReAct goal execution loop."""
+    """Run an autonomous event-sourced goal execution loop."""
     app_state = _new_app_state()
-    runner = GoalRunner(
-        max_iterations=max_iterations,
-        max_seconds=max_seconds,
-        max_tokens=max_tokens,
-    )
     try:
-        result = runner.run(goal=objective, app_state=app_state)
+        result = asyncio.run(
+            _run_event_sourced_goal(
+                objective=objective,
+                app_state=app_state,
+                max_iterations=max_iterations,
+                max_seconds=max_seconds,
+                max_tokens=max_tokens,
+            )
+        )
     except Exception as exc:
         logger.exception(
             "CLI goal command failed",
@@ -252,6 +267,100 @@ def goal(
         raise typer.Exit(1) from exc
 
     _print_goal_cli_result(result)
+
+
+async def _run_event_sourced_goal(
+    *,
+    objective: str,
+    app_state: AppState,
+    max_iterations: int,
+    max_seconds: float | None,
+    max_tokens: int | None,
+) -> GoalRunResult:
+    terminal_event = asyncio.Event()
+    output_parts: list[str] = []
+    total_tokens = 0
+    status = "completed"
+
+    def on_text(event: LLMTextEmitted) -> None:
+        output_parts.append(event.content)
+        terminal_event.set()
+
+    def on_pause(event: StreamPaused) -> None:
+        nonlocal status
+        status = "budget_exhausted" if event.reason == "budget_exhausted" else event.reason
+        terminal_event.set()
+
+    app_state.event_bus.subscribe(LLMTextEmitted, on_text)
+    app_state.event_bus.subscribe(StreamPaused, on_pause)
+
+    token_budget = max_tokens or app_state.config.runtime.max_tokens
+    tasks = [
+        asyncio.create_task(
+            run_circuit_breaker(
+                app_state.event_bus,
+                app_state.session_id,
+                max_retries=app_state.config.runtime.max_retries,
+                max_tokens=token_budget,
+            )
+        ),
+        asyncio.create_task(
+            run_llm_worker(
+                app_state.event_bus,
+                app_state.session_id,
+                app_state.database,
+                app_state.config,
+                app_state.skill_runner,
+            )
+        ),
+        asyncio.create_task(
+            run_skill_worker(
+                app_state.event_bus,
+                app_state.session_id,
+                app_state.skill_runner,
+            )
+        ),
+    ]
+
+    try:
+        await asyncio.sleep(0)
+        await app_state.event_bus.publish_async(
+            AgentInputAdded(session_id=app_state.session_id, user_content=objective)
+        )
+        await asyncio.wait_for(terminal_event.wait(), timeout=max_seconds)
+    except TimeoutError:
+        status = "budget_exhausted"
+        output_parts.append(
+            f"Time budget ({max_seconds}s) exhausted before the goal completed."
+        )
+    finally:
+        await app_state.event_bus.publish_async(
+            StreamPaused(
+                session_id=app_state.session_id,
+                reason="completed",
+                threshold_breached=str(max_iterations),
+            )
+        )
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    recent_events = app_state.event_bus.get_recent_events(app_state.session_id)
+    for event in recent_events:
+        if isinstance(event, LLMActionEmitted):
+            total_tokens += event.tokens_used
+
+    return GoalRunResult(
+        status=status,
+        content="\n".join(output_parts).strip(),
+        iterations=min(max_iterations, 1),
+        total_tokens=total_tokens,
+        events=[_event_log_entry(event) for event in recent_events],
+    )
+
+
+def _event_log_entry(event: BaseEvent) -> dict[str, str]:
+    tool = event.tool_name if isinstance(event, SkillCompleted) else ""
+    status = event.status if isinstance(event, SkillCompleted) else ""
+    return {"type": event.event_type, "tool": tool, "status": status}
 
 
 def _append_state(command: str, text: str) -> None:

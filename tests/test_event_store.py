@@ -36,6 +36,7 @@ def test_persist_and_retrieve_single_event() -> None:
     events = store.get_recent_events("s1")
     assert len(events) == 1
     assert isinstance(events[0], SkillCalled)
+    assert events[0].id == 1
     assert events[0].tool_name == "read_memory"
     assert events[0].arguments == {"key": "x"}
 

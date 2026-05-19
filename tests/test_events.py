@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from harness_poc.core.events import (
     EVENT_REGISTRY,
+    AgentInputAdded,
     AgentStarted,
     GoalEvaluated,
+    LLMActionEmitted,
     PipelineCompleted,
     PipelineNodeCompleted,
     PipelineNodeStarted,
     PipelineStarted,
     SkillCalled,
     SkillCompleted,
+    SkillRequested,
+    StreamPaused,
 )
 
 
@@ -26,9 +30,10 @@ def test_base_event_auto_generates_unique_ids() -> None:
 
 def test_event_registry_covers_all_concrete_types() -> None:
     expected = {
-        "AgentStarted", "SkillCalled", "SkillCompleted", "GoalEvaluated",
-        "LLMTextEmitted", "SubAgentDispatched", "SubAgentCompleted",
-        "PipelineStarted", "PipelineNodeStarted", "PipelineNodeCompleted", "PipelineCompleted",
+        "AgentStarted", "SkillCalled", "SkillRequested", "SkillCompleted",
+        "AgentInputAdded", "LLMActionEmitted", "StreamPaused", "GoalEvaluated",
+        "LLMTextEmitted", "SubAgentDispatched", "SubAgentCompleted", "PipelineStarted",
+        "PipelineNodeStarted", "PipelineNodeCompleted", "PipelineCompleted",
     }
     assert set(EVENT_REGISTRY.keys()) == expected
 
@@ -51,6 +56,36 @@ def test_skill_completed_round_trips_via_model_dump() -> None:
 def test_goal_evaluated_default_final_answer_is_empty() -> None:
     event = GoalEvaluated(session_id="s1", is_complete=True, reasoning="done")
     assert event.final_answer == ""
+
+
+def test_async_runtime_events_roundtrip() -> None:
+    expected_tokens = 10
+    input_event = AgentInputAdded(session_id="s1", user_content="hello")
+    skill_event = SkillRequested(
+        session_id="s1",
+        skill_name="read_memory",
+        arguments={"key": "x"},
+    )
+    action_event = LLMActionEmitted(
+        session_id="s1",
+        tokens_used=expected_tokens,
+        model="test",
+    )
+    paused_event = StreamPaused(
+        session_id="s1",
+        reason="budget_exhausted",
+        threshold_breached="10",
+    )
+
+    restored_input = AgentInputAdded.model_validate(input_event.model_dump())
+    restored_skill = SkillRequested.model_validate(skill_event.model_dump())
+    restored_action = LLMActionEmitted.model_validate(action_event.model_dump())
+    restored_pause = StreamPaused.model_validate(paused_event.model_dump())
+
+    assert restored_input.type_name == "AgentInputAdded"
+    assert restored_skill.skill_name == "read_memory"
+    assert restored_action.tokens_used == expected_tokens
+    assert restored_pause.reason == "budget_exhausted"
 
 
 def test_pipeline_started_roundtrip() -> None:

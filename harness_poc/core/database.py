@@ -35,6 +35,7 @@ class BlackboardDatabase:
     def create_tables(self) -> None:
         with self._connect() as connection:
             connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA journal_mode = WAL;")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -107,6 +108,16 @@ class BlackboardDatabase:
                     event_type TEXT NOT NULL,
                     payload TEXT NOT NULL,
                     created_at TIMESTAMP NOT NULL
+                )
+                """,
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_snapshots (
+                    session_id TEXT PRIMARY KEY,
+                    last_offset INTEGER NOT NULL,
+                    state_payload TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """,
             )
