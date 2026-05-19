@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
     from harness_poc.core.config import HarnessConfig
     from harness_poc.core.database import BlackboardDatabase
+    from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 
 
 SkillStatus = Literal["success", "failed", "blocked", "needs_orchestrator_action"]
@@ -50,7 +51,7 @@ class SkillResult:
 class SkillContext:
     session_id: str
     skill_name: str
-    database: BlackboardDatabase
+    database: BlackboardDatabase | BlackboardAccessProxy
     config: HarnessConfig
     permissions: SkillPermissions = field(default_factory=SkillPermissions)
     stream_text: Callable[[str], None] | None = None

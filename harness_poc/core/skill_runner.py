@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 from harness_poc.core.skill_context import SkillContext
 from harness_poc.core.permissions import SkillPermissions
+from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ class SkillRunner:
             context = SkillContext(
                 session_id=session_id,
                 skill_name=resolved_tool_name,
-                database=self.database,
+                database=BlackboardAccessProxy(self.database, skill_permissions),
                 config=self.config,
                 permissions=skill_permissions,
                 stream_text=on_text,
