@@ -1,6 +1,6 @@
 # Deverino
 
-A Python 3.12 proof-of-concept for autonomous LLM agent workflows. It provides an interactive REPL, a CLI goal runner, and a typed event-driven architecture where agents publish lifecycle events to a shared bus — enabling multi-agent coordination, structured observability, and future async upgrades without rewriting callers.
+A Python 3.12 proof-of-concept for autonomous LLM agent workflows. It provides a Textual chat TUI, a CLI goal runner, and a typed event-driven architecture where agents publish lifecycle events to a shared bus — enabling multi-agent coordination, structured observability, and future async upgrades without rewriting callers.
 
 ## Quickstart
 
@@ -80,7 +80,8 @@ export LOGFIRE_TOKEN=<your-token>
 ```
 harness_poc/
 ├── cli.py                  # Typer CLI entry point
-├── repl.py                 # Interactive REPL with tab completion
+├── repl.py                 # Chat input handler — processes commands, feeds LLM, tracks tokens
+├── tui.py                  # Textual ChatApp — streaming markdown responses, animated status bar
 ├── app_factory.py          # Wires DB, EventBus, PydanticAI runtime, skills, workflows, pipelines into AppState
 ├── core/
 │   ├── config.py           # HarnessConfig + APISettings — YAML config, .env loading, LLM credentials
@@ -210,11 +211,13 @@ Skills are discovered at startup by scanning `harness_poc/system_skills/` and `s
 - **Streaming progress**: optional `on_text` callback for TUI/CLI progress display
 - **`evaluate_goal` interception**: the LLM's self-evaluation is intercepted and not executed as a tool — the runner determines completion from the structured decision
 
-## The REPL
+## The TUI
 
-`uv run harness-poc` starts an interactive session. Type a message and the agent responds, calling skills as tools when needed.
+`uv run harness-poc` starts a full-screen Textual chat panel. Type a message and the agent responds with streamed markdown output; tool calls appear as inline progress lines. An animated status bar above the input cycles through kaomoji while the model is working. Session token usage is shown in the header.
 
-### Built-in REPL commands
+The TUI supports all the same slash commands as the previous REPL:
+
+### Built-in commands
 
 ```
 /pipeline <name> [key=value ...]     # run a pipeline (multi-word values supported)
@@ -232,7 +235,7 @@ Skills are discovered at startup by scanning `harness_poc/system_skills/` and `s
 /exit
 ```
 
-Tab-completion works for pipeline names, workflow names, and skill names.
+Type `exit` or `quit` (or the `/exit`/`/quit` variants) to close the TUI.
 
 ### Calling skills directly
 
@@ -442,7 +445,7 @@ states:
 ## Development
 
 ```bash
-uv run pytest                  # full test suite (106 tests)
+uv run pytest                  # full test suite (172 tests)
 uv run pytest tests/test_goal_runner.py -v  # goal runner + event bus integration
 uv run pytest tests/test_event_bus.py tests/test_event_store.py -v  # event system
 uv run ruff check .            # lint
