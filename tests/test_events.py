@@ -96,7 +96,33 @@ def test_async_runtime_events_roundtrip() -> None:
     assert restored_input.type_name == "AgentInputAdded"
     assert restored_skill.skill_name == "read_memory"
     assert restored_action.tokens_used == expected_tokens
+    assert restored_action.new_tokens == expected_tokens
+    assert restored_action.billable_tokens == expected_tokens
     assert restored_pause.reason == "budget_exhausted"
+
+
+def test_llm_action_preserves_explicit_token_breakdown() -> None:
+    new_tokens = 7
+    input_tokens = 100
+    output_tokens = 12
+    billable_tokens = 112
+    event = LLMActionEmitted(
+        session_id="s1",
+        model="test",
+        tokens_used=new_tokens,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        billable_tokens=billable_tokens,
+        new_tokens=new_tokens,
+    )
+
+    restored = LLMActionEmitted.model_validate(event.model_dump())
+
+    assert restored.tokens_used == new_tokens
+    assert restored.new_tokens == new_tokens
+    assert restored.billable_tokens == billable_tokens
+    assert restored.input_tokens == input_tokens
+    assert restored.output_tokens == output_tokens
 
 
 def test_pipeline_started_roundtrip() -> None:

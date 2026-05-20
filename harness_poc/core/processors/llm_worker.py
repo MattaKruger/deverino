@@ -14,6 +14,7 @@ from harness_poc.core.events import (
 )
 from harness_poc.core.pydantic_runtime import build_runtime
 from harness_poc.core.reducers import derive_session_state
+from harness_poc.core.token_accounting import account_for_model_run
 
 if TYPE_CHECKING:
     from harness_poc.core.config import HarnessConfig
@@ -55,11 +56,16 @@ async def run_llm_worker(  # noqa: PLR0913
         prompt = _prompt_from_event(event)
         result = await asyncio.to_thread(llm_runtime.run_text, prompt)
         if result.usage is not None:
+            accounting = account_for_model_run(result.usage, new_messages=result.messages)
             await bus.publish_async(
                 LLMActionEmitted(
                     session_id=session_id,
                     model=config.llm.model,
-                    tokens_used=int(result.usage.get("total_tokens", 0)),
+                    tokens_used=accounting.new_tokens,
+                    input_tokens=accounting.input_tokens,
+                    output_tokens=accounting.output_tokens,
+                    billable_tokens=accounting.billable_tokens,
+                    new_tokens=accounting.new_tokens,
                 ),
             )
 

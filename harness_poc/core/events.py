@@ -68,6 +68,18 @@ class AgentInputAdded(BaseEvent):
 class LLMActionEmitted(BaseEvent):
     tokens_used: int
     model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    billable_tokens: int = 0
+    new_tokens: int = 0
+
+    @model_validator(mode="after")
+    def _populate_token_fields(self) -> LLMActionEmitted:
+        if not self.new_tokens:
+            self.new_tokens = self.tokens_used
+        if not self.billable_tokens:
+            self.billable_tokens = self.tokens_used
+        return self
 
 
 class StreamPaused(BaseEvent):

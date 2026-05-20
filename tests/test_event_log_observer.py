@@ -71,7 +71,7 @@ def test_render_event_log_row_shows_pretty_payload_by_default(db_engine: Engine)
 
     assert "000001" in rendered
     assert "LLMActionEmitted" in rendered
-    assert "model=fake tokens=12" in rendered
+    assert "model=fake tokens=12 billable=12" in rendered
     assert "  payload:" in rendered
     assert '    "tokens_used": 12' in rendered
 

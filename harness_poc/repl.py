@@ -12,8 +12,13 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Text
 from harness_poc.console import print_error, print_markdown, print_skill_table, print_text
 from harness_poc.core.events import AgentInputAdded, LLMActionEmitted, LLMTextEmitted
 from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
-from harness_poc.core.message_history import prune_message_history, sanitize_new_messages
+from harness_poc.core.message_history import (
+    estimate_message_tokens,
+    prune_message_history,
+    sanitize_new_messages,
+)
 from harness_poc.core.state import StateSection, build_state_context
+from harness_poc.core.token_accounting import TokenAccounting, account_for_model_run
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +26,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from harness_poc.app_factory import AppState
-    from harness_poc.core.llm_client import Usage
 
 
 MIN_WORKFLOW_PARTS = 2
@@ -29,9 +33,8 @@ WORKFLOW_OBJECTIVE_PARTS = 2
 MIN_PIPELINE_PARTS = 2
 
 
-def _track_tokens(usage: Usage | None, app_state: AppState) -> None:
-    if usage is not None:
-        app_state.streaming.session_tokens += usage.get("total_tokens", 0)
+def _track_tokens(accounting: TokenAccounting, app_state: AppState) -> None:
+    app_state.streaming.session_tokens += accounting.new_tokens
 
 
 def run_repl(app_state: AppState) -> None:
@@ -220,8 +223,14 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
             on_text=app_state.streaming.on_text,
             on_tool_event=app_state.streaming.on_tool_event,
         )
-        _track_tokens(response.usage, app_state)
-        _publish_llm_usage_event(app_state, response.usage)
+        fallback_messages = _pydantic_chat_exchange(user_input, response.content)
+        accounting = account_for_model_run(
+            response.usage,
+            new_messages=response.messages,
+            fallback_new_tokens=estimate_message_tokens(fallback_messages),
+        )
+        _track_tokens(accounting, app_state)
+        _publish_llm_usage_event(app_state, accounting)
         if response.messages:
             app_state.pydantic_messages.extend(
                 sanitize_new_messages(
@@ -231,7 +240,7 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
             )
             app_state.pydantic_messages = _bounded_pydantic_messages(app_state)
         else:
-            _append_pydantic_chat_exchange(app_state, user_input, response.content)
+            app_state.pydantic_messages.extend(fallback_messages)
             app_state.pydantic_messages = _bounded_pydantic_messages(app_state)
         app_state.messages.append({"role": "assistant", "content": response.content})
         if response.content:
@@ -260,16 +269,17 @@ def _bounded_pydantic_messages(app_state: AppState) -> list[ModelMessage]:
     return pruned
 
 
-def _publish_llm_usage_event(app_state: AppState, usage: Usage | None) -> None:
-    if usage is None:
-        return
-
+def _publish_llm_usage_event(app_state: AppState, accounting: TokenAccounting) -> None:
     model = app_state.config.llm.model
     app_state.event_bus.publish(
         LLMActionEmitted(
             session_id=app_state.session_id,
             model=model,
-            tokens_used=usage.get("total_tokens", 0),
+            tokens_used=accounting.new_tokens,
+            input_tokens=accounting.input_tokens,
+            output_tokens=accounting.output_tokens,
+            billable_tokens=accounting.billable_tokens,
+            new_tokens=accounting.new_tokens,
         )
     )
 
@@ -793,9 +803,11 @@ def _append_pydantic_chat_exchange(
     user_content: str,
     assistant_content: str,
 ) -> None:
-    app_state.pydantic_messages.extend(
-        [
-            ModelRequest(parts=[UserPromptPart(content=user_content)]),
-            ModelResponse(parts=[TextPart(content=assistant_content)]),
-        ],
-    )
+    app_state.pydantic_messages.extend(_pydantic_chat_exchange(user_content, assistant_content))
+
+
+def _pydantic_chat_exchange(user_content: str, assistant_content: str) -> list[ModelMessage]:
+    return [
+        ModelRequest(parts=[UserPromptPart(content=user_content)]),
+        ModelResponse(parts=[TextPart(content=assistant_content)]),
+    ]

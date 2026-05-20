@@ -122,6 +122,7 @@ def _event_summary(row: EventLogRow) -> str:
         return _format_fields(
             model=str(payload.get("model", "")),
             tokens=str(payload.get("tokens_used", "")),
+            billable=str(payload.get("billable_tokens", "")),
         )
     if row.event_type == "LLMTextEmitted":
         return _format_fields(content=_truncate(str(payload.get("content", ""))))

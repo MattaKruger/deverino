@@ -460,7 +460,7 @@ class GoalRunner:
         """Run synchronously for backward compatibility. Use run_async() for new code."""
         return asyncio.run(self.run_async(goal, app_state, on_text, on_tool_event))
 
-    async def run_async(  # noqa: PLR0915, PLR0912
+    async def run_async(  # noqa: PLR0915
         self,
         goal: str,
         app_state: AppState,
@@ -481,6 +481,7 @@ class GoalRunner:
         start_time = time.monotonic()
         self._failed_action_keys.clear()
         total_tokens = 0
+        previous_context_tokens = 0
         events: list[dict[str, Any]] = []
 
         app_state.event_bus.publish(AgentStarted(session_id=app_state.session_id, goal=goal))
@@ -524,31 +525,34 @@ class GoalRunner:
 
             # --- Build messages for LLM ---
             messages = self._build_messages(goal, recent_events)
+            token_count = count_tokens(messages)
+            context_delta_tokens = max(0, token_count - previous_context_tokens)
 
             # --- Budget: tokens ---
-            if self.max_tokens is not None:
-                token_count = count_tokens(messages)
-                if total_tokens + token_count >= self.max_tokens:
-                    logger.warning(
-                        "Goal run exhausted token budget",
-                        extra={
-                            "session_id": app_state.session_id,
-                            "goal": goal,
-                            "iterations": iteration - 1,
-                            "total_tokens": total_tokens,
-                            "next_context_tokens": token_count,
-                        },
-                    )
-                    return GoalRunResult(
-                        status="budget_exhausted",
-                        content=(
-                            f"Token budget ({self.max_tokens}) exhausted "
-                            f"after {iteration - 1} iterations."
-                        ),
-                        iterations=iteration - 1,
-                        total_tokens=total_tokens,
-                        events=events,
-                    )
+            if (
+                self.max_tokens is not None
+                and total_tokens + context_delta_tokens >= self.max_tokens
+            ):
+                logger.warning(
+                    "Goal run exhausted token budget",
+                    extra={
+                        "session_id": app_state.session_id,
+                        "goal": goal,
+                        "iterations": iteration - 1,
+                        "total_tokens": total_tokens,
+                        "next_context_tokens": context_delta_tokens,
+                    },
+                )
+                return GoalRunResult(
+                    status="budget_exhausted",
+                    content=(
+                        f"Token budget ({self.max_tokens}) exhausted "
+                        f"after {iteration - 1} iterations."
+                    ),
+                    iterations=iteration - 1,
+                    total_tokens=total_tokens,
+                    events=events,
+                )
 
             # --- PydanticAI structured decision (async) ---
             action, response_tokens = await self._decide_next_action_async(
@@ -556,8 +560,8 @@ class GoalRunner:
                 app_state=app_state,
                 recent_events=recent_events,
             )
-            if self.max_tokens is not None:
-                total_tokens += token_count + response_tokens
+            total_tokens += context_delta_tokens + response_tokens
+            previous_context_tokens = token_count
 
             # --- _llm_text path ---
             if action.tool_name == "_llm_text":

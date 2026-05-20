@@ -276,6 +276,25 @@ def test_token_budget_exhausted() -> None:
     assert result.iterations < 5  # should bail quickly
 
 
+def test_goal_token_budget_uses_context_delta(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Repeated unchanged context should not be charged as new tokens each iteration."""
+    mock = _mock_response_factory(
+        [
+            _evaluate_goal_response(False, "Still working..."),
+            _evaluate_goal_response(True, "Done."),
+        ]
+    )
+    state = _make_app_state(mock)
+    monkeypatch.setattr("harness_poc.core.goal_runner.count_tokens", lambda _messages: 100)
+    runner = GoalRunner(max_iterations=10, max_tokens=150)
+
+    result = runner.run("Test goal", state)
+
+    assert result.status == "completed"
+    assert result.iterations == 2
+    assert result.total_tokens < 150
+
+
 def test_stuck_detection_blocks_repeated_failed_action() -> None:
     """Semantic stuck detection blocks actions that previously failed (not successful ones)."""
     # First attempt: nonexistent_skill fails

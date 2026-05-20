@@ -3,7 +3,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 
-from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -13,6 +19,7 @@ if TYPE_CHECKING:
 from harness_poc.app_factory import StreamingContext
 from harness_poc.core.events import AgentInputAdded, LLMActionEmitted, LLMTextEmitted
 from harness_poc.core.goal_runner import GoalRunResult
+from harness_poc.core.message_history import estimate_message_tokens
 from harness_poc.core.pydantic_runtime import AgentRunResult
 from harness_poc.repl import handle_chat_input, handle_goal_command
 from tests.helpers import RecordingEventBus
@@ -55,7 +62,16 @@ def test_handle_chat_input_publishes_chat_events() -> None:
     assert events[0].user_content == "hey"
     assert isinstance(events[1], LLMActionEmitted)
     assert events[1].model == "fake-model"
-    assert events[1].tokens_used == EXPECTED_TOTAL_TOKENS
+    expected_new_tokens = estimate_message_tokens(
+        [
+            ModelRequest(parts=[UserPromptPart(content="hey")]),
+            ModelResponse(parts=[TextPart(content="Pydantic response")]),
+        ]
+    )
+    assert events[1].tokens_used == expected_new_tokens
+    assert events[1].new_tokens == expected_new_tokens
+    assert events[1].billable_tokens == EXPECTED_TOTAL_TOKENS
+    assert app_state.streaming.session_tokens == expected_new_tokens
     assert isinstance(events[2], LLMTextEmitted)
     assert events[2].content == "Pydantic response"
 
