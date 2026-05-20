@@ -88,6 +88,10 @@ tool_app = typer.Typer(
     help="Manage built-in tools (LLM-callable primitives).",
     rich_markup_mode="rich",
 )
+documents_app = typer.Typer(
+    help="Index and search project documents.",
+    rich_markup_mode="rich",
+)
 pipeline_app = typer.Typer(
     help="Run declarative DAG pipeline YAML files.",
     rich_markup_mode="rich",
@@ -251,6 +255,33 @@ def skill_create(
     """Scaffold a project-local skill."""
     app_state = _new_app_state()
     _run_command(lambda: create_skill(app_state, f"{name} {description}"))
+
+
+@documents_app.command("index")
+def documents_index(
+    paths: Annotated[
+        list[str],
+        typer.Argument(help="Document files or directories to index, relative to project root."),
+    ],
+    glob_pattern: Annotated[
+        str,
+        typer.Option(
+            "--glob",
+            help="Glob pattern used when a path is a directory.",
+        ),
+    ] = "**/*",
+    force: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Reindex sources even when their content hash is unchanged.",
+        ),
+    ] = False,
+) -> None:
+    """Index project documents into Vespa retrieval."""
+    app_state = _new_app_state()
+    _run_command(lambda: _index_documents(app_state, paths, glob_pattern, force=force))
 
 
 @app.command()
@@ -533,6 +564,23 @@ def _append_state(command: str, text: str) -> None:
     )
 
 
+def _index_documents(
+    app_state: AppState,
+    paths: list[str],
+    glob_pattern: str,
+    *,
+    force: bool,
+) -> None:
+    result = app_state.skill_runner.execute_skill(
+        tool_name="index_documents",
+        arguments={"paths": paths, "glob": glob_pattern, "force": force},
+        session_id=app_state.session_id,
+    )
+    console.print(result.content, markup=False)
+    if result.status != "success":
+        raise typer.Exit(1)
+
+
 def _new_app_state() -> AppState:
     try:
         return build_app_state()
@@ -669,4 +717,5 @@ app.add_typer(workflow_app, name="workflow")
 app.add_typer(state_app, name="state")
 app.add_typer(skill_app, name="skill")
 app.add_typer(tool_app, name="tool")
+app.add_typer(documents_app, name="documents")
 app.add_typer(pipeline_app, name="pipeline")

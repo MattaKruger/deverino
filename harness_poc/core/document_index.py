@@ -6,6 +6,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
+
 from harness_poc.core.models import DbDocumentChunk, DbDocumentSource
 from harness_poc.core.retrieval import compute_content_hash, make_document_chunks, make_source_id
 
@@ -15,7 +18,9 @@ if TYPE_CHECKING:
     from harness_poc.core.database import BlackboardDatabase
     from harness_poc.core.retrieval import VespaDocumentClient
 
-SUPPORTED_EXTENSIONS = frozenset({".md", ".txt", ".rst", ".yaml", ".yml", ".json", ".toml", ".py"})
+SUPPORTED_EXTENSIONS = frozenset(
+    {".md", ".txt", ".rst", ".yaml", ".yml", ".json", ".toml", ".py", ".pdf"}
+)
 IGNORED_DIR_NAMES = frozenset({".git", ".venv", "__pycache__", ".deverino-scratch"})
 IGNORED_FILE_GLOBS = frozenset({"*.db", ".env", "*.pem", "*.key", "id_rsa", "credentials.json"})
 MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -116,8 +121,8 @@ class DocumentIndexer:
                     {"uri": uri, "error": f"file exceeds {MAX_FILE_BYTES} bytes"}
                 )
                 return
-            text = file_path.read_text(encoding="utf-8", errors="replace")
-        except (OSError, UnicodeError) as exc:
+            text = _read_document_text(file_path)
+        except (OSError, PdfReadError, UnicodeError) as exc:
             result.failed += 1
             result.failures.append({"uri": uri, "error": str(exc)})
             return
@@ -247,6 +252,23 @@ def _in_ignored_dir(path: Path, project_root: Path) -> bool:
 
 def _is_secret_file(name: str) -> bool:
     return any(fnmatch.fnmatch(name, pattern) for pattern in IGNORED_FILE_GLOBS)
+
+
+def _read_document_text(file_path: Path) -> str:
+    if file_path.suffix.lower() == ".pdf":
+        return _read_pdf_text(file_path)
+    return file_path.read_text(encoding="utf-8", errors="replace")
+
+
+def _read_pdf_text(file_path: Path) -> str:
+    page_texts: list[str] = []
+    with file_path.open("rb") as pdf_file:
+        reader = PdfReader(pdf_file)
+        for page_number, page in enumerate(reader.pages, start=1):
+            text = page.extract_text() or ""
+            if text.strip():
+                page_texts.append(f"[Page {page_number}]\n{text.strip()}")
+    return "\n\n".join(page_texts)
 
 
 def _infer_kind(uri: str) -> str:
