@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -46,6 +46,21 @@ class LLMConfig:
     base_url: str | None  # None unless overriding endpoint (openai-compatible only)
 
 
+@dataclass(frozen=True, slots=True)
+class RetrievalConfig:
+    enabled: bool = True
+    provider: str = "vespa"
+    vespa_url: str = "http://localhost:8080"
+    namespace: str = "deverino"
+    schema: str = "doc_chunk"
+    default_hits: int = 8
+    default_mode: str = "hybrid"
+    chunk_size_chars: int = 1800
+    chunk_overlap_chars: int = 200
+    max_feed_workers: int = 8
+    query_timeout_seconds: int = 5
+
+
 def _find_dotenv() -> Path | None:
     for directory in (Path.cwd(), *Path.cwd().parents):
         env_path = directory / ".env"
@@ -83,6 +98,7 @@ class HarnessConfig:
     llm: LLMConfig
     runtime: RuntimeConfig
     observability: ObservabilityConfig
+    retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> HarnessConfig:
@@ -141,6 +157,21 @@ class HarnessConfig:
             base_url=llm_raw.get("base_url"),  # None is fine — defaults to None
         )
 
+        retrieval_raw = _mapping(raw.get("retrieval"), "retrieval")
+        retrieval = RetrievalConfig(
+            enabled=bool(retrieval_raw.get("enabled", True)),
+            provider=str(retrieval_raw.get("provider", "vespa")),
+            vespa_url=str(retrieval_raw.get("vespa_url", "http://localhost:8080")),
+            namespace=str(retrieval_raw.get("namespace", "deverino")),
+            schema=str(retrieval_raw.get("schema", "doc_chunk")),
+            default_hits=int(retrieval_raw.get("default_hits", 8)),
+            default_mode=str(retrieval_raw.get("default_mode", "hybrid")),
+            chunk_size_chars=int(retrieval_raw.get("chunk_size_chars", 1800)),
+            chunk_overlap_chars=int(retrieval_raw.get("chunk_overlap_chars", 200)),
+            max_feed_workers=int(retrieval_raw.get("max_feed_workers", 8)),
+            query_timeout_seconds=int(retrieval_raw.get("query_timeout_seconds", 5)),
+        )
+
         return cls(
             project_root=project_root,
             config_path=resolved_config_path,
@@ -148,6 +179,7 @@ class HarnessConfig:
             llm=llm,
             runtime=runtime,
             observability=observability,
+            retrieval=retrieval,
         )
 
 

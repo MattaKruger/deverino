@@ -28,3 +28,16 @@ runtime:
 observability:
   logfire: true   # set to true and export LOGFIRE_TOKEN to enable
   logfire_include_content: false
+
+retrieval:
+  enabled: true
+  provider: vespa
+  vespa_url: http://localhost:8080
+  namespace: deverino
+  schema: doc_chunk
+  default_hits: 8
+  default_mode: hybrid
+  chunk_size_chars: 1800
+  chunk_overlap_chars: 200
+  max_feed_workers: 8
+  query_timeout_seconds: 5
