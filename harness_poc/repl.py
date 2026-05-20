@@ -570,7 +570,7 @@ def dispatch_skill_command(app_state: AppState, command: str, argument: str) -> 
     elif command == "create":
         create_skill(app_state, argument)
     elif is_skill_name(app_state, command):
-        execute_named_skill(app_state, command, argument)
+        execute_named_tool(app_state, command, argument)
     else:
         return False
     return True
