@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from rich.table import Table
 from harness_poc.app_factory import STARTUP_ERRORS, AppState, build_app_state
 from harness_poc.console import console, print_error
 from harness_poc.core.config import HarnessConfig
+from harness_poc.core.dashboard import DashboardSnapshot, fetch_dashboard_snapshot, snapshot_to_dict
 from harness_poc.core.event_log_observer import (
     fetch_event_log_rows,
     fetch_latest_event_log_rows,
@@ -94,6 +96,10 @@ documents_app = typer.Typer(
 )
 pipeline_app = typer.Typer(
     help="Run declarative DAG pipeline YAML files.",
+    rich_markup_mode="rich",
+)
+dashboard_app = typer.Typer(
+    help="Run lightweight local dashboards over harness events.",
     rich_markup_mode="rich",
 )
 
@@ -549,6 +555,104 @@ def _print_events_log(options: EventLogOptions) -> None:
         time.sleep(options.poll_interval)
 
 
+@dashboard_app.command("summary")
+def dashboard_summary(
+    json_output: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option("--json", help="Print the dashboard snapshot as JSON."),
+    ] = False,
+) -> None:
+    """Print a lightweight dashboard snapshot in the terminal."""
+    try:
+        config = HarnessConfig.load()
+        from harness_poc.core.db_engine import create_db_engine  # noqa: PLC0415
+
+        snapshot = fetch_dashboard_snapshot(create_db_engine(config.runtime.database_url))
+    except Exception as exc:
+        logger.exception("Dashboard summary failed")
+        print_error(str(exc))
+        raise typer.Exit(1) from exc
+
+    if json_output:
+        console.print(json.dumps(snapshot_to_dict(snapshot), indent=2), markup=False)
+        return
+
+    _print_dashboard_summary(snapshot)
+
+
+@dashboard_app.command("serve")
+def dashboard_serve(
+    host: Annotated[str, typer.Option("--host", help="Host interface to bind.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", "-p", help="Port to bind.")] = 8050,
+    debug: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option("--debug/--no-debug", help="Run Dash in debug mode."),
+    ] = False,
+) -> None:
+    """Serve the read-only Dash dashboard."""
+    try:
+        config = HarnessConfig.load()
+        from harness_poc.dashboard_app import create_dashboard_app  # noqa: PLC0415
+
+        console.print(f"Dashboard: http://{host}:{port}")
+        dash_app = create_dashboard_app(config.runtime.database_url)
+        dash_app.run(host=host, port=port, debug=debug)
+    except KeyboardInterrupt:
+        raise typer.Exit from None
+    except Exception as exc:
+        logger.exception("Dashboard server failed")
+        print_error(str(exc))
+        raise typer.Exit(1) from exc
+
+
+def _print_dashboard_summary(snapshot: DashboardSnapshot) -> None:
+    data = snapshot_to_dict(snapshot)
+    summary = data["summary"]
+    table = Table(title="Harness Dashboard")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", justify="right")
+    for key, label in [
+        ("total_sessions", "Sessions"),
+        ("total_events", "Events"),
+        ("total_tokens", "Tokens"),
+        ("skill_calls", "Skill Calls"),
+        ("skill_failures", "Skill Failures"),
+        ("context_pending", "Context Backlog"),
+    ]:
+        table.add_row(label, f"{int(summary.get(key, 0)):,}")
+    console.print(table)
+
+    if data["skills"]:
+        skills = Table(title="Skill Performance")
+        skills.add_column("Skill", style="cyan")
+        skills.add_column("Calls", justify="right")
+        skills.add_column("Failures", justify="right")
+        skills.add_column("Last Status")
+        for row in data["skills"]:
+            skills.add_row(
+                row["skill_name"],
+                str(row["calls"]),
+                str(row["failures"]),
+                row["last_status"],
+            )
+        console.print(skills)
+
+    if data["context_maps"]:
+        maps = Table(title="Context Maps")
+        maps.add_column("Corpus", style="cyan")
+        maps.add_column("Version", justify="right")
+        maps.add_column("Tokens", justify="right")
+        maps.add_column("Pending", justify="right")
+        for row in data["context_maps"]:
+            maps.add_row(
+                row["corpus_key"],
+                str(row["version"]),
+                str(row["token_count"]),
+                str(row["pending_events"]),
+            )
+        console.print(maps)
+
+
 def _event_log_entry(event: BaseEvent) -> dict[str, str]:
     tool = event.tool_name if isinstance(event, SkillCompleted) else ""
     status = event.status if isinstance(event, SkillCompleted) else ""
@@ -719,3 +823,4 @@ app.add_typer(skill_app, name="skill")
 app.add_typer(tool_app, name="tool")
 app.add_typer(documents_app, name="documents")
 app.add_typer(pipeline_app, name="pipeline")
+app.add_typer(dashboard_app, name="dashboard")

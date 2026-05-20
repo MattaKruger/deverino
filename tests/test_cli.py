@@ -19,6 +19,7 @@ def test_help_lists_command_groups() -> None:
     assert "state" in result.output
     assert "skill" in result.output
     assert "documents" in result.output
+    assert "dashboard" in result.output
     assert "events" in result.output
 
 
