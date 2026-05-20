@@ -1,5 +1,6 @@
 ---
 name: web_search
+type: tool
 description: Search the web using the LangSearch API. Returns titles, URLs, and descriptions for matching results.
 version: "1.0"
 auto_invokable: true

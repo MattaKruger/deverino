@@ -21,6 +21,7 @@ from harness_poc.core.pydantic_runtime import (
 from harness_poc.core.skill_runner import SkillRunner
 from harness_poc.core.skill_scaffolder import SkillScaffolder
 from harness_poc.core.state import build_state_context
+from harness_poc.core.tool_runner import ToolRunner
 from harness_poc.core.workflow_runner import WorkflowRunner
 
 # Skills excluded from the agent's auto-invokable toolset because they
@@ -75,6 +76,7 @@ class AppState:
     database: BlackboardDatabase
     config: HarnessConfig
     skill_runner: SkillRunner
+    tool_runner: ToolRunner
     skill_scaffolder: SkillScaffolder
     workflow_runner: WorkflowRunner
     pipeline_runner: PipelineRunner
@@ -102,6 +104,7 @@ def build_app_state() -> AppState:
     project_state = database.ensure_project_state()
     session_state = database.ensure_session_state(session_id)
     skill_runner = SkillRunner(database=database, config=config)
+    tool_runner = ToolRunner(config=config, skill_runner=skill_runner)
     workflow_runner = WorkflowRunner(skill_runner)
     pipeline_runner = PipelineRunner(config.paths.pipelines)
     messages: list[Message] = [
@@ -138,6 +141,7 @@ def build_app_state() -> AppState:
         database=database,
         config=config,
         skill_runner=skill_runner,
+        tool_runner=tool_runner,
         skill_scaffolder=SkillScaffolder(config),
         workflow_runner=workflow_runner,
         pipeline_runner=pipeline_runner,
@@ -146,6 +150,7 @@ def build_app_state() -> AppState:
             database=database,
             config=config,
             skill_runner=skill_runner,
+            tool_runner=tool_runner,
             system_prompt=full_system_prompt,
             llm=config.llm,
             enable_tools=True,

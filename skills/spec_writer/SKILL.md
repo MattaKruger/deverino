@@ -1,5 +1,6 @@
 ---
 name: spec_writer
+type: skill
 description: Interactively drafts implementation specs from goals, context, constraints, and open questions.
 version: "1.0"
 parameters:

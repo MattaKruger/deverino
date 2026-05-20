@@ -7,6 +7,7 @@ llm:
 paths:
   # Engine Paths
   soul: harness_poc/system_prompts/SOUL.md
+  system_tools: harness_poc/system_tools
   system_skills: harness_poc/system_skills
 
   # Workspace Paths

@@ -1,5 +1,6 @@
 ---
 name: read_memory
+type: tool
 description: Retrieves data stored in the shared SQLite blackboard for the current session.
 version: "1.0"
 auto_invokable: true

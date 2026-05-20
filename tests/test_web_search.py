@@ -99,6 +99,7 @@ def _test_config(engine: Engine) -> HarnessConfig:
         config_path=repo_root / "harness.yaml",
         paths=HarnessPaths(
             soul=repo_root / "harness_poc/system_prompts/SOUL.md",
+            system_tools=repo_root / "harness_poc/system_tools",
             system_skills=repo_root / "harness_poc/system_skills",
             project_skills=repo_root / "skills",
             workflows=repo_root / "workflows",

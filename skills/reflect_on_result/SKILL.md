@@ -1,5 +1,6 @@
 ---
 name: reflect_on_result
+type: skill
 description: Reflects on whether a stored subagent result satisfies the original objective and writes a compact assessment back to shared memory.
 version: "1.0"
 parameters:

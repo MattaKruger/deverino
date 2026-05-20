@@ -1,5 +1,6 @@
 ---
 name: semble_search
+type: tool
 description: Search a codebase by describing what code does, or find code related to a specific file/line. Uses the Semble CLI.
 version: "1.0"
 auto_invokable: true

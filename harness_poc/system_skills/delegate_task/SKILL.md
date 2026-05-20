@@ -1,5 +1,6 @@
 ---
 name: delegate_task
+type: skill
 description: Spawns an independent LLM agent with a specific persona to handle an isolated sub-task. Use this to prevent polluting your main context window with heavy research or specialized repetitive tasks.
 version: "1.0"
 parameters:

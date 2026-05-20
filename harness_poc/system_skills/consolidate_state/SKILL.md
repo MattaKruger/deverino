@@ -1,5 +1,6 @@
 ---
 name: consolidate_state
+type: skill
 description: Preview, propose, or approve consolidation of the current session STATE into durable project STATE.
 version: "1.0"
 parameters:

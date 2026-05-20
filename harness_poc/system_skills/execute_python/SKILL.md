@@ -1,5 +1,6 @@
 ---
 name: execute_python
+type: tool
 description: "Executes Python code inside a session-scoped container. CRITICAL: /workspace is READ-ONLY — write output files (images, charts, CSVs) to /scratch/, never to /workspace or the current directory."
 version: "1.0"
 auto_invokable: true

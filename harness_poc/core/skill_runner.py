@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 class SkillMetadata(TypedDict):
     name: str
     description: str
+    type: str
     parameters: dict[str, Any]
     auto_invokable: bool
     permissions: dict[str, str]
@@ -74,6 +75,7 @@ class SkillRunner:
                         "type": "function",
                         "function": {
                             "name": skill_name,
+                            "type": skill["metadata"]["type"],
                             "description": skill["metadata"]["description"],
                             "parameters": skill["metadata"]["parameters"],
                             "auto_invokable": skill["metadata"]["auto_invokable"],
@@ -264,6 +266,7 @@ class SkillRunner:
 
         name = frontmatter.get("name")
         description = frontmatter.get("description")
+        skill_type = str(frontmatter.get("type", "skill"))
         parameters = frontmatter.get("parameters", {"type": "object", "properties": {}})
         entrypoint = frontmatter.get("entrypoint", {"module": "skill", "function": "execute"})
         auto_invokable = bool(frontmatter.get("auto_invokable", False))
@@ -271,6 +274,12 @@ class SkillRunner:
         permissions: dict[str, str] = raw_permissions if isinstance(raw_permissions, dict) else {}
         if not isinstance(name, str) or not isinstance(description, str):
             msg = f"Skill {skill_file} must define string name and description"
+            raise TypeError(msg)
+        if skill_type not in ("tool", "skill"):
+            msg = (
+                f"Skill {skill_file} type must be 'tool' or 'skill', "
+                f"got {skill_type!r}"
+            )
             raise TypeError(msg)
         if not isinstance(parameters, dict):
             msg = f"Skill {skill_file} parameters must be a mapping"
@@ -289,6 +298,7 @@ class SkillRunner:
             "metadata": {
                 "name": name,
                 "description": description,
+                "type": skill_type,
                 "parameters": cast("dict[str, Any]", parameters),
                 "auto_invokable": auto_invokable,
                 "permissions": permissions,

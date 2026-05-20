@@ -1,5 +1,6 @@
 ---
 name: container_spawn
+type: tool
 description: Creates a detached container for the current workflow session. Returns the container name and backend used. Idempotent — if the container already exists, returns it without recreating.
 version: "1.0"
 parameters:

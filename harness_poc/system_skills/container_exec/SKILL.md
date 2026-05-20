@@ -1,5 +1,6 @@
 ---
 name: container_exec
+type: tool
 description: Executes a shell command inside a container (Podman, Docker, or auto-detected backend). The container must already exist — use container_spawn first.
 version: "1.0"
 parameters:

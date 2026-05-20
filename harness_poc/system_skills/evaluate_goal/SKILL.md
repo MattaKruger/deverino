@@ -1,5 +1,6 @@
 ---
 name: evaluate_goal
+type: skill
 description: Evaluate whether the current goal is complete. Call with is_complete=true to stop the autonomous loop, or false to report status and continue.
 version: "1.0"
 parameters:

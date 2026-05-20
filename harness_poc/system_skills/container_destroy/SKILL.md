@@ -1,5 +1,6 @@
 ---
 name: container_destroy
+type: tool
 description: Stops and removes a container. Cleans up the blackboard memory entry.
 version: "1.0"
 parameters:

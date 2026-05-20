@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from harness_poc.core.database import BlackboardDatabase
     from harness_poc.core.llm_client import Message, Usage
     from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.tool_runner import ToolRunner
 
 from harness_poc.core.config import APISettings
 
@@ -49,6 +50,7 @@ class AgentDeps:
     database: BlackboardDatabase
     config: HarnessConfig
     skill_runner: SkillRunner
+    tool_runner: ToolRunner | None = None
     stream_text: Callable[[str], None] | None = None
     on_tool_event: Callable[[str], None] | None = None
     tool_call_counts: dict[str, int] = field(default_factory=dict)
@@ -275,12 +277,32 @@ def build_primary_agent(  # noqa: PLR0913
     *,
     system_prompt: str,
     skill_runner: SkillRunner,
+    tool_runner: ToolRunner | None = None,
     llm: LLMConfig | None = None,
     model: Model | None = None,
     enable_tools: bool = True,
     blocked_skills: frozenset[str] | None = None,
 ) -> Agent[AgentDeps, str]:
-    tools = build_skill_tools(skill_runner, blocked_skills=blocked_skills) if enable_tools else []
+    tools: list[Tool[AgentDeps]] = []
+    if enable_tools:
+        builtin = build_builtin_tools(tool_runner) if tool_runner else []
+        tools.extend(builtin)
+        # Collect built-in tool names for dedup against skill runner
+        builtin_names: set[str] = set()
+        if tool_runner is not None:
+            for t in tool_runner.discover_tools():
+                fn = t.get("function", {})
+                if isinstance(fn, dict):
+                    name = fn.get("name")
+                    if isinstance(name, str):
+                        builtin_names.add(name)
+        tools.extend(
+            build_skill_tools(
+                skill_runner,
+                blocked_skills=blocked_skills,
+                skip_names=builtin_names,
+            )
+        )
     return Agent(
         model or build_model(llm),
         deps_type=AgentDeps,
@@ -296,6 +318,7 @@ def build_runtime(  # noqa: PLR0913
     database: BlackboardDatabase,
     config: HarnessConfig,
     skill_runner: SkillRunner,
+    tool_runner: ToolRunner | None = None,
     system_prompt: str,
     llm: LLMConfig | None = None,
     model: Model | None = None,
@@ -307,12 +330,14 @@ def build_runtime(  # noqa: PLR0913
         database=database,
         config=config,
         skill_runner=skill_runner,
+        tool_runner=tool_runner,
     )
 
     return PydanticAgentRuntime(
         agent=build_primary_agent(
             system_prompt=system_prompt,
             skill_runner=skill_runner,
+            tool_runner=tool_runner,
             llm=llm,
             model=model,
             enable_tools=enable_tools,
@@ -326,9 +351,11 @@ def build_skill_tools(
     skill_runner: SkillRunner,
     *,
     blocked_skills: frozenset[str] | None = None,
+    skip_names: set[str] | None = None,
 ) -> list[Tool[AgentDeps]]:
     tools: list[Tool[AgentDeps]] = []
     blocked = blocked_skills or frozenset()
+    skip = skip_names or set()
     for discovered_skill in skill_runner.discover_skills():
         function = discovered_skill.get("function", {})
 
@@ -356,6 +383,12 @@ def build_skill_tools(
                 extra={"skill_name": name},
             )
             continue
+        if name in skip:
+            logger.debug(
+                "Skipping skill already handled by built-in tools",
+                extra={"skill_name": name},
+            )
+            continue
 
         tools.append(
             Tool.from_schema(
@@ -368,6 +401,78 @@ def build_skill_tools(
         )
 
     return tools
+
+
+def build_builtin_tools(
+    tool_runner: ToolRunner | None,
+) -> list[Tool[AgentDeps]]:
+    """Build PydanticAI Tool objects from the built-in tool registry."""
+    if tool_runner is None:
+        return []
+    tools: list[Tool[AgentDeps]] = []
+    for discovered_tool in tool_runner.discover_tools():
+        function = discovered_tool.get("function", {})
+        if not isinstance(function, dict):
+            continue
+
+        name = function.get("name")
+        description = function.get("description")
+        parameters = function.get("parameters")
+
+        if not isinstance(name, str) or not isinstance(description, str):
+            continue
+        if not isinstance(parameters, dict):
+            parameters = {"type": "object", "properties": {}}
+
+        tools.append(
+            Tool.from_schema(
+                function=_make_builtin_tool(name),
+                name=name,
+                description=description,
+                json_schema=parameters,
+                takes_ctx=True,
+            ),
+        )
+
+    return tools
+
+
+def _make_builtin_tool(
+    tool_name: str,
+) -> Callable[..., str]:
+    def execute_builtin_tool(
+        ctx: RunContext[AgentDeps],
+        **arguments: object,
+    ) -> str:
+        return _execute_builtin_tool(ctx, tool_name, cast("dict[str, Any]", arguments))
+
+    execute_builtin_tool.__name__ = f"execute_{tool_name}_builtin"
+    return execute_builtin_tool
+
+
+def _execute_builtin_tool(
+    ctx: RunContext[AgentDeps],
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> str:
+    """Route a built-in tool call through the ToolRunner."""
+    if ctx.deps.tool_runner is None:
+        return json.dumps({"error": f"Tool runner not available for {tool_name}"})
+
+    _emit_tool_progress(ctx, f"  {tool_name}: {_summarise_args(arguments)} ...")
+    try:
+        result = ctx.deps.tool_runner.execute_tool(
+            tool_name,
+            arguments,
+            session_id=ctx.deps.session_id,
+        )
+    except Exception:
+        _emit_tool_progress(ctx, f"  {tool_name}: FAILED")
+        logger.exception("Built-in tool execution raised: %s", tool_name)
+        return json.dumps({"error": f"Tool {tool_name} raised an unexpected error."})
+
+    _emit_tool_progress(ctx, f"  {tool_name}: done")
+    return result
 
 
 def _make_skill_tool(

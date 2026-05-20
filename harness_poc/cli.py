@@ -83,6 +83,10 @@ skill_app = typer.Typer(
     help="Manage executable skills.",
     rich_markup_mode="rich",
 )
+tool_app = typer.Typer(
+    help="Manage built-in tools (LLM-callable primitives).",
+    rich_markup_mode="rich",
+)
 pipeline_app = typer.Typer(
     help="Run declarative DAG pipeline YAML files.",
     rich_markup_mode="rich",
@@ -220,6 +224,13 @@ def skill_list() -> None:
     """List discovered system and project skills."""
     app_state = _new_app_state()
     _run_command(lambda: list_skills(app_state))
+
+
+@tool_app.command("list")
+def tool_list() -> None:
+    """List built-in tools (LLM-callable primitives)."""
+    app_state = _new_app_state()
+    _run_command(lambda: _list_tools(app_state))
 
 
 @skill_app.command("show")
@@ -625,7 +636,32 @@ def pipeline_run(
         raise typer.Exit(1)
 
 
+def _list_tools(app_state: AppState) -> None:
+    """Print a table of built-in tools."""
+    from rich.table import Table
+
+    names = app_state.tool_runner.list_tool_names()
+    if not names:
+        console.print("[dim]No built-in tools found.[/dim]")
+        return
+
+    table = Table(title="Built-in Tools")
+    table.add_column("Name", style="cyan")
+    table.add_column("Description", style="dim")
+    for name in names:
+        # Re-discover to get descriptions
+        for tool in app_state.tool_runner.discover_tools():
+            fn = tool.get("function", {})
+            if fn.get("name") == name:
+                table.add_row(name, fn.get("description", ""))
+                break
+        else:
+            table.add_row(name, "")
+    console.print(table)
+
+
 app.add_typer(workflow_app, name="workflow")
 app.add_typer(state_app, name="state")
 app.add_typer(skill_app, name="skill")
+app.add_typer(tool_app, name="tool")
 app.add_typer(pipeline_app, name="pipeline")

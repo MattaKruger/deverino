@@ -1,5 +1,6 @@
 ---
 name: review_work
+type: tool
 description: Review current working tree
 version: "1.0"
 auto_invokable: true

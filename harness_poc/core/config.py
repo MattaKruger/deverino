@@ -12,6 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 @dataclass(frozen=True, slots=True)
 class HarnessPaths:
     soul: Path
+    system_tools: Path
     system_skills: Path
     project_skills: Path
     workflows: Path
@@ -101,6 +102,10 @@ class HarnessConfig:
             soul=_resolve_path(
                 project_root,
                 paths_raw.get("soul", "harness_poc/system_prompts/SOUL.md"),
+            ),
+            system_tools=_resolve_path(
+                project_root,
+                paths_raw.get("system_tools", "harness_poc/system_tools"),
             ),
             system_skills=_resolve_path(
                 project_root,
