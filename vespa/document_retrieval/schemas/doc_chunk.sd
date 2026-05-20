@@ -1,0 +1,80 @@
+schema doc_chunk {
+    document doc_chunk {
+        field source_id type string {
+            indexing: summary | attribute
+        }
+
+        field uri type string {
+            indexing: summary | attribute
+        }
+
+        field title type string {
+            indexing: summary | index
+        }
+
+        field chunk_id type string {
+            indexing: summary | attribute
+        }
+
+        field chunk_index type int {
+            indexing: summary | attribute
+        }
+
+        field text type string {
+            indexing: summary | index
+        }
+
+        field kind type string {
+            indexing: summary | attribute
+        }
+
+        field content_hash type string {
+            indexing: summary | attribute
+        }
+
+        field updated_at type long {
+            indexing: summary | attribute
+        }
+    }
+
+    field embedding type tensor<bfloat16>(x[384]) {
+        indexing: input text | embed | attribute | index
+        attribute {
+            distance-metric: angular
+        }
+        index {
+            hnsw {
+                max-links-per-node: 16
+                neighbors-to-explore-at-insert: 200
+            }
+        }
+    }
+
+    fieldset default {
+        fields: title, text
+    }
+
+    rank-profile semantic {
+        inputs {
+            query(q) tensor<bfloat16>(x[384])
+        }
+        first-phase {
+            expression: closeness(field, embedding)
+        }
+    }
+
+    rank-profile keyword {
+        first-phase {
+            expression: bm25(title) + bm25(text)
+        }
+    }
+
+    rank-profile hybrid {
+        inputs {
+            query(q) tensor<bfloat16>(x[384])
+        }
+        first-phase {
+            expression: closeness(field, embedding) * (1 + bm25(title) + bm25(text))
+        }
+    }
+}
