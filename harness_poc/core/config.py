@@ -145,7 +145,7 @@ class HarnessConfig:
                 runtime_raw.get("database_url", "sqlite:///harness_poc/blackboard.db")
             ),
             default_container_image=str(
-                runtime_raw.get("default_container_image", "python:3.12-slim")
+                runtime_raw.get("default_container_image", "python:3.14-slim")
             ),
             max_retries=int(runtime_raw.get("max_retries", 3)),
             max_tokens=int(runtime_raw.get("max_tokens", 10_000)),

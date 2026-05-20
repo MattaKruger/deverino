@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository contains a Python 3.12 proof-of-concept LLM agent harness backed by a PostgreSQL blackboard.
+This repository contains a Python 3.14 proof-of-concept LLM agent harness backed by a PostgreSQL blackboard.
 
 - `harness_poc/` contains the application package. `main.py` is the entrypoint, `cli.py` defines the Typer CLI, `repl.py` handles the interactive shell, and `core/` contains config, database, LLM, skill, and workflow runtime code.
 - `harness_poc/system_skills/` stores built-in skills. `skills/` stores project-local skills. Each skill lives in its own directory with `SKILL.md`, `__init__.py`, and usually `skill.py`.
@@ -23,7 +23,7 @@ This repository contains a Python 3.12 proof-of-concept LLM agent harness backed
 
 ## Coding Style & Naming Conventions
 
-Use 4-space indentation and Python 3.12 syntax. Ruff is configured with `line-length = 100`, double quotes, and broad lint coverage. Prefer small, typed functions and existing harness abstractions over ad hoc parsing. Name tests as `test_*.py`, skills with snake_case directory names, and workflows with descriptive snake_case YAML files.
+Use 4-space indentation and Python 3.14 syntax. Ruff is configured with `line-length = 100`, double quotes, and broad lint coverage. Prefer small, typed functions and existing harness abstractions over ad hoc parsing. Name tests as `test_*.py`, skills with snake_case directory names, and workflows with descriptive snake_case YAML files.
 
 ## Testing Guidelines
 

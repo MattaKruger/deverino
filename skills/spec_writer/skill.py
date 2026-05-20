@@ -130,7 +130,7 @@ def _question_for_phase(state: GatherState) -> str:
         return (
             "## Gathering Spec Context (4/4)\n\n"
             "List any technical, product, or delivery constraints "
-            "(e.g. no external frameworks, must be idempotent, Python 3.12+ typing)."
+            "(e.g. no external frameworks, must be idempotent, Python 3.14+ typing)."
         )
     return ""
 

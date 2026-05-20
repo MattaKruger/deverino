@@ -1,7 +1,7 @@
 # Deverino Python container
 # Auto-built by container_spawn if missing — or build manually:
 #   docker build -t deverino-python:latest .
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # --- Pre-installed packages ---
 # Add your dependencies here — the harness will rebuild if the Dockerfile changes.

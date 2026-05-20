@@ -207,7 +207,7 @@ def _test_config(engine: Engine) -> HarnessConfig:
         llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
         runtime=RuntimeConfig(
             database_url=engine.url.render_as_string(hide_password=False),
-            default_container_image="python:3.12-slim",
+            default_container_image="python:3.14-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
     )

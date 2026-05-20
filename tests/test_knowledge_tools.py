@@ -343,7 +343,7 @@ class TestSkillRunnerExcludesKnowledge:
             ),
             runtime=RuntimeConfig(
                 database_url="sqlite:///:memory:",
-                default_container_image="python:3.12-slim",
+                default_container_image="python:3.14-slim",
             ),
             observability=ObservabilityConfig(logfire_enabled=False),
             llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),

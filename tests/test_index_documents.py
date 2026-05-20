@@ -37,7 +37,7 @@ def _make_config(tmp_path: Path, retrieval: RetrievalConfig) -> HarnessConfig:
         llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
         runtime=RuntimeConfig(
             database_url="postgresql://test:test@localhost/test",
-            default_container_image="python:3.12-slim",
+            default_container_image="python:3.14-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
         retrieval=retrieval,

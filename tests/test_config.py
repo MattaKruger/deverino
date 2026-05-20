@@ -26,7 +26,7 @@ def _write_minimal_config(tmp_path: Path, extra: str = "") -> Path:
           personas: personas
         runtime:
           database_url: postgresql://test:test@localhost/test
-          default_container_image: python:3.12-slim
+          default_container_image: python:3.14-slim
         observability:
           logfire: false
     """)

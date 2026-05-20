@@ -44,7 +44,7 @@ def _make_config(
         llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
         runtime=RuntimeConfig(
             database_url="postgresql://test:test@localhost/test",
-            default_container_image="python:3.12-slim",
+            default_container_image="python:3.14-slim",
             tool_result_max_chars=tool_result_max_chars,
         ),
         observability=ObservabilityConfig(logfire_enabled=False),

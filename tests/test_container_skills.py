@@ -50,7 +50,7 @@ def test_container_spawn_fails_when_no_backend(db_engine: Engine) -> None:
     result = json.loads(
         tool_runner.execute_tool(
             tool_name="container_spawn",
-            arguments={"image": "python:3.12-slim"},
+            arguments={"image": "python:3.14-slim"},
             session_id=session_id,
         )
     )
@@ -231,7 +231,7 @@ def test_container_spawn_cleanup_removes_only_stale_harness_containers(
 
 
 def _tool_runner(
-    engine: Engine, default_container_image: str = "python:3.12-slim"
+    engine: Engine, default_container_image: str = "python:3.14-slim"
 ) -> tuple[ToolRunner, str, BlackboardDatabase]:
     config = _test_config(engine, default_container_image)
     database = BlackboardDatabase(engine)
@@ -270,7 +270,7 @@ def _inspect_after_run() -> Callable[[str, str], dict[str, object] | None]:
             "backend": _backend,
             "container_name": container_name,
             "container_id": "container-id",
-            "image": "python:3.12-slim",
+            "image": "python:3.14-slim",
             "status": "running",
             "running": True,
             "workdir": "/workspace",
@@ -282,7 +282,7 @@ def _inspect_after_run() -> Callable[[str, str], dict[str, object] | None]:
 
 
 def _test_config(
-    engine: Engine, default_container_image: str = "python:3.12-slim"
+    engine: Engine, default_container_image: str = "python:3.14-slim"
 ) -> HarnessConfig:
     repo_root = Path.cwd()
     return HarnessConfig(

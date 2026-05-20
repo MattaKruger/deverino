@@ -3,7 +3,7 @@ name = "llm-agent-harness-poc"
 version = "0.1.0"
 description = "Proof of concept LLM agent harness backed by PostgreSQL."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "openai>=2.37.0",
     "prompt-toolkit>=3.0.52",
@@ -47,7 +47,7 @@ packages = ["harness_poc"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["ALL"]

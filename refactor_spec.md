@@ -6,7 +6,7 @@ We are refactoring our Python-based LLM Agent Harness. The current Proof of Conc
 
 **The Goal:** Architecturally split the application into **The Engine** (immutable system mechanics) and **The Workspace** (mutable, project-specific configuration and skills).
 
-**Tech Stack:** Python 3.12+, `uv` (dependency management), `ruff` (linting/formatting), standard library `sqlite3`, `pyyaml`.
+**Tech Stack:** Python 3.14+, `uv` (dependency management), `ruff` (linting/formatting), standard library `sqlite3`, `pyyaml`.
 
 ## 2. Target Directory Structure
 
@@ -90,7 +90,7 @@ Phase 4: Code Refactoring (harness_poc/main.py)
 
 4. Strict Constraints & Quality Rules
 
-    Type Hinting: Maintain strict Python 3.12+ typing (typing module, | union operators, explicit return types).
+    Type Hinting: Maintain strict Python 3.14+ typing (typing module, | union operators, explicit return types).
 
     Idempotency: The database.py initialization must safely handle existing databases without throwing errors (CREATE TABLE IF NOT EXISTS).
 

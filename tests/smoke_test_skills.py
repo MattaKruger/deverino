@@ -46,7 +46,7 @@ def main() -> int:
         ),
         runtime=RuntimeConfig(
             database_url=database_url,
-            default_container_image="python:3.12-slim",
+            default_container_image="python:3.14-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
         llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
@@ -161,7 +161,7 @@ def main() -> int:
         ),
         (
             "container_spawn",
-            {"image": "python:3.12-slim"},
+            {"image": "python:3.14-slim"},
             "container_spawn with image (may work if docker)",
             {"success", "failed"},
         ),

@@ -1,6 +1,6 @@
 # Deverino
 
-Deverino is a Python 3.12 proof-of-concept LLM agent harness. It combines a
+Deverino is a Python 3.14 proof-of-concept LLM agent harness. It combines a
 Textual chat TUI, a Typer CLI, an event-sourced async runtime, project-local
 skills, declarative workflows and pipelines, PostgreSQL-backed state, and
 Vespa-backed document retrieval.

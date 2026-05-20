@@ -39,7 +39,7 @@ A `Justfile` at the repo root wraps common recipes: `just repl`, `just tui`, `ju
 
 ## Architecture
 
-**Deverino** is a Python 3.12 proof-of-concept for autonomous LLM agent workflows backed by PostgreSQL (SQLite in tests).
+**Deverino** is a Python 3.14 proof-of-concept for autonomous LLM agent workflows backed by PostgreSQL (SQLite in tests).
 
 ### Skill system
 
