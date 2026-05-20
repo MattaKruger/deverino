@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -31,6 +32,9 @@ class RuntimeConfig:
     chat_history_max_tokens: int = 24_000
     chat_history_recent_turns: int = 6
     tool_result_max_chars: int = 12_000
+    materializer_poll_interval: float = 30.0
+    materializer_max_event_tokens: int = 8000
+    materializer_token_budget: int = 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +104,7 @@ class HarnessConfig:
     runtime: RuntimeConfig
     observability: ObservabilityConfig
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
+    project_id: str = field(default="default")
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> HarnessConfig:
@@ -147,6 +152,11 @@ class HarnessConfig:
             chat_history_max_tokens=int(runtime_raw.get("chat_history_max_tokens", 24_000)),
             chat_history_recent_turns=int(runtime_raw.get("chat_history_recent_turns", 6)),
             tool_result_max_chars=int(runtime_raw.get("tool_result_max_chars", 12_000)),
+            materializer_poll_interval=float(runtime_raw.get("materializer_poll_interval", 30.0)),
+            materializer_max_event_tokens=int(
+                runtime_raw.get("materializer_max_event_tokens", 8000)
+            ),
+            materializer_token_budget=int(runtime_raw.get("materializer_token_budget", 1024)),
         )
         observability = ObservabilityConfig(
             logfire_enabled=bool(observability_raw.get("logfire", False)),
@@ -174,6 +184,14 @@ class HarnessConfig:
             query_timeout_seconds=int(retrieval_raw.get("query_timeout_seconds", 5)),
         )
 
+        project_raw = _mapping(raw.get("project"), "project")
+        project_id = str(project_raw.get("id") or "")
+        if not project_id:
+            project_id = hashlib.md5(
+                str(project_root).encode(),
+                usedforsecurity=False,
+            ).hexdigest()[:8]
+
         return cls(
             project_root=project_root,
             config_path=resolved_config_path,
@@ -182,6 +200,7 @@ class HarnessConfig:
             runtime=runtime,
             observability=observability,
             retrieval=retrieval,
+            project_id=project_id,
         )
 
 

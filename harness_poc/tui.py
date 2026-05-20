@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import itertools
 import logging
 import re
@@ -10,7 +11,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from textual.app import App, Binding, ComposeResult
 from textual.containers import Vertical, VerticalScroll
@@ -20,6 +21,8 @@ from harness_poc.console import clear_tui_handlers, set_tui_handlers
 from harness_poc.repl_completion import completions_for_text
 
 if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
     from textual.timer import Timer
 
     from harness_poc.app_factory import AppState
@@ -207,6 +210,7 @@ class ChatApp(App[None]):
         super().__init__()
         self._app_state = app_state
         self._spinner_timer: Timer | None = None
+        self._materializer_task: asyncio.Task[None] | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("", id="header")
@@ -229,10 +233,18 @@ class ChatApp(App[None]):
             on_error=self._tui_print_error,
             on_text=self._tui_print_text,
         )
+        if self._app_state.materializer_runner is not None:
+            maybe_coro = self._app_state.materializer_runner.run_forever()
+            if inspect.isawaitable(maybe_coro):
+                self._materializer_task = asyncio.create_task(
+                    cast("Coroutine[Any, Any, None]", maybe_coro)
+                )
         self._update_header()
         self.query_one(TextArea).focus()
 
     def on_unmount(self) -> None:
+        if self._materializer_task is not None:
+            self._materializer_task.cancel()
         clear_tui_handlers()
 
     def _update_header(self) -> None:

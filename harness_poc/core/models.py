@@ -115,3 +115,33 @@ class DbDocumentChunk(SQLModel, table=True):
     content_hash: str
     vespa_id: str
     indexed_at: str | None = Field(default=None)
+
+
+class DbContextMapEvent(SQLModel, table=True):
+    __tablename__ = "context_map_events"  # type: ignore[assignment]
+    __table_args__ = (
+        Index(
+            "idx_context_map_events_corpus_unprocessed",
+            "corpus_key",
+            "processed",
+            "timestamp",
+        ),
+    )
+
+    event_id: str = Field(primary_key=True)
+    corpus_key: str
+    session_id: str
+    event_type: str
+    payload: str = Field(sa_column=Column(Text, nullable=False))
+    timestamp: str
+    processed: int = Field(default=0)
+
+
+class DbContextMap(SQLModel, table=True):
+    __tablename__ = "context_map"  # type: ignore[assignment]
+
+    corpus_key: str = Field(primary_key=True)
+    map_json: str = Field(sa_column=Column(Text, nullable=False))
+    token_count: int
+    version: int = Field(default=1)
+    last_updated: str

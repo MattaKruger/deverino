@@ -1,5 +1,8 @@
 version: 1.1
 
+project:
+  id: deverino
+
 llm:
   provider: deepseek
   model: deepseek-v4-flash
@@ -24,6 +27,9 @@ runtime:
   chat_history_max_tokens: 24000
   chat_history_recent_turns: 6
   tool_result_max_chars: 12000
+  materializer_poll_interval: 30
+  materializer_max_event_tokens: 8000
+  materializer_token_budget: 1024
 
 observability:
   logfire: true   # set to true and export LOGFIRE_TOKEN to enable

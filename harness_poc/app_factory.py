@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from pydantic_ai.models import Model
 
     from harness_poc.core.llm_client import Message
+    from harness_poc.core.materializer_runner import MaterializerRunner
 
 
 def _default_on_text(chunk: str) -> None:
@@ -91,6 +93,7 @@ class AppState:
     tools: list[dict[str, Any]]
     event_bus: EventBus
     streaming: StreamingContext
+    materializer_runner: MaterializerRunner | None = None
 
 
 def _permissive_for_tools() -> SkillPermissions:
@@ -112,6 +115,12 @@ def build_app_state() -> AppState:
     session_id = database.start_session("Interactive proof of concept session.")
     project_state = database.ensure_project_state()
     session_state = database.ensure_session_state(session_id)
+    corpus_key = f"{config.project_id}:default"
+    context_map = database.get_context_map(corpus_key)
+    context_map_block = ""
+    if context_map:
+        context_map_block = f"--- Context Map ---\n{json.dumps(context_map, indent=2)}\n---"
+    state_context = build_state_context(project_state, session_state)
     skill_runner = SkillRunner(database=database, config=config)
     db_proxy = BlackboardAccessProxy(database, _permissive_for_tools())
     tool_runner = ToolRunner(
@@ -126,21 +135,37 @@ def build_app_state() -> AppState:
         {
             "role": "system",
             "content": "\n\n".join(
-                [
-                    system_prompt,
-                    build_state_context(project_state, session_state),
-                ],
+                filter(
+                    None,
+                    [
+                        system_prompt,
+                        state_context,
+                        context_map_block or None,
+                    ],
+                ),
             ),
         },
     ]
     tools = skill_runner.discover_skills()
     full_system_prompt = "\n\n".join(
-        [
-            system_prompt,
-            build_state_context(project_state, session_state),
-        ],
+        filter(
+            None,
+            [
+                system_prompt,
+                state_context,
+                context_map_block or None,
+            ],
+        ),
     )
     event_bus = EventBus(event_store)
+    from harness_poc.core.materializer_runner import MaterializerRunner  # noqa: PLC0415
+
+    materializer = MaterializerRunner(
+        db=database,
+        skill_runner=skill_runner,
+        config=config,
+        poll_interval=config.runtime.materializer_poll_interval,
+    )
 
     if config.observability.logfire_enabled:
         from harness_poc.core.logfire_subscriber import (  # noqa: PLC0415
@@ -190,4 +215,5 @@ def build_app_state() -> AppState:
         tools=tools,
         event_bus=event_bus,
         streaming=StreamingContext(),
+        materializer_runner=materializer,
     )

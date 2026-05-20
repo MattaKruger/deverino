@@ -4,6 +4,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from harness_poc.core.context_map_events import ContextMapEvent
     from harness_poc.core.database import BlackboardDatabase
     from harness_poc.core.models import DbDocumentChunk, DbDocumentSource
     from harness_poc.core.permissions import SkillPermissions
@@ -87,6 +88,20 @@ class BlackboardAccessProxy:
         self._require_read()
         return self._db.list_chunks_for_source(source_id)
 
+    def get_context_map(self, corpus_key: str) -> dict[str, Any] | None:
+        self._require_read()
+        return self._db.get_context_map(corpus_key)
+
+    def get_pending_context_map_events(
+        self, corpus_key: str, limit: int = 50
+    ) -> list[Any]:
+        self._require_read()
+        return self._db.get_pending_context_map_events(corpus_key, limit)
+
+    def get_pending_corpus_keys(self) -> list[str]:
+        self._require_read()
+        return self._db.get_pending_corpus_keys()
+
     # ---- document metadata write methods ----
 
     def upsert_document_source(self, source: DbDocumentSource) -> None:
@@ -96,6 +111,20 @@ class BlackboardAccessProxy:
     def upsert_document_chunk(self, chunk: DbDocumentChunk) -> None:
         self._require_write()
         self._db.upsert_document_chunk(chunk)
+
+    def append_context_map_event(self, event: ContextMapEvent) -> None:
+        self._require_write()
+        self._db.append_context_map_event(event)
+
+    def write_map_and_mark_processed(
+        self,
+        corpus_key: str,
+        map_json: dict[str, Any],
+        token_count: int,
+        event_ids: list[str],
+    ) -> None:
+        self._require_write()
+        self._db.write_map_and_mark_processed(corpus_key, map_json, token_count, event_ids)
 
     # ---- async wrappers ----
 

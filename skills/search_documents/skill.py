@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING, Any
 
+from harness_poc.core.context_map_events import DocumentRetrieved, SearchFailed
 from harness_poc.core.retrieval import SearchRequest
 from harness_poc.core.skill_context import SkillResult
 from harness_poc.core.vespa_client import LiveVespaDocumentClient
@@ -14,6 +16,7 @@ if TYPE_CHECKING:
 _VALID_MODES = {"hybrid", "semantic", "keyword"}
 _EXCERPT_CHARS = 300
 _PREVIEW_EXCERPT_CHARS = 80
+logger = logging.getLogger(__name__)
 
 
 def _validate_arguments(
@@ -76,6 +79,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     try:
         results = vespa.search(request)
     except Exception as exc:  # noqa: BLE001
+        _append_search_failed_event(ctx, query, mode, exc)
         return SkillResult(
             status="failed",
             content=f"Search failed: {exc}. Is Vespa running? Run index_documents first.",
@@ -95,8 +99,16 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     expand = arguments.get("expand")
     if expand is not None:
         selected = _parse_expand_indices(expand, len(results))
+        if selected:
+            _append_document_retrieved_event(
+                ctx,
+                query,
+                mode,
+                [results[index] for index in selected],
+            )
         return _format_expand(results, selected, query, mode, ctx)
 
+    _append_document_retrieved_event(ctx, query, mode, results)
     return _format_preview(results, query, mode)
 
 
@@ -230,3 +242,44 @@ def _result_artifact(result: SearchResult) -> dict[str, object]:
         "text": result.text,
         "kind": result.kind,
     }
+
+
+def _append_document_retrieved_event(
+    ctx: SkillContext,
+    query: str,
+    mode: str,
+    results: list[SearchResult],
+) -> None:
+    try:
+        ctx.database.append_context_map_event(
+            DocumentRetrieved(
+                session_id=ctx.session_id,
+                corpus_key=f"{ctx.config.project_id}:codebase",
+                query=query,
+                retrieved_doc_ids=[result.chunk_id for result in results],
+                retrieved_doc_titles=[result.title for result in results],
+                retrieval_strategy=mode,
+            )
+        )
+    except (AttributeError, PermissionError):
+        logger.debug("Skipping document_retrieved context-map event", exc_info=True)
+
+
+def _append_search_failed_event(
+    ctx: SkillContext,
+    query: str,
+    mode: str,
+    exc: Exception,
+) -> None:
+    try:
+        ctx.database.append_context_map_event(
+            SearchFailed(
+                session_id=ctx.session_id,
+                corpus_key=f"{ctx.config.project_id}:codebase",
+                attempted_query=query,
+                strategy=mode,
+                error=str(exc),
+            )
+        )
+    except (AttributeError, PermissionError):
+        logger.debug("Skipping search_failed context-map event", exc_info=True)

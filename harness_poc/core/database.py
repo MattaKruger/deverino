@@ -10,8 +10,12 @@ from sqlmodel import Session, col, select
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
+    from harness_poc.core.context_map_events import ContextMapEvent
+
 from harness_poc.core.db_engine import create_db_engine
 from harness_poc.core.models import (
+    DbContextMap,
+    DbContextMapEvent,
     DbDocumentChunk,
     DbDocumentSource,
     DbProjectState,
@@ -373,6 +377,88 @@ class BlackboardDatabase:
                     select(DbDocumentChunk).where(DbDocumentChunk.source_id == source_id)
                 ).all()
             )
+
+    def append_context_map_event(self, event: ContextMapEvent) -> None:
+        with Session(self._engine) as session:
+            session.add(
+                DbContextMapEvent(
+                    event_id=event.event_id,
+                    corpus_key=event.corpus_key,
+                    session_id=event.session_id,
+                    event_type=event.event_type,
+                    payload=event.model_dump_json(),
+                    timestamp=event.timestamp,
+                    processed=0,
+                )
+            )
+            session.commit()
+
+    def get_pending_context_map_events(
+        self, corpus_key: str, limit: int = 50
+    ) -> list[DbContextMapEvent]:
+        with Session(self._engine) as session:
+            return list(
+                session.exec(
+                    select(DbContextMapEvent)
+                    .where(DbContextMapEvent.corpus_key == corpus_key)
+                    .where(DbContextMapEvent.processed == 0)
+                    .order_by(DbContextMapEvent.timestamp)
+                    .limit(limit)
+                ).all()
+            )
+
+    def get_pending_corpus_keys(self) -> list[str]:
+        with Session(self._engine) as session:
+            rows = session.exec(
+                select(DbContextMapEvent.corpus_key)
+                .where(DbContextMapEvent.processed == 0)
+                .distinct()
+            ).all()
+        return list(rows)
+
+    def get_context_map(self, corpus_key: str) -> dict[str, Any] | None:
+        with Session(self._engine) as session:
+            row = session.get(DbContextMap, corpus_key)
+        if row is None:
+            return None
+        try:
+            return json.loads(row.map_json)
+        except json.JSONDecodeError:
+            return None
+
+    def write_map_and_mark_processed(
+        self,
+        corpus_key: str,
+        map_json: dict[str, Any],
+        token_count: int,
+        event_ids: list[str],
+    ) -> None:
+        now = self._utc_now()
+        serialized = json.dumps(map_json, sort_keys=True)
+        with Session(self._engine) as session:
+            row = session.get(DbContextMap, corpus_key)
+            if row is None:
+                session.add(
+                    DbContextMap(
+                        corpus_key=corpus_key,
+                        map_json=serialized,
+                        token_count=token_count,
+                        version=1,
+                        last_updated=now,
+                    )
+                )
+            else:
+                row.map_json = serialized
+                row.token_count = token_count
+                row.version += 1
+                row.last_updated = now
+                session.add(row)
+            for event_id in event_ids:
+                event_row = session.get(DbContextMapEvent, event_id)
+                if event_row is not None:
+                    event_row.processed = 1
+                    session.add(event_row)
+            session.commit()
 
     @staticmethod
     def _utc_now() -> str:

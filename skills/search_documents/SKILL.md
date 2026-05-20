@@ -47,7 +47,7 @@ entrypoint:
   module: skill
   function: execute
 permissions:
-  blackboard: read
+  blackboard: read_write
   workspace: none
 ---
 

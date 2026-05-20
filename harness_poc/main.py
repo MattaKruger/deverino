@@ -20,6 +20,9 @@ async def run_async_main(session_id: str | None = None) -> None:
             max_retries=app_state.config.runtime.max_retries,
             max_tokens=app_state.config.runtime.max_tokens,
         ),
+        app_state.materializer_runner.run_forever()
+        if app_state.materializer_runner is not None
+        else asyncio.sleep(0),
         run_llm_worker(
             app_state.event_bus,
             effective_session_id,
