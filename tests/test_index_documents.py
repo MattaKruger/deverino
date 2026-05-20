@@ -17,6 +17,8 @@ from harness_poc.core.config import (
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.skill_context import SkillContext
+from skills.index_documents.skill import execute
+from tests.test_vespa_client import FakeVespaClient
 
 
 def _make_config(tmp_path: Path, retrieval: RetrievalConfig) -> HarnessConfig:
@@ -54,8 +56,6 @@ def _make_ctx(db: BlackboardDatabase, config: HarnessConfig, session_id: str) ->
 
 
 def test_index_documents_disabled_returns_failed(db_engine: Engine, tmp_path: Path) -> None:
-    from skills.index_documents.skill import execute
-
     cfg = _make_config(tmp_path, RetrievalConfig(enabled=False))
     db = BlackboardDatabase(db_engine)
     session_id = db.start_session("test")
@@ -67,9 +67,6 @@ def test_index_documents_disabled_returns_failed(db_engine: Engine, tmp_path: Pa
 
 
 def test_index_documents_result_has_required_artifacts(db_engine: Engine, tmp_path: Path) -> None:
-    from skills.index_documents.skill import execute
-    from tests.test_vespa_client import FakeVespaClient
-
     doc = tmp_path / "README.md"
     doc.write_text("# Test\nContent here.", encoding="utf-8")
 

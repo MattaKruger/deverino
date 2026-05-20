@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from harness_poc.core.config import RetrievalConfig
 from harness_poc.core.retrieval import (
     FeedSummary,
     SearchRequest,
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
 class FakeVespaClient:
     """In-memory Vespa substitute for unit tests."""
 
-    def __init__(self, healthy: bool = True) -> None:
+    def __init__(self, *, healthy: bool = True) -> None:
         self._healthy = healthy
         self._docs: dict[str, DocumentChunk] = {}
         self.fed_ids: list[str] = []
@@ -69,8 +70,6 @@ def test_fake_client_satisfies_protocol() -> None:
 
 
 def test_live_client_satisfies_protocol() -> None:
-    from harness_poc.core.config import RetrievalConfig
-
     client = LiveVespaDocumentClient(RetrievalConfig())
     assert isinstance(client, VespaDocumentClient)
 

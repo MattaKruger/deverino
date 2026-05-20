@@ -10,22 +10,12 @@ from harness_poc.core.document_index import DocumentIndexer
 from tests.test_vespa_client import FakeVespaClient
 
 
-def _make_config(**overrides: object) -> RetrievalConfig:
-    defaults = {
-        "chunk_size_chars": 100,
-        "chunk_overlap_chars": 10,
-    }
-    defaults.update(overrides)
-    return RetrievalConfig(**defaults)
-
-
 def _make_indexer(
     db: BlackboardDatabase,
     vespa: FakeVespaClient,
-    **config_overrides: object,
 ) -> DocumentIndexer:
     return DocumentIndexer(
-        config=_make_config(**config_overrides),
+        config=RetrievalConfig(chunk_size_chars=100, chunk_overlap_chars=10),
         database=db,
         vespa_client=vespa,
     )

@@ -14,6 +14,9 @@ from harness_poc.core.retrieval import (
     SearchResult,
 )
 
+HTTP_OK = 200
+HTTP_CREATED = 201
+
 
 class LiveVespaDocumentClient:
     """Thin pyvespa adapter implementing the VespaDocumentClient protocol."""
@@ -26,16 +29,17 @@ class LiveVespaDocumentClient:
         self._timeout = config.query_timeout_seconds
 
     def health_check(self) -> None:
-        from vespa.application import Vespa
+        from vespa.application import Vespa  # noqa: PLC0415
 
         app = Vespa(url=self._url)
         response = app.get_application_status()
-        if response.status_code != 200:
-            msg = f"Vespa health check failed: HTTP {response.status_code}"
+        status_code = response.status_code if response is not None else None
+        if status_code != HTTP_OK:
+            msg = f"Vespa health check failed: HTTP {status_code}"
             raise RuntimeError(msg)
 
     def feed_chunks(self, chunks: Iterable[DocumentChunk]) -> FeedSummary:
-        from vespa.application import Vespa
+        from vespa.application import Vespa  # noqa: PLC0415
 
         app = Vespa(url=self._url)
         fed = 0
@@ -60,7 +64,7 @@ class LiveVespaDocumentClient:
                     fields=fields,
                     namespace=self._namespace,
                 )
-                if response.status_code in (200, 201):
+                if response.status_code in (HTTP_OK, HTTP_CREATED):
                     fed += 1
                 else:
                     failed += 1
@@ -68,13 +72,15 @@ class LiveVespaDocumentClient:
         return FeedSummary(fed=fed, failed=failed, failed_ids=failed_ids)
 
     def delete_source(self, source_id: str) -> None:
-        from vespa.application import Vespa
+        from vespa.application import Vespa  # noqa: PLC0415
 
         app = Vespa(url=self._url)
         with app.syncio() as session:
             result = session.query(
                 body={
-                    "yql": f"select chunk_id from {self._schema} where source_id = @source_id",
+                    "yql": (
+                        f"select chunk_id from {self._schema} where source_id = @source_id"  # noqa: S608
+                    ),
                     "source_id": source_id,
                     "hits": 10_000,
                     "timeout": str(self._timeout),
@@ -89,7 +95,7 @@ class LiveVespaDocumentClient:
                 )
 
     def search(self, request: SearchRequest) -> list[SearchResult]:
-        from vespa.application import Vespa
+        from vespa.application import Vespa  # noqa: PLC0415
 
         body = _build_query_body(request, schema=self._schema, timeout=self._timeout)
         app = Vespa(url=self._url)
@@ -114,7 +120,7 @@ def _build_query_body(request: SearchRequest, schema: str, timeout: int) -> dict
     if request.mode == "keyword":
         where = f"default contains ({{targetHits:100}}text(@query)){filter_str}"
         body: dict = {
-            "yql": f"select * from {schema} where {where}",
+            "yql": f"select * from {schema} where {where}",  # noqa: S608
             "query": request.query,
             "ranking.profile": "keyword",
             "hits": request.hits,
@@ -123,7 +129,7 @@ def _build_query_body(request: SearchRequest, schema: str, timeout: int) -> dict
     elif request.mode == "semantic":
         where = f"({{targetHits:20}}nearestNeighbor(embedding,q)){filter_str}"
         body = {
-            "yql": f"select * from {schema} where {where}",
+            "yql": f"select * from {schema} where {where}",  # noqa: S608
             "query": request.query,
             "input.query(q)": "embed(@query)",
             "ranking.profile": "semantic",
@@ -136,7 +142,7 @@ def _build_query_body(request: SearchRequest, schema: str, timeout: int) -> dict
             f" or ({{targetHits:20}}nearestNeighbor(embedding,q))){filter_str}"
         )
         body = {
-            "yql": f"select * from {schema} where {where}",
+            "yql": f"select * from {schema} where {where}",  # noqa: S608
             "query": request.query,
             "input.query(q)": "embed(@query)",
             "ranking.profile": "hybrid",

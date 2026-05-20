@@ -46,6 +46,7 @@ class DocumentIndexer:
         project_root: Path,
         paths: list[str],
         glob_pattern: str = "**/*",
+        *,
         force: bool = False,
     ) -> IndexResult:
         result = IndexResult()
@@ -53,7 +54,7 @@ class DocumentIndexer:
 
         try:
             self._vespa.health_check()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             for raw_path in paths:
                 uri = raw_path
                 source_id = make_source_id(uri)
@@ -81,10 +82,12 @@ class DocumentIndexer:
                 uri = str(file_path.relative_to(resolved_root))
             except ValueError:
                 result.failed += 1
-                result.failures.append({"uri": str(file_path), "error": "path outside project root"})
+                result.failures.append(
+                    {"uri": str(file_path), "error": "path outside project root"}
+                )
                 continue
 
-            self._index_one(file_path, uri, force, result)
+            self._index_one(file_path, uri, force=force, result=result)
 
         return result
 
@@ -92,6 +95,7 @@ class DocumentIndexer:
         self,
         file_path: Path,
         uri: str,
+        *,
         force: bool,
         result: IndexResult,
     ) -> None:
@@ -107,10 +111,13 @@ class DocumentIndexer:
 
         try:
             if file_path.stat().st_size > MAX_FILE_BYTES:
-                msg = f"file exceeds {MAX_FILE_BYTES} bytes"
-                raise ValueError(msg)
+                result.failed += 1
+                result.failures.append(
+                    {"uri": uri, "error": f"file exceeds {MAX_FILE_BYTES} bytes"}
+                )
+                return
             text = file_path.read_text(encoding="utf-8", errors="replace")
-        except Exception as exc:
+        except (OSError, UnicodeError) as exc:
             result.failed += 1
             result.failures.append({"uri": uri, "error": str(exc)})
             return
@@ -222,9 +229,11 @@ class DocumentIndexer:
                 files.append(path)
             elif path.is_dir():
                 for child in path.rglob(glob_pattern):
-                    child = child.resolve()
-                    if child.is_file() and not _in_ignored_dir(child, project_root):
-                        files.append(child)
+                    resolved_child = child.resolve()
+                    if resolved_child.is_file() and not _in_ignored_dir(
+                        resolved_child, project_root
+                    ):
+                        files.append(resolved_child)
         return files
 
 
@@ -250,7 +259,7 @@ def _infer_kind(uri: str) -> str:
     return "source"
 
 
-def _make_db_source(
+def _make_db_source(  # noqa: PLR0913
     source_id: str,
     uri: str,
     content_hash: str,
