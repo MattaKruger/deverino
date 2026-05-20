@@ -1,0 +1,4 @@
+<validation-overrides>
+    <allow until="2026-06-18">field-type-change</allow>
+    <allow until="2026-06-18">hnsw-settings-change</allow>
+</validation-overrides>

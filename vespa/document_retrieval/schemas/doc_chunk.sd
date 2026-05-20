@@ -37,10 +37,10 @@ schema doc_chunk {
         }
     }
 
-    field embedding type tensor<bfloat16>(x[384]) {
+    field embedding type tensor<bfloat16>(x[1024]) {
         indexing: input text | embed | attribute | index
         attribute {
-            distance-metric: angular
+            distance-metric: prenormalized-angular
         }
         index {
             hnsw {
@@ -56,7 +56,7 @@ schema doc_chunk {
 
     rank-profile semantic {
         inputs {
-            query(q) tensor<bfloat16>(x[384])
+            query(q) tensor<bfloat16>(x[1024])
         }
         first-phase {
             expression: closeness(field, embedding)
@@ -71,7 +71,7 @@ schema doc_chunk {
 
     rank-profile hybrid {
         inputs {
-            query(q) tensor<bfloat16>(x[384])
+            query(q) tensor<bfloat16>(x[1024])
         }
         first-phase {
             expression: closeness(field, embedding) * (1 + bm25(title) + bm25(text))
