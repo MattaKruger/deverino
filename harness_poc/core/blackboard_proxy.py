@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from harness_poc.core.database import BlackboardDatabase
+    from harness_poc.core.models import DbDocumentChunk, DbDocumentSource
     from harness_poc.core.permissions import SkillPermissions
     from harness_poc.core.state import StatePayload, StateProposal
 
@@ -79,6 +80,30 @@ class BlackboardAccessProxy:
     ) -> StatePayload:
         self._require_write()
         return self._db.approve_state_proposal(proposal_id, project_id)
+
+    # ---- document metadata read methods ----
+
+    def get_document_source(self, source_id: str) -> DbDocumentSource | None:
+        self._require_read()
+        return self._db.get_document_source(source_id)
+
+    def list_document_sources(self) -> list[DbDocumentSource]:
+        self._require_read()
+        return self._db.list_document_sources()
+
+    def list_chunks_for_source(self, source_id: str) -> list[DbDocumentChunk]:
+        self._require_read()
+        return self._db.list_chunks_for_source(source_id)
+
+    # ---- document metadata write methods ----
+
+    def upsert_document_source(self, source: DbDocumentSource) -> None:
+        self._require_write()
+        self._db.upsert_document_source(source)
+
+    def upsert_document_chunk(self, chunk: DbDocumentChunk) -> None:
+        self._require_write()
+        self._db.upsert_document_chunk(chunk)
 
     # ---- async wrappers ----
 

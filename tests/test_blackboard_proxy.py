@@ -7,6 +7,7 @@ from sqlalchemy import Engine
 
 from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 from harness_poc.core.database import BlackboardDatabase
+from harness_poc.core.models import DbDocumentSource
 from harness_poc.core.permissions import SkillPermissions
 
 
@@ -82,3 +83,65 @@ def test_all_blocked_with_none_permission(db: BlackboardDatabase) -> None:
         proxy.read_memory("s1", "key")
     with pytest.raises(PermissionError):
         proxy.write_memory("s1", "key", "value")
+
+
+# ---- Task 4: document metadata proxy tests ----
+
+
+def _make_doc_source(sid: str = "src-a") -> DbDocumentSource:
+    return DbDocumentSource(
+        source_id=sid,
+        uri=f"docs/{sid}.md",
+        title="Doc",
+        kind="doc",
+        content_hash="abc",
+        status="indexed",
+        chunk_count=1,
+        metadata_payload={},
+        updated_at="2026-05-20T00:00:00",
+    )
+
+
+def test_proxy_get_document_source_requires_read(db_engine: Engine) -> None:
+    db = BlackboardDatabase(db_engine)
+    perms = SkillPermissions.from_yaml({"blackboard": "none", "workspace": "none"})
+    proxy = BlackboardAccessProxy(db, perms)
+    with pytest.raises(PermissionError):
+        proxy.get_document_source("src-a")
+
+
+def test_proxy_list_document_sources_requires_read(db_engine: Engine) -> None:
+    db = BlackboardDatabase(db_engine)
+    perms = SkillPermissions.from_yaml({"blackboard": "none", "workspace": "none"})
+    proxy = BlackboardAccessProxy(db, perms)
+    with pytest.raises(PermissionError):
+        proxy.list_document_sources()
+
+
+def test_proxy_upsert_document_source_requires_write(db_engine: Engine) -> None:
+    db = BlackboardDatabase(db_engine)
+    perms = SkillPermissions.from_yaml({"blackboard": "read", "workspace": "none"})
+    proxy = BlackboardAccessProxy(db, perms)
+    with pytest.raises(PermissionError):
+        proxy.upsert_document_source(_make_doc_source())
+
+
+def test_proxy_upsert_document_source_with_write_permission(db_engine: Engine) -> None:
+    db = BlackboardDatabase(db_engine)
+    perms = SkillPermissions.from_yaml({"blackboard": "read_write", "workspace": "none"})
+    proxy = BlackboardAccessProxy(db, perms)
+    proxy.upsert_document_source(_make_doc_source("src-z"))
+    result = proxy.get_document_source("src-z")
+    assert result is not None
+    assert result.status == "indexed"
+
+
+def test_proxy_list_document_sources_with_read_permission(db_engine: Engine) -> None:
+    db = BlackboardDatabase(db_engine)
+    db.upsert_document_source(_make_doc_source("src-1"))
+    proxy_r = BlackboardAccessProxy(
+        db,
+        SkillPermissions.from_yaml({"blackboard": "read", "workspace": "none"}),
+    )
+    sources = proxy_r.list_document_sources()
+    assert any(s.source_id == "src-1" for s in sources)
