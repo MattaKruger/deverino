@@ -8,7 +8,9 @@ Vespa-backed document retrieval.
 The project is intentionally experimental, but the runtime pieces are concrete:
 agents and tools communicate through typed durable events, skills use explicit
 permission metadata, and document search returns cited chunks from a Vespa
-schema built for hybrid retrieval.
+schema built for hybrid retrieval. It also includes a PEEK-inspired context map:
+an event-sourced orientation cache that is materialized in the background and
+injected into the system prompt when available.
 
 ## Quickstart
 
@@ -47,12 +49,18 @@ uv run harness-poc pipeline run research_and_write --input topic="black holes"
 Main configuration lives in `harness.yaml`.
 
 ```yaml
+project:
+  id: deverino
+
 llm:
   provider: deepseek # deepseek | openai | anthropic
   model: deepseek-v4-flash
 
 runtime:
   database_url: postgresql://deverino:deverino@localhost/deverino
+  materializer_poll_interval: 30
+  materializer_max_event_tokens: 8000
+  materializer_token_budget: 1024
 
 retrieval:
   enabled: true
@@ -123,6 +131,61 @@ Use search_documents with {"query":"state consolidation proposals","mode":"hybri
 
 Search results are formatted as cited chunks such as `docs/example.md#chunk-2`.
 
+## PEEK Context Map
+
+Deverino implements an event-sourced version of the PEEK context map idea: a
+small, fixed-budget orientation cache that helps the agent remember how to
+navigate a corpus without stuffing full retrieval traces into every prompt.
+
+The implementation keeps the PEEK pipeline shape while decoupling it from the
+foreground chat loop:
+
+```text
+agent/tool activity
+  -> typed context-map events in PostgreSQL
+  -> context-map-materializer skill
+  -> Distiller -> Cartographer -> Evictor
+  -> compact context_map row
+  -> next app/session prompt includes the stored map
+```
+
+Current context-map components:
+
+- typed Pydantic event models in `harness_poc/core/context_map_events.py`
+- PostgreSQL tables `context_map_events` and `context_map`
+- `append_event` system skill for manually appending typed events
+- `context-map-materializer` project skill for Distiller, Cartographer, and
+  budget enforcement passes
+- `MaterializerRunner`, started by the TUI and main async runtime, which polls
+  pending corpus keys and materializes them in the background
+- automatic `document_retrieved` and `search_failed` events from
+  `search_documents`
+- prompt injection of the stored context map during app-state creation
+
+Context maps are keyed by corpus, using the configured project id. App startup
+currently injects the `deverino:default` map when present; `search_documents`
+emits document-retrieval events under `deverino:codebase`. The manual event
+skill accepts explicit corpus keys:
+
+```text
+/skill append_event {
+  "event_type":"entity_referenced",
+  "corpus_key":"deverino:default",
+  "payload":{
+    "entity_name":"DocumentIndexer",
+    "entity_type":"class",
+    "context":"Coordinates file chunking, Vespa feed, and PostgreSQL metadata."
+  }
+}
+```
+
+Run the materializer directly when you do not want to wait for the background
+poller:
+
+```text
+/skill context-map-materializer {"corpus_key":"deverino:default","token_budget":1024}
+```
+
 ## CLI
 
 ```bash
@@ -143,6 +206,7 @@ uv run harness-poc documents index docs --glob "*.md" --force
 # Skills and tools
 uv run harness-poc skill list
 uv run harness-poc skill show index_documents
+uv run harness-poc skill show context-map-materializer
 uv run harness-poc tool list
 
 # State
@@ -203,6 +267,8 @@ harness_poc/
 │   ├── pydantic_runtime.py # PydanticAI streaming/tool runtime
 │   ├── pipeline_runner.py  # Wave-based DAG execution
 │   ├── workflow_runner.py  # YAML workflow execution
+│   ├── context_map_events.py # PEEK-style context-map event models
+│   ├── materializer_runner.py # Background context-map materializer poller
 │   ├── retrieval.py        # Retrieval domain models and chunking
 │   ├── document_index.py   # File/PDF indexing into retrieval chunks
 │   ├── vespa_client.py     # pyvespa adapter
@@ -234,6 +300,12 @@ Events are Pydantic models persisted through `EventStore` and published through
 `EventBus`. Reducers derive session snapshots from durable events so workers can
 rebuild state without holding private cross-loop mutable state.
 
+The context-map subsystem uses its own event log in the blackboard. Tool and
+skill activity appends typed orientation events, and the background materializer
+turns unprocessed events into a compact map that is loaded into future system
+prompts. This map is a cache, not a source of truth; if materialization fails,
+events remain unprocessed and are retried on a later poll.
+
 The TUI and pipeline agent nodes still use the tested `GoalRunner` path for some
 flows while the migration settles. `GoalRunner` includes semantic retry
 detection, context-window compression, budget enforcement, and `evaluate_goal`
@@ -261,6 +333,8 @@ Common built-in tools and project tools:
 | `read_memory` | Read blackboard memory |
 | `web_search` | LangSearch-backed web search |
 | `semble_search` | Semantic code search |
+| `append_event` | Append typed context-map events |
+| `context-map-materializer` | Materialize context-map events into a prompt cache |
 | `index_documents` | Feed project documents into Vespa |
 | `search_documents` | Search indexed Vespa chunks |
 | `review_work` | Review the current working tree |
@@ -335,6 +409,7 @@ uv run ty check
 
 uv run pytest tests/test_document_index.py -v
 uv run pytest tests/test_vespa_client.py tests/test_search_documents.py -v
+uv run pytest tests/test_context_map.py -v
 uv run pytest tests/test_event_bus.py tests/test_event_store.py -v
 ```
 
@@ -344,7 +419,8 @@ Live Vespa integration tests are opt-in:
 VESPA_INTEGRATION=1 uv run pytest tests/test_vespa_integration.py -v
 ```
 
-Recent full-suite baseline during this README update: `311 passed, 5 skipped`.
+Recent full-suite baseline during the context-map implementation:
+`326 passed, 5 skipped`.
 
 ## Creating Skills
 

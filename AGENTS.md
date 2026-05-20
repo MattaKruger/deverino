@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository contains a Python 3.12 proof-of-concept LLM agent harness backed by a SQLite blackboard.
+This repository contains a Python 3.12 proof-of-concept LLM agent harness backed by a PostgreSQL blackboard.
 
 - `harness_poc/` contains the application package. `main.py` is the entrypoint, `cli.py` defines the Typer CLI, `repl.py` handles the interactive shell, and `core/` contains config, database, LLM, skill, and workflow runtime code.
 - `harness_poc/system_skills/` stores built-in skills. `skills/` stores project-local skills. Each skill lives in its own directory with `SKILL.md`, `__init__.py`, and usually `skill.py`.
@@ -35,7 +35,7 @@ This checkout has no Git history, so follow conventional, imperative commit mess
 
 ## Security & Configuration Tips
 
-Configuration lives in `harness.yaml`. Treat `harness_poc/blackboard.db` as local runtime state, not source data. Do not commit secrets or API keys; use environment variables for provider credentials.
+Configuration lives in `harness.yaml`. The runtime blackboard is PostgreSQL, configured by `runtime.database_url`; treat that database as local runtime state, not source data. Do not commit secrets or API keys; use environment variables for provider credentials.
 
 ## Code Search
 
