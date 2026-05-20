@@ -4,7 +4,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
@@ -58,8 +58,8 @@ class EventStore:
                 .where(DbStateEvent.scope_id == session_id)
             )
             if type_names:
-                stmt = stmt.where(DbStateEvent.event_type.in_(type_names))
-            stmt = stmt.order_by(DbStateEvent.id.desc()).limit(limit)  # type: ignore[arg-type]
+                stmt = stmt.where(col(DbStateEvent.event_type).in_(type_names))
+            stmt = stmt.order_by(col(DbStateEvent.id).desc()).limit(limit)
             rows = session.exec(stmt).all()
 
         events: list[BaseEvent] = []

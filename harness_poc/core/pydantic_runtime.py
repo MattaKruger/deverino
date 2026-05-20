@@ -158,7 +158,10 @@ class PydanticAgentRuntime:
                     async with node.stream(agent_run.ctx) as request_stream:
                         async for event in request_stream:
                             if isinstance(event, PartStartEvent):
-                                if isinstance(event.part, TextPart) and event.part.content:
+                                if (
+                                    isinstance(event.part, TextPart)
+                                    and event.part.content
+                                ):
                                     if on_text is not None:
                                         on_text(event.part.content)
                                     turn_chunks.append(event.part.content)
@@ -194,8 +197,14 @@ class PydanticAgentRuntime:
                     "Refine your query for better results.]"
                 )
 
-            result_output = agent_run.result.output if agent_run.result else None
-            output = str(result_output) if result_output is not None else "".join(all_output_parts)
+            result_output = (
+                agent_run.result.output if agent_run.result else None
+            )
+            output = (
+                str(result_output)
+                if result_output is not None
+                else "".join(all_output_parts)
+            )
 
             if not capped and agent_run.result is not None:
                 usage = _usage_to_dict(agent_run.result.usage)
@@ -223,7 +232,9 @@ def build_model(  # noqa: PLR0911
     if config.provider == "anthropic":
         api_key = api_settings.anthropic_api_key
         if not api_key:
-            logger.info("No Anthropic API key configured; using fallback PydanticAI model")
+            logger.info(
+                "No Anthropic API key configured; using fallback PydanticAI model"
+            )
             return fallback_model or TestModel(call_tools=[])
         logger.debug(
             "Building Anthropic-backed PydanticAI model",
@@ -237,7 +248,9 @@ def build_model(  # noqa: PLR0911
     if config.provider == "deepseek":
         api_key = api_settings.deepseek_api_key
         if not api_key:
-            logger.info("No DeepSeek API key configured; using fallback PydanticAI model")
+            logger.info(
+                "No DeepSeek API key configured; using fallback PydanticAI model"
+            )
             return fallback_model or TestModel(call_tools=[])
         logger.debug(
             "Building DeepSeek-backed PydanticAI model",
@@ -252,7 +265,9 @@ def build_model(  # noqa: PLR0911
     if config.provider == "openai":
         api_key = api_settings.openai_api_key
         if not api_key:
-            logger.info("No OpenAI API key configured; using fallback PydanticAI model")
+            logger.info(
+                "No OpenAI API key configured; using fallback PydanticAI model"
+            )
             return fallback_model or TestModel(call_tools=[])
         provider_kwargs: dict[str, Any] = {"api_key": api_key}
         if config.base_url:
@@ -324,6 +339,7 @@ def build_runtime(  # noqa: PLR0913
     model: Model | None = None,
     enable_tools: bool = True,
     blocked_skills: frozenset[str] | None = None,
+    skill_catalog: str = "",
 ) -> PydanticAgentRuntime:
     deps = AgentDeps(
         session_id=session_id,
@@ -333,9 +349,14 @@ def build_runtime(  # noqa: PLR0913
         tool_runner=tool_runner,
     )
 
+    # Augment system prompt with skill catalog if available
+    full_prompt = system_prompt
+    if skill_catalog:
+        full_prompt = f"{system_prompt}\n\n{skill_catalog}"
+
     return PydanticAgentRuntime(
         agent=build_primary_agent(
-            system_prompt=system_prompt,
+            system_prompt=full_prompt,
             skill_runner=skill_runner,
             tool_runner=tool_runner,
             llm=llm,
@@ -444,7 +465,9 @@ def _make_builtin_tool(
         ctx: RunContext[AgentDeps],
         **arguments: object,
     ) -> str:
-        return _execute_builtin_tool(ctx, tool_name, cast("dict[str, Any]", arguments))
+        return _execute_builtin_tool(
+            ctx, tool_name, cast("dict[str, Any]", arguments)
+        )
 
     execute_builtin_tool.__name__ = f"execute_{tool_name}_builtin"
     return execute_builtin_tool
@@ -457,7 +480,9 @@ def _execute_builtin_tool(
 ) -> str:
     """Route a built-in tool call through the ToolRunner."""
     if ctx.deps.tool_runner is None:
-        return json.dumps({"error": f"Tool runner not available for {tool_name}"})
+        return json.dumps(
+            {"error": f"Tool runner not available for {tool_name}"}
+        )
 
     _emit_tool_progress(ctx, f"  {tool_name}: {_summarise_args(arguments)} ...")
     try:
@@ -469,7 +494,9 @@ def _execute_builtin_tool(
     except Exception:
         _emit_tool_progress(ctx, f"  {tool_name}: FAILED")
         logger.exception("Built-in tool execution raised: %s", tool_name)
-        return json.dumps({"error": f"Tool {tool_name} raised an unexpected error."})
+        return json.dumps(
+            {"error": f"Tool {tool_name} raised an unexpected error."}
+        )
 
     _emit_tool_progress(ctx, f"  {tool_name}: done")
     return result
@@ -525,7 +552,9 @@ def execute_skill_as_tool(
         )
 
     # Stream progress so the user sees tool activity during execution.
-    _emit_tool_progress(ctx, f"  {skill_name}: {_summarise_args(arguments)} ...")
+    _emit_tool_progress(
+        ctx, f"  {skill_name}: {_summarise_args(arguments)} ..."
+    )
     try:
         result = ctx.deps.skill_runner.execute_skill(
             tool_name=skill_name,
@@ -617,7 +646,9 @@ def _usage_to_dict(usage: RunUsage) -> Usage:
     return {
         "prompt_tokens": int(usage.input_tokens or 0),
         "completion_tokens": int(usage.output_tokens or 0),
-        "total_tokens": int((usage.input_tokens or 0) + (usage.output_tokens or 0)),
+        "total_tokens": int(
+            (usage.input_tokens or 0) + (usage.output_tokens or 0)
+        ),
     }
 
 
@@ -673,7 +704,9 @@ def chat_text(
             user_parts.append(msg["content"])
 
     system_prompt = "\n\n".join(system_parts)
-    prompt = "\n\n".join(msg["content"] for msg in messages if msg["role"] != "system")
+    prompt = "\n\n".join(
+        msg["content"] for msg in messages if msg["role"] != "system"
+    )
 
     agent = Agent(model, system_prompt=system_prompt)
     result = agent.run_sync(prompt)

@@ -34,8 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class ToolRunner:
-    """Discover and execute built-in tools from ``system_tools/`` and
-    tool-level skills from ``system_skills/``.
+    """Discover and execute built-in tools.
 
     During the migration period (Phase 2), ToolRunner also scans
     ``system_skills/`` and ``project_skills/`` for SKILL.md files
@@ -72,9 +71,7 @@ class ToolRunner:
                     continue
                 module_name = f"harness_poc.system_tools.{py_file.stem}"
                 try:
-                    spec = importlib.util.spec_from_file_location(
-                        module_name, py_file
-                    )
+                    spec = importlib.util.spec_from_file_location(module_name, py_file)
                     if spec is None or spec.loader is None:
                         logger.warning("Could not load tool module: %s", py_file)
                         continue
@@ -165,9 +162,7 @@ class ToolRunner:
             return _json.dumps({"error": f"Invalid arguments for {tool_name}: {e}"})
         except Exception:
             logger.exception("Tool execution failed: %s", tool_name)
-            return _json.dumps(
-                {"error": f"Tool {tool_name} raised an unexpected error."}
-            )
+            return _json.dumps({"error": f"Tool {tool_name} raised an unexpected error."})
 
         if isinstance(result, ToolResult):
             return _json.dumps(result.to_dict(), ensure_ascii=False)
@@ -190,6 +185,7 @@ class ToolRunner:
 # Internal: scan system_skills/ for type:tool entries
 # ------------------------------------------------------------------
 
+
 def _discover_tool_skills(
     skills_dir: Path,
     _skill_runner: SkillRunner | None,
@@ -209,9 +205,7 @@ def _discover_tool_skills(
 
     for skill_file in sorted(skills_dir.glob("*/SKILL.md")):
         try:
-            ftype, name, description, params = _parse_skill_frontmatter(
-                skill_file, yaml
-            )
+            ftype, name, description, params = _parse_skill_frontmatter(skill_file, yaml)
         except (OSError, ValueError, TypeError, KeyError):
             logger.debug("Skipping unparseable skill: %s", skill_file)
             continue
@@ -236,8 +230,7 @@ def _parse_skill_frontmatter(
     skill_file: Path,
     yaml_module: Any,  # noqa: ANN401
 ) -> tuple[str, str, str, dict[str, Any]]:
-    """Extract ``type``, ``name``, ``description``, and ``parameters``
-    from a SKILL.md YAML frontmatter.
+    """Extract fields from a SKILL.md YAML frontmatter.
 
     Returns ``("skill", ...)`` with empty description/params on parse failure
     so callers can skip without crashing.

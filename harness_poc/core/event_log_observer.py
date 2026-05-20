@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
@@ -34,12 +34,12 @@ def fetch_event_log_rows(
         raise ValueError(msg)
 
     with Session(engine) as session:
-        stmt = select(DbStateEvent).where(DbStateEvent.id > after_id)  # type: ignore[operator]
+        stmt = select(DbStateEvent).where(col(DbStateEvent.id) > after_id)
         if session_id:
             stmt = stmt.where(DbStateEvent.scope_id == session_id)
         if event_types:
-            stmt = stmt.where(DbStateEvent.event_type.in_(event_types))
-        stmt = stmt.order_by(DbStateEvent.id.asc())  # type: ignore[arg-type]
+            stmt = stmt.where(col(DbStateEvent.event_type).in_(event_types))
+        stmt = stmt.order_by(col(DbStateEvent.id).asc())
         if limit is not None:
             stmt = stmt.limit(limit)
         rows = session.exec(stmt).all()
@@ -63,8 +63,8 @@ def fetch_latest_event_log_rows(
         if session_id:
             stmt = stmt.where(DbStateEvent.scope_id == session_id)
         if event_types:
-            stmt = stmt.where(DbStateEvent.event_type.in_(event_types))
-        stmt = stmt.order_by(DbStateEvent.id.desc()).limit(limit)  # type: ignore[arg-type]
+            stmt = stmt.where(col(DbStateEvent.event_type).in_(event_types))
+        stmt = stmt.order_by(col(DbStateEvent.id).desc()).limit(limit)
         rows = session.exec(stmt).all()
 
     return [_to_event_log_row(row) for row in reversed(rows)]
@@ -77,7 +77,9 @@ def render_event_log_row(
     json_output: bool = False,
 ) -> str:
     if json_output:
-        return json.dumps(_row_to_dict(row, include_payload=True), sort_keys=True)
+        return json.dumps(
+            _row_to_dict(row, include_payload=True), sort_keys=True
+        )
 
     summary = _event_summary(row).strip()
     line = f"{row.id:06d} {row.created_at} {row.session_id} {row.event_type}"
@@ -85,7 +87,9 @@ def render_event_log_row(
         summary_suffix = f" {summary}" if summary else ""
         return f"{line}{summary_suffix}"
 
-    payload = json.dumps(row.payload, ensure_ascii=False, indent=2, sort_keys=True)
+    payload = json.dumps(
+        row.payload, ensure_ascii=False, indent=2, sort_keys=True
+    )
     payload_lines = "\n".join(f"    {pl}" for pl in payload.splitlines())
     header_lines = [
         f"{row.id:06d} {row.event_type}",
@@ -113,7 +117,9 @@ def _to_event_log_row(row: DbStateEvent) -> EventLogRow:
 def _event_summary(row: EventLogRow) -> str:
     payload = row.payload
     if row.event_type == "AgentInputAdded":
-        return _format_fields(user_content=_truncate(str(payload.get("user_content", ""))))
+        return _format_fields(
+            user_content=_truncate(str(payload.get("user_content", "")))
+        )
     if row.event_type in {"SkillCalled", "SkillRequested", "SkillCompleted"}:
         skill_name = payload.get("skill_name") or payload.get("tool_name") or ""
         status = str(payload.get("status", ""))
@@ -125,7 +131,9 @@ def _event_summary(row: EventLogRow) -> str:
             billable=str(payload.get("billable_tokens", "")),
         )
     if row.event_type == "LLMTextEmitted":
-        return _format_fields(content=_truncate(str(payload.get("content", ""))))
+        return _format_fields(
+            content=_truncate(str(payload.get("content", "")))
+        )
     if row.event_type == "StreamPaused":
         return _format_fields(
             reason=str(payload.get("reason", "")),

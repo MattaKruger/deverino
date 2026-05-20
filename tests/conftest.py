@@ -24,9 +24,7 @@ def _db_engine_session() -> Engine:
 @pytest.fixture
 def db_engine(_db_engine_session: Engine) -> Engine:
     """Return a clean engine with all tables truncated before each test."""
-    table_names = ", ".join(
-        f'"{t.name}"' for t in reversed(SQLModel.metadata.sorted_tables)
-    )
+    table_names = ", ".join(f'"{t.name}"' for t in reversed(SQLModel.metadata.sorted_tables))
     with _db_engine_session.begin() as conn:
         conn.execute(text(f"TRUNCATE {table_names} RESTART IDENTITY CASCADE"))
     return _db_engine_session

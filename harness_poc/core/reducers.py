@@ -4,7 +4,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 import polars as pl
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from harness_poc.core.models import DbSessionSnapshot, DbStateEvent
 
@@ -34,8 +34,8 @@ def _derive_session_state_sync(engine: Engine, session_id: str) -> dict[str, Any
             select(DbStateEvent)
             .where(DbStateEvent.scope == "session")
             .where(DbStateEvent.scope_id == session_id)
-            .where(DbStateEvent.id > last_offset)  # type: ignore[operator]
-            .order_by(DbStateEvent.id.asc())  # type: ignore[arg-type]
+            .where(col(DbStateEvent.id) > last_offset)
+            .order_by(col(DbStateEvent.id).asc())
         ).all()
 
         if event_rows:
@@ -111,7 +111,7 @@ def _normalise_event_row(row: DbStateEvent) -> dict[str, Any]:
 
 def _initial_state(payload: object) -> dict[str, Any]:
     if isinstance(payload, dict):
-        return dict(payload)
+        return {str(key): value for key, value in payload.items()}
     return {
         "total_tokens": 0,
         "consecutive_skill_failures": 0,

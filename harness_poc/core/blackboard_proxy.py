@@ -22,7 +22,9 @@ class BlackboardAccessProxy:
     it must be mirrored here (or the skill will get a raw ``AttributeError``).
     """
 
-    def __init__(self, db: BlackboardDatabase, permissions: SkillPermissions) -> None:
+    def __init__(
+        self, db: BlackboardDatabase, permissions: SkillPermissions
+    ) -> None:
         self._db = db
         self._permissions = permissions
 
@@ -46,7 +48,9 @@ class BlackboardAccessProxy:
 
     # ---- read methods (allowed with "read" or "read_write") ----
 
-    def read_memory(self, session_id: str, key: str) -> dict[str, Any] | str | None:
+    def read_memory(
+        self, session_id: str, key: str
+    ) -> dict[str, Any] | str | None:
         self._require_read()
         return self._db.read_memory(session_id, key)
 
@@ -56,7 +60,9 @@ class BlackboardAccessProxy:
 
     # ---- write methods (allowed only with "read_write") ----
 
-    def write_memory(self, session_id: str, key: str, payload: str | dict[str, Any]) -> None:
+    def write_memory(
+        self, session_id: str, key: str, payload: str | dict[str, Any]
+    ) -> None:
         self._require_write()
         self._db.write_memory(session_id, key, payload)
 
@@ -68,13 +74,17 @@ class BlackboardAccessProxy:
         self._require_write()
         return self._db.create_state_proposal(session_id)
 
-    def approve_state_proposal(self, proposal_id: str, project_id: str = "default") -> StatePayload:
+    def approve_state_proposal(
+        self, proposal_id: str, project_id: str = "default"
+    ) -> StatePayload:
         self._require_write()
         return self._db.approve_state_proposal(proposal_id, project_id)
 
     # ---- async wrappers ----
 
-    async def read_memory_async(self, session_id: str, key: str) -> dict[str, Any] | str | None:
+    async def read_memory_async(
+        self, session_id: str, key: str
+    ) -> dict[str, Any] | str | None:
         self._require_read()
         return await asyncio.to_thread(self._db.read_memory, session_id, key)
 

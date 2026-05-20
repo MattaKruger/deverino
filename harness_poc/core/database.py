@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
@@ -55,9 +55,13 @@ class BlackboardDatabase:
             session.commit()
         return session_id
 
-    def write_memory(self, session_id: str, key: str, payload: str | dict[str, Any]) -> None:
+    def write_memory(
+        self, session_id: str, key: str, payload: str | dict[str, Any]
+    ) -> None:
         data_payload = (
-            json.dumps(payload, sort_keys=True) if isinstance(payload, dict) else payload
+            json.dumps(payload, sort_keys=True)
+            if isinstance(payload, dict)
+            else payload
         )
         with Session(self._engine) as session:
             session.add(
@@ -70,13 +74,18 @@ class BlackboardDatabase:
             )
             session.commit()
 
-    def read_memory(self, session_id: str, key: str) -> dict[str, Any] | str | None:
+    def read_memory(
+        self, session_id: str, key: str
+    ) -> dict[str, Any] | str | None:
         with Session(self._engine) as session:
             row = session.exec(
                 select(DbSharedMemory)
                 .where(DbSharedMemory.session_id == session_id)
                 .where(DbSharedMemory.memory_key == key)
-                .order_by(DbSharedMemory.created_at.desc(), DbSharedMemory.id.desc())  # type: ignore[arg-type]
+                .order_by(
+                    col(DbSharedMemory.created_at).desc(),
+                    col(DbSharedMemory.id).desc(),
+                )
                 .limit(1)
             ).first()
         if row is None:
@@ -110,7 +119,9 @@ class BlackboardDatabase:
             session.commit()
         return empty_state
 
-    def read_project_state(self, project_id: str = "default") -> StatePayload | None:
+    def read_project_state(
+        self, project_id: str = "default"
+    ) -> StatePayload | None:
         with Session(self._engine) as session:
             row = session.get(DbProjectState, project_id)
         if row is None:
@@ -178,7 +189,9 @@ class BlackboardDatabase:
         if session_state.is_empty():
             msg = "Session state is empty; nothing to propose"
             raise ValueError(msg)
-        proposal = StateProposal.create(session_id=session_id, payload=session_state)
+        proposal = StateProposal.create(
+            session_id=session_id, payload=session_state
+        )
         now = self._utc_now()
         with Session(self._engine) as session:
             session.add(
@@ -233,7 +246,9 @@ class BlackboardDatabase:
                 msg = f"State proposal is not pending: {proposal_id}"
                 raise ValueError(msg)
 
-            proposal_payload = StatePayload.from_dict(proposal_row.proposal_payload)
+            proposal_payload = StatePayload.from_dict(
+                proposal_row.proposal_payload
+            )
 
             project_row = session.get(DbProjectState, project_id)
             if project_row is None:
@@ -246,9 +261,9 @@ class BlackboardDatabase:
                 session.add(project_row)
                 session.flush()
 
-            next_state = StatePayload.from_dict(project_row.state_payload).append_payload(
-                proposal_payload
-            )
+            next_state = StatePayload.from_dict(
+                project_row.state_payload
+            ).append_payload(proposal_payload)
             project_row.state_payload = next_state.to_dict()
             project_row.version += 1
             project_row.updated_at = now
@@ -256,7 +271,9 @@ class BlackboardDatabase:
             proposal_row.status = "approved"
             proposal_row.resolved_at = now
 
-            session_state_row = session.get(DbSessionState, proposal_row.session_id)
+            session_state_row = session.get(
+                DbSessionState, proposal_row.session_id
+            )
             if session_state_row is not None:
                 session_state_row.dirty = False
                 session_state_row.updated_at = now
@@ -280,12 +297,14 @@ class BlackboardDatabase:
 
         return next_state
 
-    def approve_latest_proposal(self, project_id: str = "default") -> StatePayload:
+    def approve_latest_proposal(
+        self, project_id: str = "default"
+    ) -> StatePayload:
         with Session(self._engine) as session:
             row = session.exec(
                 select(DbStateProposal)
                 .where(DbStateProposal.status == "pending")
-                .order_by(DbStateProposal.created_at.desc())  # type: ignore[arg-type]
+                .order_by(col(DbStateProposal.created_at).desc())
                 .limit(1)
             ).first()
         if row is None:

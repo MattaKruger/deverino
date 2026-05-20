@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated
 
 import typer
+from rich.table import Table
 
 from harness_poc.app_factory import STARTUP_ERRORS, AppState, build_app_state
 from harness_poc.console import console, print_error
@@ -112,8 +113,12 @@ def repl() -> None:
 
 @workflow_app.command("run")
 def workflow_run(
-    name: Annotated[str, typer.Argument(help="Workflow YAML name without .yaml.")],
-    objective: Annotated[str, typer.Argument(help="Objective passed to the workflow.")],
+    name: Annotated[
+        str, typer.Argument(help="Workflow YAML name without .yaml.")
+    ],
+    objective: Annotated[
+        str, typer.Argument(help="Objective passed to the workflow.")
+    ],
 ) -> None:
     """Run a workflow once and exit."""
     app_state = _new_app_state()
@@ -135,7 +140,9 @@ def state_show(
 
 @state_app.command("note")
 def state_note(
-    text: Annotated[str, typer.Argument(help="Note text to add to session state.")],
+    text: Annotated[
+        str, typer.Argument(help="Note text to add to session state.")
+    ],
 ) -> None:
     """Add a note to the current one-shot session state."""
     _append_state("note", text)
@@ -143,7 +150,9 @@ def state_note(
 
 @state_app.command("decision")
 def state_decision(
-    text: Annotated[str, typer.Argument(help="Decision text to add to session state.")],
+    text: Annotated[
+        str, typer.Argument(help="Decision text to add to session state.")
+    ],
 ) -> None:
     """Add a decision to the current one-shot session state."""
     _append_state("decision", text)
@@ -151,7 +160,9 @@ def state_decision(
 
 @state_app.command("next")
 def state_next(
-    text: Annotated[str, typer.Argument(help="Next action to add to session state.")],
+    text: Annotated[
+        str, typer.Argument(help="Next action to add to session state.")
+    ],
 ) -> None:
     """Add a next action to the current one-shot session state."""
     _append_state("next", text)
@@ -190,7 +201,9 @@ def state_propose() -> None:
 def state_approve(
     proposal_id: Annotated[
         str | None,
-        typer.Argument(help="Proposal id. If omitted, approves latest pending proposal."),
+        typer.Argument(
+            help="Proposal id. If omitted, approves latest pending proposal."
+        ),
     ] = None,
 ) -> None:
     """Approve a pending project-state proposal."""
@@ -211,7 +224,9 @@ def state_reject(
 def state_consolidate(
     mode: Annotated[
         str,
-        typer.Argument(help="Consolidation mode: preview, propose, or approve."),
+        typer.Argument(
+            help="Consolidation mode: preview, propose, or approve."
+        ),
     ] = "preview",
 ) -> None:
     """Preview, propose, or approve consolidation of the current session state."""
@@ -235,7 +250,9 @@ def tool_list() -> None:
 
 @skill_app.command("show")
 def skill_show(
-    name: Annotated[str, typer.Argument(help="Skill directory/name to display.")],
+    name: Annotated[
+        str, typer.Argument(help="Skill directory/name to display.")
+    ],
 ) -> None:
     """Show a skill document."""
     app_state = _new_app_state()
@@ -254,7 +271,9 @@ def skill_create(
 
 @app.command()
 def goal(
-    objective: Annotated[str, typer.Argument(help="The goal to pursue autonomously.")],
+    objective: Annotated[
+        str, typer.Argument(help="The goal to pursue autonomously.")
+    ],
     max_iterations: Annotated[
         int,
         typer.Option(
@@ -322,7 +341,11 @@ async def _run_event_sourced_goal(
 
     def on_pause(event: StreamPaused) -> None:
         nonlocal status
-        status = "budget_exhausted" if event.reason == "budget_exhausted" else event.reason
+        status = (
+            "budget_exhausted"
+            if event.reason == "budget_exhausted"
+            else event.reason
+        )
         terminal_event.set()
 
     app_state.event_bus.subscribe(LLMTextEmitted, on_text)
@@ -359,12 +382,16 @@ async def _run_event_sourced_goal(
     try:
         await asyncio.sleep(0)
         await app_state.event_bus.publish_async(
-            AgentInputAdded(session_id=app_state.session_id, user_content=objective)
+            AgentInputAdded(
+                session_id=app_state.session_id, user_content=objective
+            )
         )
         await asyncio.wait_for(terminal_event.wait(), timeout=max_seconds)
     except TimeoutError:
         status = "budget_exhausted"
-        output_parts.append(f"Time budget ({max_seconds}s) exhausted before the goal completed.")
+        output_parts.append(
+            f"Time budget ({max_seconds}s) exhausted before the goal completed."
+        )
     finally:
         await app_state.event_bus.publish_async(
             StreamPaused(
@@ -593,10 +620,16 @@ def pipeline_list() -> None:
 
 @pipeline_app.command("run")
 def pipeline_run(
-    name: Annotated[str, typer.Argument(help="Pipeline YAML name without .yaml.")],
+    name: Annotated[
+        str, typer.Argument(help="Pipeline YAML name without .yaml.")
+    ],
     inputs: Annotated[
         list[str],
-        typer.Option("--input", "-i", help="Input as key=value. Repeat for multiple inputs."),
+        typer.Option(
+            "--input",
+            "-i",
+            help="Input as key=value. Repeat for multiple inputs.",
+        ),
     ] = [],  # noqa: B006
 ) -> None:
     """Run a pipeline and print the node results."""
@@ -625,10 +658,14 @@ def pipeline_run(
     )
 
     for node_id, node_result in result.node_results.items():
-        node_color = {"completed": "green", "failed": "red", "skipped": "yellow"}.get(
-            node_result.status, "white"
+        node_color = {
+            "completed": "green",
+            "failed": "red",
+            "skipped": "yellow",
+        }.get(node_result.status, "white")
+        console.print(
+            f"  [{node_color}]{node_id}: {node_result.status}[/{node_color}]"
         )
-        console.print(f"  [{node_color}]{node_id}: {node_result.status}[/{node_color}]")
         if node_result.output:
             console.print(node_result.output)
 
@@ -638,8 +675,6 @@ def pipeline_run(
 
 def _list_tools(app_state: AppState) -> None:
     """Print a table of built-in tools."""
-    from rich.table import Table
-
     names = app_state.tool_runner.list_tool_names()
     if not names:
         console.print("[dim]No built-in tools found.[/dim]")

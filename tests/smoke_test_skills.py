@@ -28,7 +28,9 @@ def main() -> int:
 
     import os  # noqa: PLC0415  # deferred to avoid module-level side effects
 
-    database_url = os.getenv("TEST_DATABASE_URL", "postgresql://deverino:deverino@localhost/deverino")
+    database_url = os.getenv(
+        "TEST_DATABASE_URL", "postgresql://deverino:deverino@localhost/deverino"
+    )
 
     config = HarnessConfig(
         project_root=repo_root,

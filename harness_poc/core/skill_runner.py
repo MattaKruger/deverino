@@ -70,6 +70,11 @@ class SkillRunner:
                     continue
                 seen.add(skill_name)
 
+                # Knowledge skills are not executable — they're loaded
+                # on demand via skill_view(), not registered as tools.
+                if skill["metadata"]["type"] == "knowledge":
+                    continue
+
                 tools.append(
                     {
                         "type": "function",
@@ -275,11 +280,8 @@ class SkillRunner:
         if not isinstance(name, str) or not isinstance(description, str):
             msg = f"Skill {skill_file} must define string name and description"
             raise TypeError(msg)
-        if skill_type not in ("tool", "skill"):
-            msg = (
-                f"Skill {skill_file} type must be 'tool' or 'skill', "
-                f"got {skill_type!r}"
-            )
+        if skill_type not in ("tool", "skill", "knowledge"):
+            msg = f"Skill {skill_file} type must be 'tool', 'skill', or 'knowledge', got {skill_type!r}"
             raise TypeError(msg)
         if not isinstance(parameters, dict):
             msg = f"Skill {skill_file} parameters must be a mapping"

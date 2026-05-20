@@ -9,14 +9,15 @@ from __future__ import annotations
 import ast as _ast
 import difflib
 import json as _json
-import os
 import re
+import shutil
 import subprocess
+import tomllib as _toml
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
 from harness_poc.core.permissions import PROTECTED_PATHS
-from harness_poc.core.tool_result import ToolResult
 from harness_poc.system_tools import register as _register
 
 # ---------------------------------------------------------------------------
@@ -28,17 +29,57 @@ MAX_LINE_LENGTH = 2000
 MAX_FILE_SIZE = 50 * 1024  # 50 KB
 DEFAULT_READ_LIMIT = 500
 MAX_READ_CHARS = 100_000
-IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico"})
-BINARY_EXTENSIONS = frozenset({
-    ".pdf", ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar",
-    ".exe", ".dll", ".so", ".dylib", ".o", ".a",
-    ".mp3", ".mp4", ".avi", ".mov", ".mkv", ".flac", ".wav",
-    ".ttf", ".otf", ".woff", ".woff2",
-    ".pyc", ".pyo", ".class",
-    ".db", ".sqlite", ".sqlite3",
-    ".bin", ".dat", ".pkl", ".pickle",
-    ".DS_Store",
-}) | IMAGE_EXTENSIONS
+ASCII_CONTROL_BOUNDARY = 32
+BINARY_NON_PRINTABLE_RATIO = 0.30
+MIN_SUBSTRING_HINT_LENGTH = 2
+RG_PARSE_PARTS = 2
+RG_SEARCH_ERROR_EXIT_CODE = 2
+IMAGE_EXTENSIONS = frozenset(
+    {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico"}
+)
+BINARY_EXTENSIONS = (
+    frozenset(
+        {
+            ".pdf",
+            ".zip",
+            ".tar",
+            ".gz",
+            ".bz2",
+            ".xz",
+            ".7z",
+            ".rar",
+            ".exe",
+            ".dll",
+            ".so",
+            ".dylib",
+            ".o",
+            ".a",
+            ".mp3",
+            ".mp4",
+            ".avi",
+            ".mov",
+            ".mkv",
+            ".flac",
+            ".wav",
+            ".ttf",
+            ".otf",
+            ".woff",
+            ".woff2",
+            ".pyc",
+            ".pyo",
+            ".class",
+            ".db",
+            ".sqlite",
+            ".sqlite3",
+            ".bin",
+            ".dat",
+            ".pkl",
+            ".pickle",
+            ".DS_Store",
+        }
+    )
+    | IMAGE_EXTENSIONS
+)
 
 # Additional system paths to protect beyond permissions.PROTECTED_PATHS
 _WRITE_DENIED_PREFIXES: tuple[str, ...] = (
@@ -56,8 +97,7 @@ _WRITE_DENIED_PREFIXES: tuple[str, ...] = (
 def _expand_path(path: str) -> str:
     """Expand ``~`` and ``~user`` to absolute paths."""
     if path.startswith("~"):
-        expanded = os.path.expanduser(path)
-        return expanded
+        return str(Path(path).expanduser())
     return path
 
 
@@ -83,12 +123,12 @@ def _is_protected(path: str) -> bool:
 
 
 def _is_binary_by_extension(path: str) -> bool:
-    ext = os.path.splitext(path)[1].lower()
+    ext = Path(path).suffix.lower()
     return ext in BINARY_EXTENSIONS
 
 
 def _is_image_by_extension(path: str) -> bool:
-    ext = os.path.splitext(path)[1].lower()
+    ext = Path(path).suffix.lower()
     return ext in IMAGE_EXTENSIONS
 
 
@@ -99,18 +139,23 @@ def _is_likely_binary_content(sample: str) -> bool:
     check = sample[:1000]
     if "\x00" in check:
         return True
-    non_printable = sum(1 for c in check if ord(c) < 32 and c not in "\n\r\t")
-    return non_printable / len(check) > 0.30
+    non_printable = sum(
+        1
+        for c in check
+        if ord(c) < ASCII_CONTROL_BOUNDARY and c not in "\n\r\t"
+    )
+    return non_printable / len(check) > BINARY_NON_PRINTABLE_RATIO
 
 
 def _add_line_numbers(content: str, start_line: int = 1) -> str:
     """Format as ``     1|content`` (6-digit right-aligned line number)."""
     lines = content.split("\n")
     numbered: list[str] = []
-    for i, line in enumerate(lines, start=start_line):
-        if len(line) > MAX_LINE_LENGTH:
-            line = line[:MAX_LINE_LENGTH] + "... [truncated]"
-        numbered.append(f"{i:6d}|{line}")
+    for i, raw_line in enumerate(lines, start=start_line):
+        display_line = raw_line
+        if len(display_line) > MAX_LINE_LENGTH:
+            display_line = display_line[:MAX_LINE_LENGTH] + "... [truncated]"
+        numbered.append(f"{i:6d}|{display_line}")
     return "\n".join(numbered)
 
 
@@ -122,7 +167,7 @@ def _suggest_similar_files(path: str, project_root: Path) -> list[str]:
     if not dir_path.exists():
         return []
 
-    basename_no_ext = os.path.splitext(filename)[0]
+    basename_no_ext = Path(filename).stem
     lower_name = filename.lower()
     scored: list[tuple[int, str]] = []
 
@@ -135,13 +180,13 @@ def _suggest_similar_files(path: str, project_root: Path) -> list[str]:
             score = 0
             if lname == lower_name:
                 score = 100
-            elif os.path.splitext(ename)[0].lower() == basename_no_ext.lower():
+            elif Path(ename).stem.lower() == basename_no_ext.lower():
                 score = 90
             elif lname.startswith(lower_name) or lower_name.startswith(lname):
                 score = 70
             elif lower_name in lname:
                 score = 60
-            elif lname in lower_name and len(lname) > 2:
+            elif lname in lower_name and len(lname) > MIN_SUBSTRING_HINT_LENGTH:
                 score = 40
             if score > 0:
                 scored.append((score, str(entry)))
@@ -152,34 +197,50 @@ def _suggest_similar_files(path: str, project_root: Path) -> list[str]:
     return [fp for _, fp in scored[:5]]
 
 
-def _run_rg(args: list[str], cwd: Path | None = None, timeout: int = 60) -> tuple[str, int]:
+def _run_rg(
+    args: list[str], cwd: Path | None = None, timeout: int = 60
+) -> tuple[str, int]:
     """Run ripgrep, return (stdout, exit_code)."""
-    try:
-        result = subprocess.run(
-            ["rg", *args],
-            capture_output=True, text=True, cwd=cwd, timeout=timeout,
-        )
-        return result.stdout, result.returncode
-    except FileNotFoundError:
+    rg_path = shutil.which("rg")
+    if rg_path is None:
         return "", -1
+    try:
+        result = subprocess.run(  # noqa: S603
+            [rg_path, *args],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=timeout,
+            check=False,
+        )
     except subprocess.TimeoutExpired:
         return "", 124
+    else:
+        return result.stdout, result.returncode
 
 
 def _run_find(
     path: str, pattern: str, limit: int, offset: int, cwd: Path | None
 ) -> tuple[list[str], int]:
     """Fallback: find files by name pattern (no ripgrep)."""
+    find_path = shutil.which("find")
+    if find_path is None:
+        return [], 0
     try:
-        result = subprocess.run(
-            ["find", path, "-type", "f", "-name", pattern],
-            capture_output=True, text=True, cwd=cwd, timeout=60,
+        result = subprocess.run(  # noqa: S603
+            [find_path, path, "-type", "f", "-name", pattern],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=60,
+            check=False,
         )
+    except subprocess.TimeoutExpired:
+        return [], 0
+    else:
         all_files = [f for f in result.stdout.strip().split("\n") if f]
         page = all_files[offset : offset + limit]
         return page, len(all_files)
-    except subprocess.TimeoutExpired:
-        return [], 0
 
 
 # ---------------------------------------------------------------------------
@@ -190,18 +251,23 @@ def _run_find(
 def _lint_python(content: str) -> tuple[bool, str]:
     try:
         _ast.parse(content)
-        return True, ""
     except SyntaxError as e:
         loc = f" (line {e.lineno}, column {e.offset})" if e.lineno else ""
         return False, f"SyntaxError: {e.msg}{loc}"
+    else:
+        return True, ""
 
 
 def _lint_json(content: str) -> tuple[bool, str]:
     try:
         _json.loads(content)
-        return True, ""
     except _json.JSONDecodeError as e:
-        return False, f"JSONDecodeError: {e.msg} (line {e.lineno}, column {e.colno})"
+        return (
+            False,
+            f"JSONDecodeError: {e.msg} (line {e.lineno}, column {e.colno})",
+        )
+    else:
+        return True, ""
 
 
 def _lint_yaml(content: str) -> tuple[bool, str]:
@@ -211,24 +277,19 @@ def _lint_yaml(content: str) -> tuple[bool, str]:
         return True, "__SKIP__"
     try:
         _yaml.safe_load(content)
-        return True, ""
     except _yaml.YAMLError as e:
         return False, f"YAMLError: {e}"
+    else:
+        return True, ""
 
 
 def _lint_toml(content: str) -> tuple[bool, str]:
     try:
-        import tomllib as _toml  # noqa: PLC0415
-    except ImportError:
-        try:
-            import tomli as _toml  # type: ignore[no-redef]  # noqa: PLC0415
-        except ImportError:
-            return True, "__SKIP__"
-    try:
         _toml.loads(content)
-        return True, ""
-    except Exception as e:
+    except _toml.TOMLDecodeError as e:
         return False, f"{type(e).__name__}: {e}"
+    else:
+        return True, ""
 
 
 _LINTERS: dict[str, Any] = {
@@ -242,7 +303,7 @@ _LINTERS: dict[str, Any] = {
 
 def _lint_file(path: str, content: str) -> tuple[bool, str]:
     """Run the appropriate in-process linter for a file extension."""
-    ext = os.path.splitext(path)[1].lower()
+    ext = Path(path).suffix.lower()
     linter = _LINTERS.get(ext)
     if linter is None:
         return True, ""  # No linter for this extension
@@ -257,11 +318,11 @@ def _lint_file(path: str, content: str) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
-def _fuzzy_find_and_replace(
+def _fuzzy_find_and_replace(  # noqa: PLR0911, PLR0912
     content: str,
     old_string: str,
     new_string: str,
-    replace_all: bool = False,
+    replace_all: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[str, int, str | None]:
     """Find and replace using a 3-strategy chain.
 
@@ -290,7 +351,9 @@ def _fuzzy_find_and_replace(
 
     match_indices: list[int] = []
     for i in range(len(content_lines) - len(old_lines) + 1):
-        window = [line.strip() for line in content_lines[i : i + len(old_lines)]]
+        window = [
+            line.strip() for line in content_lines[i : i + len(old_lines)]
+        ]
         if window == old_lines:
             match_indices.append(i)
 
@@ -345,7 +408,7 @@ def _fuzzy_find_and_replace(
 # ---------------------------------------------------------------------------
 
 
-def read_file(
+def read_file(  # noqa: PLR0911
     path: str,
     offset: int = 1,
     limit: int = 500,
@@ -385,7 +448,7 @@ def read_file(
         return {
             "is_binary": True,
             "file_size": file_size,
-            "error": f"Binary file — cannot display as text ({os.path.splitext(str_path)[1]}).",
+            "error": f"Binary file — cannot display as text ({Path(str_path).suffix}).",
         }
 
     # Read and check content
@@ -449,12 +512,10 @@ def write_file(
 
     # Snapshot pre-write content for lint delta
     pre_content: str | None = None
-    ext = os.path.splitext(str_path)[1].lower()
+    ext = Path(str_path).suffix.lower()
     if ext in _LINTERS and abs_path.exists():
-        try:
+        with suppress(OSError):
             pre_content = abs_path.read_text(encoding="utf-8")
-        except OSError:
-            pass
 
     # Create parent directories
     dirs_created = False
@@ -504,11 +565,11 @@ def write_file(
     return result
 
 
-def patch(
+def patch(  # noqa: PLR0911
     path: str,
     old_string: str,
     new_string: str,
-    replace_all: bool = False,
+    replace_all: bool = False,  # noqa: FBT001, FBT002
     project_root: str | None = None,
 ) -> dict[str, Any]:
     """Targeted find-and-replace edit in a file, with fuzzy matching."""
@@ -539,10 +600,7 @@ def patch(
         lower_old = old_string.strip().lower()
         lower_content = content.lower()
         if lower_old in lower_content:
-            error_msg += (
-                " (hint: a case-insensitive match exists — "
-                "verify exact whitespace and indentation)"
-            )
+            error_msg += " (hint: a case-insensitive match exists — verify exact whitespace and indentation)"
         return {"error": error_msg}
 
     if not replace_all and match_count > 1 and strategy is None:
@@ -561,11 +619,14 @@ def patch(
     # Generate unified diff
     old_lines = content.splitlines(keepends=True)
     new_lines_list = new_content.splitlines(keepends=True)
-    diff = "".join(difflib.unified_diff(
-        old_lines, new_lines_list,
-        fromfile=f"a/{path}",
-        tofile=f"b/{path}",
-    ))
+    diff = "".join(
+        difflib.unified_diff(
+            old_lines,
+            new_lines_list,
+            fromfile=f"a/{path}",
+            tofile=f"b/{path}",
+        )
+    )
 
     result: dict[str, Any] = {
         "success": True,
@@ -580,7 +641,7 @@ def patch(
     return result
 
 
-def search_files(
+def search_files(  # noqa: PLR0913
     pattern: str,
     target: str = "content",
     path: str = ".",
@@ -602,13 +663,19 @@ def search_files(
 
     if target == "files":
         return _search_files_by_name(pattern, str(abs_path), limit, offset, cwd)
-    else:
-        return _search_files_by_content(
-            pattern, str(abs_path), file_glob, limit, offset, output_mode, context, cwd
-        )
+    return _search_files_by_content(
+        pattern,
+        str(abs_path),
+        file_glob,
+        limit,
+        offset,
+        output_mode,
+        context,
+        cwd,
+    )
 
 
-def _search_files_by_content(
+def _search_files_by_content(  # noqa: PLR0912, PLR0913
     pattern: str,
     path: str,
     file_glob: str | None,
@@ -638,9 +705,11 @@ def _search_files_by_content(
     stdout, exit_code = _run_rg(args, cwd=cwd)
 
     if exit_code == -1:
-        return {"error": "ripgrep (rg) is required. Install: https://github.com/BurntSushi/ripgrep"}
-    if exit_code == 2 and not stdout.strip():
-        return {"error": f"Search failed (exit code 2)"}
+        return {
+            "error": "ripgrep (rg) is required. Install: https://github.com/BurntSushi/ripgrep"
+        }
+    if exit_code == RG_SEARCH_ERROR_EXIT_CODE and not stdout.strip():
+        return {"error": "Search failed (exit code 2)"}
 
     if output_mode == "files_only":
         all_files = [f for f in stdout.strip().split("\n") if f]
@@ -653,11 +722,9 @@ def _search_files_by_content(
         for line in stdout.strip().split("\n"):
             if ":" in line:
                 parts = line.rsplit(":", 1)
-                if len(parts) == 2:
-                    try:
+                if len(parts) == RG_PARSE_PARTS:
+                    with suppress(ValueError):
                         counts[parts[0]] = int(parts[1])
-                    except ValueError:
-                        pass
         return {"counts": counts, "total_count": sum(counts.values())}
 
     # Content mode — parse match lines: "file:lineno:content"
@@ -670,21 +737,25 @@ def _search_files_by_content(
             continue
         m = _match_re.match(line)
         if m:
-            matches.append({
-                "path": (m.group(1) or "") + m.group(2),
-                "line": int(m.group(3)),
-                "content": m.group(4)[:500],
-            })
+            matches.append(
+                {
+                    "path": (m.group(1) or "") + m.group(2),
+                    "line": int(m.group(3)),
+                    "content": m.group(4)[:500],
+                }
+            )
             continue
         # Context lines use dash separators
         if context > 0:
             dm = _dash_re.match(line)
             if dm:
-                matches.append({
-                    "path": dm.group(1),
-                    "line": int(dm.group(2)),
-                    "content": dm.group(3)[:500],
-                })
+                matches.append(
+                    {
+                        "path": dm.group(1),
+                        "line": int(dm.group(2)),
+                        "content": dm.group(3)[:500],
+                    }
+                )
 
     total = len(matches)
     page = matches[offset : offset + limit]
@@ -703,10 +774,11 @@ def _search_files_by_name(
     cwd: Path,
 ) -> dict[str, Any]:
     """Find files by glob pattern using ripgrep --files."""
-    if "/" not in pattern and not pattern.startswith("*"):
-        glob_pattern = f"*{pattern}"
-    else:
-        glob_pattern = pattern
+    glob_pattern = (
+        f"*{pattern}"
+        if "/" not in pattern and not pattern.startswith("*")
+        else pattern
+    )
 
     args = ["--files", "--sortr=modified", "-g", glob_pattern, path]
     stdout, exit_code = _run_rg(args, cwd=cwd, timeout=60)
@@ -787,7 +859,10 @@ _register(
         "properties": {
             "path": {
                 "type": "string",
-                "description": "Path to the file to write (will be created if it doesn't exist, overwritten if it does)",
+                "description": (
+                    "Path to the file to write (will be created if it doesn't exist, "
+                    "overwritten if it does)"
+                ),
             },
             "content": {
                 "type": "string",
@@ -816,7 +891,11 @@ _register(
             },
             "old_string": {
                 "type": "string",
-                "description": "Exact text to find. Must be unique in the file unless replace_all=True. Include surrounding context lines to ensure uniqueness.",
+                "description": (
+                    "Exact text to find. Must be unique in the file unless "
+                    "replace_all=True. Include surrounding context lines to ensure "
+                    "uniqueness."
+                ),
             },
             "new_string": {
                 "type": "string",
@@ -824,7 +903,9 @@ _register(
             },
             "replace_all": {
                 "type": "boolean",
-                "description": "Replace all occurrences instead of requiring a unique match (default: false)",
+                "description": (
+                    "Replace all occurrences instead of requiring a unique match (default: false)"
+                ),
                 "default": False,
             },
         },
@@ -848,17 +929,24 @@ _register(
         "properties": {
             "pattern": {
                 "type": "string",
-                "description": "Regex pattern for content search, or glob pattern (e.g., '*.py') for file search",
+                "description": (
+                    "Regex pattern for content search, or glob pattern (e.g., '*.py') "
+                    "for file search"
+                ),
             },
             "target": {
                 "type": "string",
                 "enum": ["content", "files"],
-                "description": "'content' searches inside file contents, 'files' searches for files by name",
+                "description": (
+                    "'content' searches inside file contents, 'files' searches for files by name"
+                ),
                 "default": "content",
             },
             "path": {
                 "type": "string",
-                "description": "Directory or file to search in (default: current working directory)",
+                "description": (
+                    "Directory or file to search in (default: current working directory)"
+                ),
                 "default": ".",
             },
             "file_glob": {
@@ -878,7 +966,10 @@ _register(
             "output_mode": {
                 "type": "string",
                 "enum": ["content", "files_only", "count"],
-                "description": "Output format: 'content' shows matching lines, 'files_only' lists file paths, 'count' shows match counts",
+                "description": (
+                    "Output format: 'content' shows matching lines, 'files_only' lists "
+                    "file paths, 'count' shows match counts"
+                ),
                 "default": "content",
             },
             "context": {

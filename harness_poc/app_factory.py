@@ -18,11 +18,13 @@ from harness_poc.core.pydantic_runtime import (
     PydanticAgentRuntime,
     build_runtime,
 )
+from harness_poc.core.skill_catalog import build_skill_catalog
 from harness_poc.core.skill_runner import SkillRunner
 from harness_poc.core.skill_scaffolder import SkillScaffolder
 from harness_poc.core.state import build_state_context
 from harness_poc.core.tool_runner import ToolRunner
 from harness_poc.core.workflow_runner import WorkflowRunner
+from harness_poc.system_tools.knowledge_tools import init_knowledge_context
 
 # Skills excluded from the agent's auto-invokable toolset because they
 # have workspace=read_write and could mutate project source files.
@@ -136,6 +138,18 @@ def build_app_state() -> AppState:
         configure_logfire(include_content=config.observability.logfire_include_content)
         wire_logfire(event_bus)
 
+    # ── Knowledge skill context ────────────────────────────────────
+    knowledge_dirs = [config.paths.project_skills]
+    if config.paths.system_skills.exists():
+        knowledge_dirs.append(config.paths.system_skills)
+    init_knowledge_context(
+        knowledge_dirs,
+        project_root=config.project_root,
+        scratch_base=None,
+        session_id=session_id,
+    )
+    skill_catalog = build_skill_catalog(knowledge_dirs)
+
     return AppState(
         session_id=session_id,
         database=database,
@@ -155,6 +169,7 @@ def build_app_state() -> AppState:
             llm=config.llm,
             enable_tools=True,
             blocked_skills=_TUI_BLOCKED_SKILLS,
+            skill_catalog=skill_catalog,
         ),
         pydantic_messages=[],
         goal_decision_model=None,

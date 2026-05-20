@@ -19,7 +19,9 @@ from harness_poc.core.skill_runner import SkillRunner
 
 def test_summarize_memory_requires_memory_key(db_engine: Engine) -> None:
     runner, session_id, _ = _runner(db_engine)
-    with pytest.raises(ValueError, match="summarize_memory requires memory_key"):
+    with pytest.raises(
+        ValueError, match="summarize_memory requires memory_key"
+    ):
         runner.execute_skill(
             tool_name="summarize_memory",
             arguments={},
@@ -66,7 +68,9 @@ def test_summarize_memory_produces_summary_for_existing_memory(
 
 def test_summarize_memory_handles_string_payload(db_engine: Engine) -> None:
     runner, session_id, database = _runner(db_engine)
-    database.write_memory(session_id, "string_key", "A plain text memory value.")
+    database.write_memory(
+        session_id, "string_key", "A plain text memory value."
+    )
 
     result = runner.execute_skill(
         tool_name="summarize_memory",
@@ -93,7 +97,9 @@ def test_summarize_memory_builds_messages_with_json_payload() -> None:
 def test_summarize_memory_builds_messages_with_string_payload() -> None:
     from skills.summarize_memory.skill import _build_messages
 
-    messages = _build_messages(memory_key="test_key", payload="just a string payload")
+    messages = _build_messages(
+        memory_key="test_key", payload="just a string payload"
+    )
     assert "just a string payload" in messages[1]["content"]
 
 
@@ -123,5 +129,7 @@ def _test_config(engine: Engine) -> HarnessConfig:
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
-        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
+        llm=LLMConfig(
+            provider="deepseek", model="deepseek-v4-flash", base_url=None
+        ),
     )
