@@ -15,5 +15,18 @@ services:
       timeout: 5s
       retries: 5
 
+  vespa:
+    image: vespaengine/vespa:latest
+    hostname: vespa
+    ports:
+      # Query and document API used by harness.yaml retrieval.vespa_url.
+      - "8080:8080"
+      # Config server used by `vespa deploy`.
+      - "19071:19071"
+    volumes:
+      - vespadata:/opt/vespa/var
+      - ./vespa/document_retrieval:/vespa-app:ro
+
 volumes:
   pgdata:
+  vespadata:

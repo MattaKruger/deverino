@@ -30,6 +30,7 @@ pytestmark = pytest.mark.skipif(
 FIXTURE_URI = "test/integration-fixture.md"
 FIXTURE_SOURCE_ID = "test-integration-fixture-md"
 FIXTURE_TEXT = (
+    "deverino-vespa-integration-needle-20260520. "
     "The blackboard database stores durable project state across sessions. "
     "State consolidation merges session-level proposals into the project state. "
     "Each proposal must be approved before it is written to project_state."
@@ -60,6 +61,7 @@ def test_health_check_passes(vespa_client: LiveVespaDocumentClient) -> None:
 
 
 def test_feed_and_keyword_search(vespa_client: LiveVespaDocumentClient) -> None:
+    vespa_client.delete_source(FIXTURE_SOURCE_ID)
     chunks = make_document_chunks(
         text=FIXTURE_TEXT,
         uri=FIXTURE_URI,
@@ -75,7 +77,12 @@ def test_feed_and_keyword_search(vespa_client: LiveVespaDocumentClient) -> None:
     time.sleep(2)
 
     results = vespa_client.search(
-        SearchRequest(query="blackboard database", mode="keyword", hits=5)
+        SearchRequest(
+            query="deverino-vespa-integration-needle-20260520",
+            mode="keyword",
+            hits=5,
+            source_id=FIXTURE_SOURCE_ID,
+        )
     )
     source_ids = {result.source_id for result in results}
     assert FIXTURE_SOURCE_ID in source_ids
@@ -84,9 +91,10 @@ def test_feed_and_keyword_search(vespa_client: LiveVespaDocumentClient) -> None:
 def test_feed_and_semantic_search(vespa_client: LiveVespaDocumentClient) -> None:
     results = vespa_client.search(
         SearchRequest(
-            query="how persistent memory is merged across sessions",
+            query="deverino-vespa-integration-needle-20260520",
             mode="semantic",
             hits=5,
+            source_id=FIXTURE_SOURCE_ID,
         )
     )
     if results:
@@ -95,7 +103,12 @@ def test_feed_and_semantic_search(vespa_client: LiveVespaDocumentClient) -> None
 
 def test_feed_and_hybrid_search(vespa_client: LiveVespaDocumentClient) -> None:
     results = vespa_client.search(
-        SearchRequest(query="state consolidation proposals", mode="hybrid", hits=5)
+        SearchRequest(
+            query="deverino-vespa-integration-needle-20260520",
+            mode="hybrid",
+            hits=5,
+            source_id=FIXTURE_SOURCE_ID,
+        )
     )
     if results:
         source_ids = {result.source_id for result in results}
@@ -106,7 +119,12 @@ def test_delete_source(vespa_client: LiveVespaDocumentClient) -> None:
     vespa_client.delete_source(FIXTURE_SOURCE_ID)
     time.sleep(1)
     results = vespa_client.search(
-        SearchRequest(query="blackboard database", mode="keyword", hits=5)
+        SearchRequest(
+            query="deverino-vespa-integration-needle-20260520",
+            mode="keyword",
+            hits=5,
+            source_id=FIXTURE_SOURCE_ID,
+        )
     )
     source_ids = {result.source_id for result in results}
     assert FIXTURE_SOURCE_ID not in source_ids

@@ -4,6 +4,19 @@ A Python 3.12 proof-of-concept for autonomous LLM agent workflows. It provides a
 
 ## Quickstart
 
+Start the local backing services:
+
+```bash
+docker compose up -d postgres vespa
+
+# Deploy the document retrieval application after Vespa is ready.
+docker compose exec vespa vespa deploy /vespa-app
+```
+
+Vespa can take a short time to start before it accepts deployments. The local
+application package lives in `vespa/document_retrieval/` and is mounted into the
+Vespa container at `/vespa-app`, so no host-side Vespa CLI is required.
+
 ```bash
 # Start the interactive TUI
 uv run harness-poc
@@ -66,6 +79,52 @@ llm:
 ```
 
 If no API key is found for the configured provider, the harness falls back to mock mode — the TUI prompt bar shows `[mock]` and all LLM calls use deterministic test responses.
+
+### Document retrieval
+
+The harness can index project documents into Vespa and search them with keyword,
+semantic, or hybrid retrieval. Docker Compose runs Vespa locally on:
+
+| Port | Purpose |
+| ---- | ------- |
+| `8080` | Query and document API used by `retrieval.vespa_url` |
+| `19071` | Config server used by `vespa deploy` |
+
+The default `harness.yaml` points the harness at the Compose Vespa service from
+the host:
+
+```yaml
+retrieval:
+  enabled: true
+  provider: vespa
+  vespa_url: http://localhost:8080
+  namespace: deverino
+  schema: doc_chunk
+  default_hits: 8
+  default_mode: hybrid
+```
+
+Index documents from the harness by asking it to use `index_documents`, for example:
+
+```text
+Use index_documents with {"paths":["docs", "README.md"]}
+```
+
+Refresh an existing index entry with:
+
+```text
+Use index_documents with {"paths":["docs"],"glob":"**/*.md","force":true}
+```
+
+Search indexed content with:
+
+```text
+Use search_documents with {"query":"state consolidation proposals","mode":"hybrid","hits":5}
+```
+
+Search results are returned with chunk citations such as
+`docs/example.md#chunk-2`. PostgreSQL stores source metadata, content hashes, and
+indexing status; Vespa stores and searches the document chunks.
 
 To enable Logfire observability, set `observability.logfire: true` in `harness.yaml`
 and provide your token (via env var or `.env` file):

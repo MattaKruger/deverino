@@ -16,6 +16,7 @@ from harness_poc.core.retrieval import (
 
 HTTP_OK = 200
 HTTP_CREATED = 201
+DELETE_BATCH_SIZE = 400
 
 
 class LiveVespaDocumentClient:
@@ -76,23 +77,28 @@ class LiveVespaDocumentClient:
 
         app = Vespa(url=self._url)
         with app.syncio() as session:
-            result = session.query(
-                body={
-                    "yql": (
-                        f"select chunk_id from {self._schema} where source_id = @source_id"  # noqa: S608
-                    ),
-                    "source_id": source_id,
-                    "hits": 10_000,
-                    "timeout": str(self._timeout),
-                }
-            )
-            for hit in result.hits:
-                chunk_id = hit["fields"]["chunk_id"]
-                session.delete_data(
-                    schema=self._schema,
-                    data_id=chunk_id,
-                    namespace=self._namespace,
+            while True:
+                result = session.query(
+                    body={
+                        "yql": (
+                            f"select chunk_id from {self._schema} where "  # noqa: S608
+                            "source_id contains @source_id"
+                        ),
+                        "source_id": source_id,
+                        "hits": DELETE_BATCH_SIZE,
+                        "timeout": str(self._timeout),
+                    }
                 )
+                if not result.hits:
+                    break
+
+                for hit in result.hits:
+                    chunk_id = hit["fields"]["chunk_id"]
+                    session.delete_data(
+                        schema=self._schema,
+                        data_id=chunk_id,
+                        namespace=self._namespace,
+                    )
 
     def search(self, request: SearchRequest) -> list[SearchResult]:
         from vespa.application import Vespa  # noqa: PLC0415
@@ -109,10 +115,10 @@ def _build_query_body(request: SearchRequest, schema: str, timeout: int) -> dict
     extra_params: dict = {}
 
     if request.source_id:
-        filter_clauses.append("source_id = @filter_source_id")
+        filter_clauses.append("source_id contains @filter_source_id")
         extra_params["filter_source_id"] = request.source_id
     if request.kind:
-        filter_clauses.append("kind = @filter_kind")
+        filter_clauses.append("kind contains @filter_kind")
         extra_params["filter_kind"] = request.kind
 
     filter_str = (" and " + " and ".join(filter_clauses)) if filter_clauses else ""
