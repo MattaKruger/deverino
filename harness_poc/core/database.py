@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 from harness_poc.core.db_engine import create_db_engine
 from harness_poc.core.models import (
+    DbDocumentChunk,
+    DbDocumentSource,
     DbProjectState,
     DbSession,
     DbSessionState,
@@ -340,6 +342,55 @@ class BlackboardDatabase:
                 )
             )
             session.commit()
+
+    def upsert_document_source(self, source: DbDocumentSource) -> None:
+        with Session(self._engine) as session:
+            existing = session.get(DbDocumentSource, source.source_id)
+            if existing is None:
+                session.add(source)
+            else:
+                existing.uri = source.uri
+                existing.title = source.title
+                existing.kind = source.kind
+                existing.content_hash = source.content_hash
+                existing.status = source.status
+                existing.chunk_count = source.chunk_count
+                existing.indexed_at = source.indexed_at
+                existing.error = source.error
+                existing.metadata_payload = source.metadata_payload
+                existing.updated_at = source.updated_at
+                session.add(existing)
+            session.commit()
+
+    def get_document_source(self, source_id: str) -> DbDocumentSource | None:
+        with Session(self._engine) as session:
+            return session.get(DbDocumentSource, source_id)
+
+    def list_document_sources(self) -> list[DbDocumentSource]:
+        with Session(self._engine) as session:
+            return list(session.exec(select(DbDocumentSource)).all())
+
+    def upsert_document_chunk(self, chunk: DbDocumentChunk) -> None:
+        with Session(self._engine) as session:
+            existing = session.get(DbDocumentChunk, chunk.chunk_id)
+            if existing is None:
+                session.add(chunk)
+            else:
+                existing.source_id = chunk.source_id
+                existing.chunk_index = chunk.chunk_index
+                existing.content_hash = chunk.content_hash
+                existing.vespa_id = chunk.vespa_id
+                existing.indexed_at = chunk.indexed_at
+                session.add(existing)
+            session.commit()
+
+    def list_chunks_for_source(self, source_id: str) -> list[DbDocumentChunk]:
+        with Session(self._engine) as session:
+            return list(
+                session.exec(
+                    select(DbDocumentChunk).where(DbDocumentChunk.source_id == source_id)
+                ).all()
+            )
 
     @staticmethod
     def _utc_now() -> str:
