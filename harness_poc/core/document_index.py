@@ -186,7 +186,10 @@ class DocumentIndexer:
                     uri,
                 )
                 with self._print_lock:
-                    print(f"  [{idx}/{total}] {file_result.status} {uri}")
+                    detail = ""
+                    if file_result.failure:
+                        detail = f" — {file_result.failure['error']}"
+                    print(f"  [{idx}/{total}] {file_result.status} {uri}{detail}")
 
         return result
 

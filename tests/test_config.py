@@ -46,7 +46,7 @@ def test_retrieval_config_defaults_when_section_absent(tmp_path: Path) -> None:
     assert r.default_mode == "hybrid"
     assert r.chunk_size_chars == 1800
     assert r.chunk_overlap_chars == 200
-    assert r.max_feed_workers == 8
+    assert r.max_feed_workers == 5
     assert r.query_timeout_seconds == 5
 
 

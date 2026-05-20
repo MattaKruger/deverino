@@ -57,7 +57,7 @@ class RetrievalConfig:
     default_mode: str = "hybrid"
     chunk_size_chars: int = 1800
     chunk_overlap_chars: int = 200
-    max_feed_workers: int = 8
+    max_feed_workers: int = 5
     query_timeout_seconds: int = 5
 
 
@@ -168,7 +168,7 @@ class HarnessConfig:
             default_mode=str(retrieval_raw.get("default_mode", "hybrid")),
             chunk_size_chars=int(retrieval_raw.get("chunk_size_chars", 1800)),
             chunk_overlap_chars=int(retrieval_raw.get("chunk_overlap_chars", 200)),
-            max_feed_workers=int(retrieval_raw.get("max_feed_workers", 8)),
+            max_feed_workers=int(retrieval_raw.get("max_feed_workers", 5)),
             query_timeout_seconds=int(retrieval_raw.get("query_timeout_seconds", 5)),
         )
 

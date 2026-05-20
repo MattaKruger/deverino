@@ -39,5 +39,5 @@ retrieval:
   default_mode: hybrid
   chunk_size_chars: 1800
   chunk_overlap_chars: 200
-  max_feed_workers: 8
+  max_feed_workers: 5
   query_timeout_seconds: 5
