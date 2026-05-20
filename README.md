@@ -82,7 +82,7 @@ harness_poc/
 ├── cli.py                  # Typer CLI entry point
 ├── repl.py                 # Chat input handler — processes commands, feeds LLM, tracks tokens
 ├── tui.py                  # Textual ChatApp — streaming markdown responses, animated status bar
-├── app_factory.py          # Wires DB, EventBus, PydanticAI runtime, skills, workflows, pipelines into AppState
+├── app_factory.py          # Wires DB, EventBus, PydanticAI runtime, tools, skills, workflows, pipelines into AppState
 ├── core/
 │   ├── config.py           # HarnessConfig + APISettings — YAML config, .env loading, LLM credentials
 │   ├── database.py         # BlackboardDatabase — SQLite-backed session/memory/state tables
@@ -99,11 +99,14 @@ harness_poc/
 │   ├── pydantic_runtime.py # Agent runtime — agent.iter() streaming, consecutive tool call cap, raw tool results
 │   ├── skill_context.py    # SkillContext dataclass, SkillResult, tool event progress emission
 │   ├── skill_runner.py     # Discovers and executes skills from SKILL.md + skill.py
+│   ├── tool_runner.py      # Discovers and executes built-in tools + skill-backed tools
+│   ├── tool_result.py      # ToolResult dataclass — mirrors SkillResult shape
 │   ├── state.py            # StatePayload, StateProposal, state context builder
 │   └── workflow_runner.py  # Executes YAML workflow state machines
-├── system_skills/          # Built-in skills (evaluate_goal, delegate_task, etc.)
+├── system_tools/           # Built-in LLM-callable tools (Phase 1: file_tools.py)
+├── system_skills/          # System agent skills (evaluate_goal, delegate_task, containers, etc.)
 └── system_prompts/         # SOUL.md — system prompt for the primary agent
-skills/                     # Project-local skills (spec_writer, web_search, etc.)
+skills/                     # Project-local tools + skills (spec_writer, web_search, etc.)
 workflows/                  # YAML workflow definitions
 pipelines/                  # YAML pipeline DAG definitions
 personas/                   # Prompt templates for sub-agents
@@ -219,9 +222,45 @@ The REPL and pipeline agent nodes use `PydanticAgentRuntime` (`core/pydantic_run
 
 The **blackboard** (`harness_poc/blackboard.db`) is the shared state store. Skills read and write to it by session key. State is split into two layers: ephemeral session state and durable project state, with an explicit proposal/approval step to promote session facts to project state.
 
-### Skills
+### Tools and Skills
 
-Skills are discovered at startup by scanning `harness_poc/system_skills/` and `skills/`. Each skill is a directory containing `SKILL.md` (metadata + parameter schema) and `skill.py` (an `execute(ctx, arguments) -> SkillResult` function). Skills with `auto_invokable: true` in their frontmatter are registered as PydanticAI tools so the LLM can invoke them autonomously during goal runs.
+The harness distinguishes two tiers of LLM-callable functions:
+
+**Tools** — Pure primitives (no sub-agent spawning, no LLM calls). Registered at import time in `system_tools/` or discovered from `SKILL.md` files with `type: tool` in their frontmatter. Always auto-invokable by the LLM.
+
+**Skills** — Agent-level orchestration (may spawn sub-agents, call LLMs, manage multi-step state). Defined as `SKILL.md` with `type: skill` + `skill.py` implementing `execute(ctx, arguments) -> SkillResult`. May be auto-invokable or user-only.
+
+Tools are discovered by `ToolRunner`; skills by `SkillRunner`. Both feed into PydanticAI's tool pipeline with deduplication.
+
+### Tools (LLM-callable primitives)
+
+| Tool               | Source          | Description                                              |
+| ------------------ | --------------- | -------------------------------------------------------- |
+| `read_file`        | `system_tools/` | Read text files with line numbers and pagination         |
+| `write_file`       | `system_tools/` | Write content to a file, auto-create parent dirs         |
+| `patch`            | `system_tools/` | Targeted find-and-replace with fuzzy matching            |
+| `search_files`     | `system_tools/` | Ripgrep-backed search — content or filename patterns     |
+| `container_spawn`  | `system_skills/`| Create a detached Docker/Podman container                |
+| `container_exec`   | `system_skills/`| Run shell commands inside an existing container          |
+| `container_destroy`| `system_skills/`| Stop and remove a container                              |
+| `execute_python`   | `system_skills/`| Run Python in a session-scoped container sandbox         |
+| `read_memory`      | `system_skills/`| Read a key from the SQLite blackboard                    |
+| `web_search`       | `skills/`       | Search the web via LangSearch API                        |
+| `semble_search`    | `skills/`       | Semantic codebase search — find code by description      |
+| `review_work`      | `skills/`       | Review the current working tree                          |
+
+List all tools: `uv run harness-poc tool list`
+
+### Agent Skills (LLM orchestration)
+
+| Skill               | Description                                                                   |
+| ------------------- | ----------------------------------------------------------------------------- |
+| `delegate_task`     | Spawns an isolated LLM sub-agent with a persona to handle a sub-task          |
+| `evaluate_goal`     | GoalRunner intercept — LLM signals completion/blockage with reasoning         |
+| `consolidate_state` | Promotes session state to durable project state (preview / propose / approve) |
+| `summarize_memory`  | Summarise a blackboard memory key into a compact result                       |
+| `reflect_on_result` | Assesses whether a sub-agent result satisfies the original objective          |
+| `spec_writer`       | Multi-turn Q&A that produces structured XML context and markdown specs        |
 
 ### Goal Execution
 
@@ -283,6 +322,9 @@ uv run harness-poc goal "Search the web for the capital of France" --max-iterati
 # Goal with a token budget
 uv run harness-poc goal "Summarize the event-sourced architecture" --max-iterations 10 --max-tokens 8000
 
+# List built-in tools
+uv run harness-poc tool list
+
 # State management
 uv run harness-poc state show project    # durable project state
 uv run harness-poc state show session    # ephemeral session state
@@ -291,36 +333,6 @@ uv run harness-poc state show session    # ephemeral session state
 uv run harness-poc events --session-id <id> --follow --type LLMActionEmitted
 uv run harness-poc events --limit 10 --json
 ```
-
-## Skills
-
-### Auto-invokable skills (LLM can call directly)
-
-| Skill              | Description                                             |
-| ------------------ | ------------------------------------------------------- |
-| `web_search`       | Search the web via LangSearch API                       |
-| `semble_search`    | Semantic codebase search — find code by describing it   |
-| `read_memory`      | Read a key from the blackboard for the current session  |
-| `summarize_memory` | Summarise a blackboard memory key into a compact result |
-| `review_work`      | Review the current working tree                         |
-
-### Other system skills
-
-| Skill               | Description                                                                   |
-| ------------------- | ----------------------------------------------------------------------------- |
-| `delegate_task`     | Spawns an isolated LLM sub-agent with a persona to handle a sub-task          |
-| `evaluate_goal`     | GoalRunner intercept — LLM signals completion/blockage with reasoning         |
-| `consolidate_state` | Promotes session state to durable project state (preview / propose / approve) |
-| `container_spawn`   | Creates a detached Docker/Podman container — `/workspace:ro`, `/scratch:rw` with env vars for isolation |
-| `container_exec`    | Runs a shell command inside an existing container                             |
-| `container_destroy` | Stops and removes a container                                                 |
-
-### Project skills
-
-| Skill               | Description                                                            |
-| ------------------- | ---------------------------------------------------------------------- |
-| `spec_writer`       | Multi-turn Q&A that produces structured XML context and markdown specs |
-| `reflect_on_result` | Assesses whether a sub-agent result satisfies the original objective   |
 
 ## Writing specs with spec_writer
 
@@ -502,7 +514,34 @@ uv run pytest tests/test_goal_runner.py -v  # goal runner + event bus integratio
 uv run pytest tests/test_event_bus.py tests/test_event_store.py -v  # event system
 uv run ruff check .            # lint
 uv run ty check                # type check
+uv run harness-poc tool list   # list all LLM-callable tools
 uv run harness-poc skill create <name> "<description>"  # scaffold a new skill
 ```
 
+### Creating a skill
+
 Skills follow the `execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult` contract. See any skill in `skills/` or `harness_poc/system_skills/` for a working example.
+
+Each skill directory contains:
+- `SKILL.md` — YAML frontmatter with `name`, `description`, `type` (`tool` or `skill`), `parameters` (JSON Schema), `auto_invokable`, `entrypoint`, `permissions`
+- `skill.py` — the `execute()` function
+
+### Creating a tool
+
+Tools are pure Python functions registered at import time:
+
+```python
+from harness_poc.system_tools import register
+
+def my_tool(arg1: str) -> dict:
+    ...
+
+register(
+    name="my_tool",
+    description="Does something useful",
+    parameters={"type": "object", "properties": {...}},
+    handler=my_tool,
+)
+```
+
+Place the file in `system_tools/` and it's auto-discovered. No SKILL.md needed for built-in tools.
