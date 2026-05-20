@@ -82,3 +82,33 @@ class DbSessionSnapshot(SQLModel, table=True):
     last_offset: int
     state_payload: Any = Field(sa_column=Column(_StateJSON, nullable=False))
     updated_at: str | None = Field(default=None)
+
+
+class DbDocumentSource(SQLModel, table=True):
+    __tablename__ = "document_sources"  # type: ignore[assignment]
+
+    source_id: str = Field(primary_key=True)
+    uri: str
+    title: str
+    kind: str
+    content_hash: str
+    status: str  # pending | indexed | skipped | failed
+    chunk_count: int = Field(default=0)
+    indexed_at: str | None = Field(default=None)
+    error: str | None = Field(default=None)
+    metadata_payload: Any = Field(sa_column=Column(_StateJSON, nullable=False))
+    updated_at: str
+
+
+class DbDocumentChunk(SQLModel, table=True):
+    __tablename__ = "document_chunks"  # type: ignore[assignment]
+    __table_args__ = (
+        Index("idx_document_chunks_source", "source_id", "chunk_index"),
+    )
+
+    chunk_id: str = Field(primary_key=True)
+    source_id: str = Field(foreign_key="document_sources.source_id")
+    chunk_index: int
+    content_hash: str
+    vespa_id: str
+    indexed_at: str | None = Field(default=None)
