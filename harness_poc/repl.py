@@ -76,6 +76,10 @@ def handle_repl_input(app_state: AppState, user_input: str) -> None:  # noqa: PL
         list_skills(app_state)
         return
 
+    if _is_copy_command(user_input):
+        handle_copy_command(app_state)
+        return
+
     if _is_goal_command(user_input):
         handle_goal_command(app_state, user_input)
         return
@@ -102,6 +106,10 @@ def _is_skills_command(user_input: str) -> bool:
     return user_input in {"/skills", "skills"}
 
 
+def _is_copy_command(user_input: str) -> bool:
+    return user_input in {"/copy", "copy"}
+
+
 def print_repl_help() -> None:
     print_text(
         """REPL commands:
@@ -116,6 +124,7 @@ def print_repl_help() -> None:
   /skill list
   /skill show <name>
   /skills
+  /copy
   /help
   /exit
 
@@ -589,6 +598,21 @@ def find_skill_files(app_state: AppState) -> list[Path]:
 
 def list_skills(app_state: AppState) -> None:
     print_skill_table(find_skill_files(app_state), app_state.skill_runner)
+
+
+def handle_copy_command(app_state: AppState) -> None:
+    for msg in reversed(app_state.messages):
+        if msg.get("role") == "assistant" and msg.get("content"):
+            import subprocess  # noqa: PLC0415
+
+            content = msg["content"]
+            try:
+                subprocess.run(["pbcopy"], input=content.encode(), check=True)  # noqa: S607
+                print_text("Last response copied to clipboard.")
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                print_text(content)
+            return
+    print_text("No response to copy.")
 
 
 def is_skill_name(app_state: AppState, skill_name: str) -> bool:

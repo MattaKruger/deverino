@@ -138,6 +138,7 @@ def _skill_names(app_state: AppState) -> tuple[str, ...]:
 class ChatApp(App[None]):
     BINDINGS: ClassVar[list] = [
         Binding("super+c", "copy_smart", "Copy", priority=True, show=False),
+        Binding("super+y", "copy_last_response", "Copy last response", priority=True, show=False),
         Binding("ctrl+d", "submit_editor", "Submit", priority=True, show=False),
         Binding("alt+enter", "submit_editor", "Submit", priority=True, show=False),
         Binding("super+enter", "submit_editor", "Submit", priority=True, show=False),
@@ -248,6 +249,15 @@ class ChatApp(App[None]):
         else:
             with contextlib.suppress(Exception):
                 self.query_one("#input", TextArea).action_copy()
+
+    def action_copy_last_response(self) -> None:
+        messages = self._app_state.messages
+        for msg in reversed(messages):
+            if msg.get("role") == "assistant" and msg.get("content"):
+                self.copy_to_clipboard(msg["content"])
+                self.notify("Last response copied to clipboard")
+                return
+        self.notify("No response to copy", severity="warning")
 
     def on_markdown_link_clicked(self, event: Markdown.LinkClicked) -> None:
         """Open ``file-line:`` links in Zed editor."""
