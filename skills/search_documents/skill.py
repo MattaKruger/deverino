@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.retrieval import SearchRequest
@@ -12,9 +13,13 @@ if TYPE_CHECKING:
 
 _VALID_MODES = {"hybrid", "semantic", "keyword"}
 _EXCERPT_CHARS = 300
+_PREVIEW_EXCERPT_CHARS = 80
 
 
-def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noqa: PLR0911
+def _validate_arguments(
+    arguments: dict[str, Any], ctx: SkillContext
+) -> SkillResult | None:
+    """Return an error SkillResult if arguments are invalid, or None if valid."""
     if not ctx.config.retrieval.enabled:
         return SkillResult(
             status="failed",
@@ -39,7 +44,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
 
     try:
-        hits = int(arguments.get("hits") or ctx.config.retrieval.default_hits)
+        int(arguments.get("hits") or ctx.config.retrieval.default_hits)
     except (TypeError, ValueError):
         return SkillResult(
             status="failed",
@@ -47,10 +52,22 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
             artifacts={},
         )
 
+    return None
+
+
+def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
+    error = _validate_arguments(arguments, ctx)
+    if error is not None:
+        return error
+
+    query = str(arguments["query"]).strip()
+    mode = str(arguments.get("mode") or ctx.config.retrieval.default_mode)
+    hits = max(1, int(arguments.get("hits") or ctx.config.retrieval.default_hits))
+
     request = SearchRequest(
         query=query,
         mode=mode,
-        hits=max(1, hits),
+        hits=hits,
         source_id=_optional_str(arguments.get("source_id")),
         kind=_optional_str(arguments.get("kind")),
     )
@@ -65,25 +82,132 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
             artifacts={},
         )
 
-    artifacts = {
-        "query": query,
-        "mode": mode,
-        "results": [_result_artifact(result) for result in results],
-    }
-
     if not results:
         return SkillResult(
             status="success",
             content=(
-                "No results found. If you haven't indexed documents yet, run index_documents first."
+                "No results found. If you haven't indexed documents yet, "
+                "run index_documents first."
             ),
-            artifacts=artifacts,
+            artifacts={"query": query, "mode": mode, "results": []},
         )
 
-    content = _format_results(results)
+    expand = arguments.get("expand")
+    if expand is not None:
+        selected = _parse_expand_indices(expand, len(results))
+        return _format_expand(results, selected, query, mode, ctx)
+
+    return _format_preview(results, query, mode)
+
+
+def _parse_expand_indices(expand: object, max_results: int) -> list[int]:
+    """Parse the *expand* argument into a sorted, deduplicated list of 0-based indices."""
+    raw: list[object]
+    if isinstance(expand, list):
+        raw = list(expand)
+    elif isinstance(expand, str):
+        try:
+            parsed = json.loads(expand)
+        except (json.JSONDecodeError, ValueError):
+            return []
+        raw = list(parsed) if isinstance(parsed, list) else []
+    else:
+        return []
+
+    indices: list[int] = []
+    for item in raw:
+        try:
+            idx = int(str(item))
+        except (TypeError, ValueError):
+            continue
+        zero_based = idx - 1  # 1-based → 0-based
+        if 0 <= zero_based < max_results and zero_based not in indices:
+            indices.append(zero_based)
+    return sorted(indices)
+
+
+def _format_preview(
+    results: list[SearchResult],
+    query: str,
+    mode: str,
+) -> SkillResult:
+    """Return a compact preview so the user can choose which results to load."""
+    plural = "s" if len(results) != 1 else ""
+    lines: list[str] = [
+        f'Found {len(results)} result{plural} for "{query}" (mode: {mode}):',
+        "",
+    ]
+    for index, result in enumerate(results, 1):
+        excerpt = result.text[:_PREVIEW_EXCERPT_CHARS].replace("\n", " ")
+        if len(result.text) > _PREVIEW_EXCERPT_CHARS:
+            excerpt += "..."
+        lines.append(
+            f'{index}. {result.uri} (score {result.relevance:.2f}) — "{excerpt}"'
+        )
+
+    lines.extend(
+        [
+            "",
+            "Which results would you like me to load into context?",
+            "Reply with numbers (e.g., 'load 1, 3') or 'load all'.",
+        ]
+    )
+
+    artifacts = {
+        "query": query,
+        "mode": mode,
+        "result_count": len(results),
+        "results": [_result_artifact(result) for result in results],
+    }
+
+    return SkillResult(
+        status="needs_orchestrator_action",
+        content="\n".join(lines),
+        artifacts=artifacts,
+    )
+
+
+def _format_expand(
+    results: list[SearchResult],
+    selected: list[int],
+    query: str,
+    mode: str,
+    ctx: SkillContext,
+) -> SkillResult:
+    """Return full excerpts for the selected result indices only."""
+    if not selected:
+        return SkillResult(
+            status="failed",
+            content=(
+                "No valid result indices provided for expand. "
+                "Use numbers like 1, 2, 3 corresponding to the preview."
+            ),
+            artifacts={},
+        )
+
+    selected_results = [results[i] for i in selected]
+
+    lines: list[str] = []
+    for index, result in enumerate(selected_results, 1):
+        excerpt = result.text[:_EXCERPT_CHARS] + (
+            "..." if len(result.text) > _EXCERPT_CHARS else ""
+        )
+        lines.append(
+            f"{index}. {result.uri}#chunk-{result.chunk_index} "
+            f"(score {result.relevance:.2f})\n"
+            f"   {excerpt}"
+        )
+
+    content = "\n\n".join(lines)
     max_chars = ctx.config.runtime.tool_result_max_chars
     if len(content) > max_chars:
         content = content[:max_chars] + "\n\n[truncated]"
+
+    artifacts = {
+        "query": query,
+        "mode": mode,
+        "results": [_result_artifact(result) for result in selected_results],
+    }
 
     return SkillResult(status="success", content=content, artifacts=artifacts)
 
@@ -93,19 +217,6 @@ def _optional_str(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
-
-
-def _format_results(results: list[SearchResult]) -> str:
-    lines: list[str] = []
-    for index, result in enumerate(results, 1):
-        excerpt = result.text[:_EXCERPT_CHARS] + (
-            "..." if len(result.text) > _EXCERPT_CHARS else ""
-        )
-        lines.append(
-            f"{index}. {result.uri}#chunk-{result.chunk_index} (score {result.relevance:.2f})\n"
-            f"   {excerpt}"
-        )
-    return "\n\n".join(lines)
 
 
 def _result_artifact(result: SearchResult) -> dict[str, object]:
