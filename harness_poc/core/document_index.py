@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +14,8 @@ from pypdf.errors import PdfReadError
 from harness_poc.core.models import DbDocumentChunk, DbDocumentSource
 from harness_poc.core.retrieval import compute_content_hash, make_document_chunks, make_source_id
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
     from harness_poc.core.config import RetrievalConfig
@@ -20,6 +24,12 @@ if TYPE_CHECKING:
 
 SUPPORTED_EXTENSIONS = frozenset(
     {".md", ".txt", ".rst", ".yaml", ".yml", ".json", ".toml", ".py", ".pdf"}
+)
+
+# Control characters (codepoints 0x00-0x1F) that are illegal in Vespa string fields,
+# except for tab (0x09), newline (0x0A), and carriage return (0x0D).
+_ILLEGAL_CONTROL_RE = re.compile(
+    "[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]"
 )
 IGNORED_DIR_NAMES = frozenset({".git", ".venv", "__pycache__", ".deverino-scratch"})
 IGNORED_FILE_GLOBS = frozenset({"*.db", ".env", "*.pem", "*.key", "id_rsa", "credentials.json"})
@@ -57,9 +67,17 @@ class DocumentIndexer:
         result = IndexResult()
         resolved_root = project_root.resolve()
 
+        logger.info(
+            "Starting document indexing: paths=%s glob=%s force=%s",
+            paths,
+            glob_pattern,
+            force,
+        )
+
         try:
             self._vespa.health_check()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
+            logger.exception("Vespa health check failed")
             for raw_path in paths:
                 uri = raw_path
                 source_id = make_source_id(uri)
@@ -82,7 +100,12 @@ class DocumentIndexer:
                 result.failures.append({"uri": uri, "error": str(exc)})
             return result
 
-        for file_path in self._resolve_files(resolved_root, paths, glob_pattern):
+        resolved_files = self._resolve_files(resolved_root, paths, glob_pattern)
+        total = len(resolved_files)
+        logger.info("Resolved %d file(s) to process", total)
+        print(f"\nIndexing {total} file(s)...\n")
+
+        for idx, file_path in enumerate(resolved_files, start=1):
             try:
                 uri = str(file_path.relative_to(resolved_root))
             except ValueError:
@@ -92,27 +115,35 @@ class DocumentIndexer:
                 )
                 continue
 
-            self._index_one(file_path, uri, force=force, result=result)
+            status = self._index_one(file_path, uri, force=force, result=result)
+            logger.info(
+                "[%d/%d] %s %s",
+                idx,
+                total,
+                status,
+                uri,
+            )
+            print(f"  [{idx}/{total}] {status} {uri}")
 
         return result
 
-    def _index_one(
+    def _index_one(  # noqa: PLR0911
         self,
         file_path: Path,
         uri: str,
         *,
         force: bool,
         result: IndexResult,
-    ) -> None:
+    ) -> str:
         source_id = make_source_id(uri)
 
         if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
             result.skipped += 1
-            return
+            return "skipped"
 
         if _is_secret_file(file_path.name):
             result.skipped += 1
-            return
+            return "skipped"
 
         try:
             if file_path.stat().st_size > MAX_FILE_BYTES:
@@ -120,12 +151,12 @@ class DocumentIndexer:
                 result.failures.append(
                     {"uri": uri, "error": f"file exceeds {MAX_FILE_BYTES} bytes"}
                 )
-                return
-            text = _read_document_text(file_path)
+                return "failed"
+            text = _sanitize_text(_read_document_text(file_path))
         except (OSError, PdfReadError, UnicodeError) as exc:
             result.failed += 1
             result.failures.append({"uri": uri, "error": str(exc)})
-            return
+            return "failed"
 
         content_hash = compute_content_hash(text)
         existing = self._db.get_document_source(source_id)
@@ -143,7 +174,7 @@ class DocumentIndexer:
                 )
             )
             result.skipped += 1
-            return
+            return "skipped"
 
         title = file_path.stem.replace("-", " ").replace("_", " ").title()
         chunks = make_document_chunks(
@@ -185,7 +216,7 @@ class DocumentIndexer:
             )
             result.failed += 1
             result.failures.append({"uri": uri, "error": error_msg})
-            return
+            return "failed"
 
         now = _utc_now()
         for chunk in chunks:
@@ -213,6 +244,7 @@ class DocumentIndexer:
         )
         result.indexed += 1
         result.chunks_indexed += len(chunks)
+        return "indexed"
 
     def _resolve_files(self, project_root: Path, paths: list[str], glob_pattern: str) -> list[Path]:
         files: list[Path] = []
@@ -258,6 +290,11 @@ def _read_document_text(file_path: Path) -> str:
     if file_path.suffix.lower() == ".pdf":
         return _read_pdf_text(file_path)
     return file_path.read_text(encoding="utf-8", errors="replace")
+
+
+def _sanitize_text(text: str) -> str:
+    """Strip control characters that are illegal in Vespa string fields."""
+    return _ILLEGAL_CONTROL_RE.sub(" ", text)
 
 
 def _read_pdf_text(file_path: Path) -> str:
