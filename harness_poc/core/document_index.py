@@ -3,6 +3,8 @@ from __future__ import annotations
 import fnmatch
 import logging
 import re
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,6 +47,19 @@ class IndexResult:
     failures: list[dict[str, str]] = field(default_factory=list)
 
 
+@dataclass
+class _FileResult:
+    """Per-file indexing outcome, safe to produce from worker threads."""
+
+    uri: str
+    status: str
+    indexed: int = 0
+    skipped: int = 0
+    failed: int = 0
+    chunks: int = 0
+    failure: dict[str, str] | None = None
+
+
 class DocumentIndexer:
     def __init__(
         self,
@@ -55,6 +70,11 @@ class DocumentIndexer:
         self._config = config
         self._db = database
         self._vespa = vespa_client
+        self._print_lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def index_paths(
         self,
@@ -102,10 +122,19 @@ class DocumentIndexer:
 
         resolved_files = self._resolve_files(resolved_root, paths, glob_pattern)
         total = len(resolved_files)
-        logger.info("Resolved %d file(s) to process", total)
-        print(f"\nIndexing {total} file(s)...\n")
+        if total == 0:
+            logger.info("No files resolved for indexing")
+            return result
 
-        for idx, file_path in enumerate(resolved_files, start=1):
+        logger.info("Resolved %d file(s) to process", total)
+
+        max_workers = max(1, self._config.max_feed_workers)
+        with self._print_lock:
+            print(f"\nIndexing {total} file(s) with {max_workers} worker(s)...\n")
+
+        # Build (uri, file_path) pairs, rejecting paths outside project root upfront.
+        work_items: list[tuple[str, Path]] = []
+        for file_path in resolved_files:
             try:
                 uri = str(file_path.relative_to(resolved_root))
             except ValueError:
@@ -114,49 +143,92 @@ class DocumentIndexer:
                     {"uri": str(file_path), "error": "path outside project root"}
                 )
                 continue
+            work_items.append((uri, file_path))
 
-            status = self._index_one(file_path, uri, force=force, result=result)
-            logger.info(
-                "[%d/%d] %s %s",
-                idx,
-                total,
-                status,
-                uri,
-            )
-            print(f"  [{idx}/{total}] {status} {uri}")
+        # Process files in parallel.
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map: dict[Future[_FileResult], tuple[int, str]] = {}
+            for idx, (uri, file_path) in enumerate(work_items, start=1):
+                future = executor.submit(
+                    self._index_one_isolated,
+                    file_path,
+                    uri,
+                    force=force,
+                )
+                future_map[future] = (idx, uri)
+
+            for future in as_completed(future_map):
+                idx, uri = future_map[future]
+                try:
+                    file_result = future.result()
+                except Exception as exc:
+                    logger.exception("Worker failed for %s", uri)
+                    file_result = _FileResult(
+                        uri=uri,
+                        status="failed",
+                        failed=1,
+                        failure={"uri": uri, "error": str(exc)},
+                    )
+
+                # Merge into shared result.
+                result.indexed += file_result.indexed
+                result.skipped += file_result.skipped
+                result.failed += file_result.failed
+                result.chunks_indexed += file_result.chunks
+                if file_result.failure is not None:
+                    result.failures.append(file_result.failure)
+
+                logger.info(
+                    "[%d/%d] %s %s",
+                    idx,
+                    total,
+                    file_result.status,
+                    uri,
+                )
+                with self._print_lock:
+                    print(f"  [{idx}/{total}] {file_result.status} {uri}")
 
         return result
 
-    def _index_one(  # noqa: PLR0911
+    # ------------------------------------------------------------------
+    # Per-file indexing (thread-safe — only touches its own file's data)
+    # ------------------------------------------------------------------
+
+    def _index_one_isolated(  # noqa: PLR0911
         self,
         file_path: Path,
         uri: str,
         *,
         force: bool,
-        result: IndexResult,
-    ) -> str:
+    ) -> _FileResult:
+        """Index a single file and return its outcome without mutating shared state."""
         source_id = make_source_id(uri)
 
         if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
-            result.skipped += 1
-            return "skipped"
+            return _FileResult(uri=uri, status="skipped", skipped=1)
 
         if _is_secret_file(file_path.name):
-            result.skipped += 1
-            return "skipped"
+            return _FileResult(uri=uri, status="skipped", skipped=1)
 
         try:
             if file_path.stat().st_size > MAX_FILE_BYTES:
-                result.failed += 1
-                result.failures.append(
-                    {"uri": uri, "error": f"file exceeds {MAX_FILE_BYTES} bytes"}
+                return _FileResult(
+                    uri=uri,
+                    status="failed",
+                    failed=1,
+                    failure={
+                        "uri": uri,
+                        "error": f"file exceeds {MAX_FILE_BYTES} bytes",
+                    },
                 )
-                return "failed"
             text = _sanitize_text(_read_document_text(file_path))
         except (OSError, PdfReadError, UnicodeError) as exc:
-            result.failed += 1
-            result.failures.append({"uri": uri, "error": str(exc)})
-            return "failed"
+            return _FileResult(
+                uri=uri,
+                status="failed",
+                failed=1,
+                failure={"uri": uri, "error": str(exc)},
+            )
 
         content_hash = compute_content_hash(text)
         existing = self._db.get_document_source(source_id)
@@ -173,8 +245,7 @@ class DocumentIndexer:
                     indexed_at=existing.indexed_at,
                 )
             )
-            result.skipped += 1
-            return "skipped"
+            return _FileResult(uri=uri, status="skipped", skipped=1)
 
         title = file_path.stem.replace("-", " ").replace("_", " ").title()
         chunks = make_document_chunks(
@@ -214,9 +285,12 @@ class DocumentIndexer:
                     error=error_msg,
                 )
             )
-            result.failed += 1
-            result.failures.append({"uri": uri, "error": error_msg})
-            return "failed"
+            return _FileResult(
+                uri=uri,
+                status="failed",
+                failed=1,
+                failure={"uri": uri, "error": error_msg},
+            )
 
         now = _utc_now()
         for chunk in chunks:
@@ -242,9 +316,16 @@ class DocumentIndexer:
                 indexed_at=now,
             )
         )
-        result.indexed += 1
-        result.chunks_indexed += len(chunks)
-        return "indexed"
+        return _FileResult(
+            uri=uri,
+            status="indexed",
+            indexed=1,
+            chunks=len(chunks),
+        )
+
+    # ------------------------------------------------------------------
+    # File resolution
+    # ------------------------------------------------------------------
 
     def _resolve_files(self, project_root: Path, paths: list[str], glob_pattern: str) -> list[Path]:
         files: list[Path] = []
@@ -272,6 +353,11 @@ class DocumentIndexer:
                     ):
                         files.append(resolved_child)
         return files
+
+
+# ------------------------------------------------------------------
+# Module-level helpers
+# ------------------------------------------------------------------
 
 
 def _in_ignored_dir(path: Path, project_root: Path) -> bool:
