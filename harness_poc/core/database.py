@@ -332,23 +332,42 @@ class BlackboardDatabase:
             session.commit()
 
     def upsert_document_source(self, source: DbDocumentSource) -> None:
-        with Session(self._engine) as session:
-            existing = session.get(DbDocumentSource, source.source_id)
-            if existing is None:
-                session.add(source)
-            else:
-                existing.uri = source.uri
-                existing.title = source.title
-                existing.kind = source.kind
-                existing.content_hash = source.content_hash
-                existing.status = source.status
-                existing.chunk_count = source.chunk_count
-                existing.indexed_at = source.indexed_at
-                existing.error = source.error
-                existing.metadata_payload = source.metadata_payload
-                existing.updated_at = source.updated_at
-                session.add(existing)
-            session.commit()
+        if self._engine.dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert  # noqa: PLC0415
+        else:
+            from sqlalchemy.dialects.sqlite import insert  # noqa: PLC0415
+
+        stmt = insert(DbDocumentSource).values(
+            source_id=source.source_id,
+            uri=source.uri,
+            title=source.title,
+            kind=source.kind,
+            content_hash=source.content_hash,
+            status=source.status,
+            chunk_count=source.chunk_count,
+            indexed_at=source.indexed_at,
+            error=source.error,
+            metadata_payload=source.metadata_payload,
+            updated_at=source.updated_at,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["source_id"],
+            set_={
+                "uri": source.uri,
+                "title": source.title,
+                "kind": source.kind,
+                "content_hash": source.content_hash,
+                "status": source.status,
+                "chunk_count": source.chunk_count,
+                "indexed_at": source.indexed_at,
+                "error": source.error,
+                "metadata_payload": source.metadata_payload,
+                "updated_at": source.updated_at,
+            },
+        )
+        with self._engine.connect() as conn:
+            conn.execute(stmt)
+            conn.commit()
 
     def get_document_source(self, source_id: str) -> DbDocumentSource | None:
         with Session(self._engine) as session:
@@ -359,18 +378,32 @@ class BlackboardDatabase:
             return list(session.exec(select(DbDocumentSource)).all())
 
     def upsert_document_chunk(self, chunk: DbDocumentChunk) -> None:
-        with Session(self._engine) as session:
-            existing = session.get(DbDocumentChunk, chunk.chunk_id)
-            if existing is None:
-                session.add(chunk)
-            else:
-                existing.source_id = chunk.source_id
-                existing.chunk_index = chunk.chunk_index
-                existing.content_hash = chunk.content_hash
-                existing.vespa_id = chunk.vespa_id
-                existing.indexed_at = chunk.indexed_at
-                session.add(existing)
-            session.commit()
+        if self._engine.dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert  # noqa: PLC0415
+        else:
+            from sqlalchemy.dialects.sqlite import insert  # noqa: PLC0415
+
+        stmt = insert(DbDocumentChunk).values(
+            chunk_id=chunk.chunk_id,
+            source_id=chunk.source_id,
+            chunk_index=chunk.chunk_index,
+            content_hash=chunk.content_hash,
+            vespa_id=chunk.vespa_id,
+            indexed_at=chunk.indexed_at,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["chunk_id"],
+            set_={
+                "source_id": chunk.source_id,
+                "chunk_index": chunk.chunk_index,
+                "content_hash": chunk.content_hash,
+                "vespa_id": chunk.vespa_id,
+                "indexed_at": chunk.indexed_at,
+            },
+        )
+        with self._engine.connect() as conn:
+            conn.execute(stmt)
+            conn.commit()
 
     def list_chunks_for_source(self, source_id: str) -> list[DbDocumentChunk]:
         with Session(self._engine) as session:
