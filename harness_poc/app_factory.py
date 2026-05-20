@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -11,6 +16,7 @@ from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.db_engine import create_db_engine
+from harness_poc.core.document_index import DocumentIndexer
 from harness_poc.core.event_bus import EventBus
 from harness_poc.core.event_store import EventStore
 from harness_poc.core.logging import configure_logging
@@ -25,8 +31,11 @@ from harness_poc.core.skill_runner import SkillRunner
 from harness_poc.core.skill_scaffolder import SkillScaffolder
 from harness_poc.core.state import build_state_context
 from harness_poc.core.tool_runner import ToolRunner
+from harness_poc.core.vespa_client import LiveVespaDocumentClient
 from harness_poc.core.workflow_runner import WorkflowRunner
 from harness_poc.system_tools.knowledge_tools import init_knowledge_context
+
+logger = logging.getLogger(__name__)
 
 # Skills excluded from the agent's auto-invokable toolset because they
 # have workspace=read_write and could mutate project source files.
@@ -93,6 +102,90 @@ class AppState:
     event_bus: EventBus
     streaming: StreamingContext
     materializer_runner: MaterializerRunner | None = None
+
+
+def _check_vespa_health(config: HarnessConfig) -> None:
+    """Check Vespa health — isolated so it can run with a timeout."""
+    vespa = LiveVespaDocumentClient(config.retrieval)
+    vespa.health_check()
+
+
+def bootstrap_document_index(config: HarnessConfig, database: BlackboardDatabase) -> None:
+    """Auto-index project documents on startup when retrieval is enabled.
+
+    Called from interactive entry points (REPL, goal). No-op when
+    retrieval is disabled, auto_index_paths is empty, the target paths
+    don't exist on disk, Vespa is unreachable, or HARNESS_SKIP_AUTO_INDEX
+    is set in the environment.
+    """
+    paths = _resolve_auto_index_paths(config)
+    if paths is None:
+        return
+
+    try:
+        executor = ThreadPoolExecutor(max_workers=1)
+        try:
+            future = executor.submit(_check_vespa_health, config)
+            future.result(timeout=3.0)
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+    except FutureTimeoutError:
+        logger.info("Skipping auto-index: Vespa health check timed out")
+        return
+    except Exception:  # noqa: BLE001
+        logger.info("Skipping auto-index: Vespa not reachable")
+        return
+
+    _run_auto_index(config, database, paths)
+
+
+def _resolve_auto_index_paths(config: HarnessConfig) -> list[str] | None:
+    """Return the list of paths to auto-index, or None if indexing should be skipped."""
+    if os.environ.get("HARNESS_SKIP_AUTO_INDEX"):
+        logger.info("Skipping auto-index: HARNESS_SKIP_AUTO_INDEX is set")
+        return None
+    if not config.retrieval.enabled:
+        return None
+    paths = config.retrieval.auto_index_paths
+    if not paths:
+        return None
+
+    any_exists = False
+    for p in paths:
+        candidate = config.project_root / p if not Path(p).is_absolute() else Path(p)
+        if candidate.exists():
+            any_exists = True
+            break
+    return paths if any_exists else None
+
+
+def _run_auto_index(
+    config: HarnessConfig, database: BlackboardDatabase, paths: list[str]
+) -> None:
+    """Feed chunks to Vespa and write metadata to the database."""
+    vespa = LiveVespaDocumentClient(config.retrieval)
+    indexer = DocumentIndexer(
+        config=config.retrieval,
+        database=database,
+        vespa_client=vespa,
+    )
+    print("Indexing project documents...", end=" ", flush=True)
+    try:
+        result = indexer.index_paths(
+            project_root=config.project_root,
+            paths=paths,
+        )
+        parts = []
+        if result.indexed:
+            parts.append(f"{result.indexed} indexed")
+        if result.skipped:
+            parts.append(f"{result.skipped} skipped")
+        if result.failed:
+            parts.append(f"{result.failed} failed")
+        print(f"done ({", ".join(parts)})")
+    except Exception:
+        logger.exception("Auto-index failed")
+        print("failed")
 
 
 def _permissive_for_tools() -> SkillPermissions:

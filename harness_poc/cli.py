@@ -321,6 +321,10 @@ def goal(
     """Run an autonomous event-sourced goal execution loop."""
     app_state = _new_app_state()
     try:
+        from harness_poc.app_factory import bootstrap_document_index  # noqa: PLC0415
+
+        bootstrap_document_index(app_state.config, app_state.database)
+
         result = asyncio.run(
             _run_event_sourced_goal(
                 objective=objective,

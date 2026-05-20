@@ -38,6 +38,10 @@ def _track_tokens(accounting: TokenAccounting, app_state: AppState) -> None:
 
 
 def run_repl(app_state: AppState) -> None:
+    from harness_poc.app_factory import bootstrap_document_index  # noqa: PLC0415
+
+    bootstrap_document_index(app_state.config, app_state.database)
+
     from harness_poc.tui import ChatApp  # noqa: PLC0415
 
     ChatApp(app_state).run()

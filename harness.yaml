@@ -50,3 +50,5 @@ retrieval:
   max_feed_workers: 5
   max_file_bytes: 52428800
   query_timeout_seconds: 5
+  auto_index_paths:
+    - docs/

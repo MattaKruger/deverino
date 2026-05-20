@@ -66,6 +66,7 @@ class RetrievalConfig:
     max_feed_workers: int = 5
     max_file_bytes: int = 5 * 1024 * 1024
     query_timeout_seconds: int = 5
+    auto_index_paths: list[str] = field(default_factory=lambda: ["docs/"])
 
 
 def _find_dotenv() -> Path | None:
@@ -188,6 +189,9 @@ class HarnessConfig:
             max_feed_workers=int(retrieval_raw.get("max_feed_workers", 5)),
             max_file_bytes=int(retrieval_raw.get("max_file_bytes", 5 * 1024 * 1024)),
             query_timeout_seconds=int(retrieval_raw.get("query_timeout_seconds", 5)),
+            auto_index_paths=_parse_string_list(
+                retrieval_raw.get("auto_index_paths", ["docs/"])
+            ),
         )
 
         project_raw = _mapping(raw.get("project"), "project")
@@ -232,6 +236,19 @@ def _mapping(value: object, name: str) -> dict[str, Any]:
         raise TypeError(msg)
 
     return cast("dict[str, Any]", value)
+
+
+def _parse_string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        msg = f"Expected a list of strings, got {type(value).__name__}"
+        raise TypeError(msg)
+    result: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            result.append(item)
+        else:
+            result.append(str(item))
+    return result
 
 
 def _resolve_path(project_root: Path, value: object) -> Path:
