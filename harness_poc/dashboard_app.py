@@ -97,6 +97,55 @@ def _layout() -> html.Div:
                 [
                     html.Div(
                         [
+                            html.H2("Session Activity", style={"fontSize": "16px"}),
+                            dash_table.DataTable(
+                                id="session-activity-table",
+                                page_size=12,
+                                style_table={"overflowX": "auto"},
+                                style_cell=_table_cell_style(),
+                                style_header={"fontWeight": "600", "backgroundColor": "#f2f5f8"},
+                            ),
+                        ],
+                        style={**CARD_STYLE, "minWidth": 0},
+                    ),
+                    html.Div(
+                        [
+                            html.H2("Tokens By Model", style={"fontSize": "16px"}),
+                            dash_table.DataTable(
+                                id="model-token-table",
+                                page_size=12,
+                                style_table={"overflowX": "auto"},
+                                style_cell=_table_cell_style(),
+                                style_header={"fontWeight": "600", "backgroundColor": "#f2f5f8"},
+                            ),
+                        ],
+                        style={**CARD_STYLE, "minWidth": 0},
+                    ),
+                    html.Div(
+                        [
+                            html.H2("Tokens By Session", style={"fontSize": "16px"}),
+                            dash_table.DataTable(
+                                id="session-token-table",
+                                page_size=12,
+                                style_table={"overflowX": "auto"},
+                                style_cell=_table_cell_style(),
+                                style_header={"fontWeight": "600", "backgroundColor": "#f2f5f8"},
+                            ),
+                        ],
+                        style={**CARD_STYLE, "minWidth": 0},
+                    ),
+                ],
+                style={
+                    "display": "grid",
+                    "gridTemplateColumns": "repeat(auto-fit, minmax(360px, 1fr))",
+                    "gap": "12px",
+                    "marginBottom": "12px",
+                },
+            ),
+            html.Div(
+                [
+                    html.Div(
+                        [
                             html.H2("Skill Performance", style={"fontSize": "16px"}),
                             dash_table.DataTable(
                                 id="skill-table",
@@ -149,6 +198,12 @@ def _register_callbacks(engine: Engine) -> None:
         Output("failure-table", "columns"),
         Output("context-table", "data"),
         Output("context-table", "columns"),
+        Output("session-activity-table", "data"),
+        Output("session-activity-table", "columns"),
+        Output("model-token-table", "data"),
+        Output("model-token-table", "columns"),
+        Output("session-token-table", "data"),
+        Output("session-token-table", "columns"),
         Output("last-updated", "children"),
         Input("refresh", "n_intervals"),
     )
@@ -164,6 +219,12 @@ def _register_callbacks(engine: Engine) -> None:
             _columns(data["recent_failures"]),
             data["context_maps"],
             _columns(data["context_maps"]),
+            data["session_activity"],
+            _columns(data["session_activity"]),
+            data["model_token_usage"],
+            _columns(data["model_token_usage"]),
+            data["session_token_usage"],
+            _columns(data["session_token_usage"]),
             "Refreshes every 10 seconds",
         )
 

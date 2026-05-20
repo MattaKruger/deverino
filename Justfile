@@ -16,6 +16,14 @@ skills:
 state:
     uv run harness-poc state show project
 
+# Show lightweight dashboard snapshot
+dashboard-summary:
+    uv run harness-poc dashboard summary
+
+# Run Dash dashboard server: just dashboard 8050
+dashboard port="8050":
+    uv run harness-poc dashboard serve --port {{port}}
+
 # Run a workflow: just workflow <name> "<objective>"
 workflow name objective:
     uv run harness-poc workflow run {{name}} "{{objective}}"

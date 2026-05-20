@@ -18,7 +18,7 @@ E = TypeVar("E", bound=BaseEvent)
 
 
 class _Published:
-    def __await__(self) -> Generator[None, None, None]:
+    def __await__(self) -> Generator[None]:
         if False:
             yield None
         return None
@@ -44,13 +44,13 @@ class EventBus:
     def subscribe(self, event_type: type[E], handler: Callable[[E], None]) -> None: ...
 
     @overload
-    def subscribe(self, session_id: str) -> AsyncGenerator[BaseEvent, None]: ...
+    def subscribe(self, session_id: str) -> AsyncGenerator[BaseEvent]: ...
 
     def subscribe(
         self,
         event_type_or_session_id: type[E] | str,
         handler: Callable[[E], None] | None = None,
-    ) -> AsyncGenerator[BaseEvent, None] | None:
+    ) -> AsyncGenerator[BaseEvent] | None:
         if handler is not None:
             if isinstance(event_type_or_session_id, str):
                 msg = "Handler EventBus subscription requires an event type"
@@ -64,7 +64,7 @@ class EventBus:
 
         return self._subscribe_session(event_type_or_session_id)
 
-    def subscribe_session(self, session_id: str) -> AsyncGenerator[BaseEvent, None]:
+    def subscribe_session(self, session_id: str) -> AsyncGenerator[BaseEvent]:
         return self._subscribe_session(session_id)
 
     def get_recent_events(
@@ -93,7 +93,7 @@ class EventBus:
     async def _subscribe_session(
         self,
         session_id: str,
-    ) -> AsyncGenerator[BaseEvent, None]:
+    ) -> AsyncGenerator[BaseEvent]:
         queue: asyncio.Queue[BaseEvent] = asyncio.Queue()
         self._async_subscribers.append(queue)
         try:
