@@ -7,27 +7,27 @@ themselves at import time via ``harness_poc.system_tools.register()``.
 Built-in tools are pure functions -- no sub-agent spawning, no LLM
 involvement. They correspond to Hermes's ``tools/`` layer.
 
-During the migration period (Phase 2), ToolRunner also scans
-``system_skills/`` for SKILL.md files with ``type: tool`` in the YAML
-frontmatter. These tool-level skills are registered as skill-backed
-handlers that delegate execution to ``SkillRunner``. When the migration
-completes (Phase 4), the tool code itself will move into
-``system_tools/``.
+ToolRunner also scans ``project_skills/`` for SKILL.md files with
+``type: tool``. Those tool-level skills are executed through
+``SkillRunner`` (which creates a proper ``SkillContext``).
 """
 
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json as _json
 import logging
 from typing import TYPE_CHECKING, Any
 
+from harness_poc.core.tool_context import ToolContext
 from harness_poc.core.tool_result import ToolResult
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from harness_poc.core.config import HarnessConfig
+    from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
+    from harness_poc.core.config import HarnessConfig, RuntimeConfig
     from harness_poc.core.skill_runner import SkillRunner
 
 logger = logging.getLogger(__name__)
@@ -36,9 +36,10 @@ logger = logging.getLogger(__name__)
 class ToolRunner:
     """Discover and execute built-in tools.
 
-    During the migration period (Phase 2), ToolRunner also scans
-    ``system_skills/`` and ``project_skills/`` for SKILL.md files
-    with ``type: tool`` in the YAML frontmatter.
+    Handlers may optionally accept a ``ToolContext`` as their first
+    parameter.  ``ToolRunner`` inspects the signature and injects it
+    when needed, so pure tools stay pure and context-aware tools get
+    what they need.
     """
 
     def __init__(
@@ -46,13 +47,15 @@ class ToolRunner:
         config: HarnessConfig,
         *,
         skill_runner: SkillRunner | None = None,
+        database: BlackboardAccessProxy | None = None,
+        runtime_config: RuntimeConfig | None = None,
     ) -> None:
         self._tools_dir: Path = config.paths.system_tools
-        self._skills_dirs: tuple[Path, Path] = (
-            config.paths.system_skills,
-            config.paths.project_skills,
-        )
+        self._project_skills_dir: Path = config.paths.project_skills
+        self._project_root: Path = config.project_root
         self._skill_runner: SkillRunner | None = skill_runner
+        self._database: BlackboardAccessProxy | None = database
+        self._runtime_config: RuntimeConfig | None = runtime_config
         self._discovered = False
 
     # ------------------------------------------------------------------
@@ -60,29 +63,30 @@ class ToolRunner:
     # ------------------------------------------------------------------
 
     def _ensure_discovered(self) -> None:
-        """Import tool modules + scan system_skills/ for type:tool skills."""
+        """Import tool modules + scan project_skills/ for type:tool skills."""
         if self._discovered:
             return
 
-        # 1. Built-in tools from system_tools/ (Python modules with register())
+        # 1. Built-in tools from system_tools/ — use standard imports
+        #    so monkeypatching in tests works (importlib spec_from_file_location
+        #    creates separate module objects).
         if self._tools_dir.exists():
             for py_file in sorted(self._tools_dir.glob("*.py")):
                 if py_file.name.startswith("_"):
                     continue
                 module_name = f"harness_poc.system_tools.{py_file.stem}"
                 try:
-                    spec = importlib.util.spec_from_file_location(module_name, py_file)
-                    if spec is None or spec.loader is None:
-                        logger.warning("Could not load tool module: %s", py_file)
-                        continue
-                    module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
+                    importlib.import_module(module_name)
                 except Exception:
-                    logger.exception("Failed to load tool module: %s", py_file)
+                    logger.exception(
+                        "Failed to load tool module: %s", py_file
+                    )
 
-        # 2. Tool-level skills from system_skills/ + project_skills/ (SKILL.md with type: tool)
-        for skills_dir in self._skills_dirs:
-            _discover_tool_skills(skills_dir, self._skill_runner)
+        # 2. Tool-level skills from project_skills/ (SKILL.md with type: tool)
+        # These are still skill-backed — their code lives in skills/*/skill.py.
+        _discover_tool_skills(
+            self._project_skills_dir, self._skill_runner
+        )
 
         self._discovered = True
 
@@ -132,12 +136,10 @@ class ToolRunner:
     ) -> str:
         """Execute a tool and return its JSON-serialized result.
 
-        For skill-backed tools (discovered from system_skills/), the
+        For skill-backed tools (discovered from project_skills/), the
         ``session_id`` is forwarded to ``SkillRunner.execute_skill()``.
-        Built-in tools ignore ``session_id``.
-
-        Returns a JSON string so it plugs directly into the PydanticAI
-        tool pipeline (same contract as ``execute_skill_as_tool``).
+        Built-in tools that accept a ``ToolContext`` get one injected
+        with the current session info.
         """
         from harness_poc.system_tools import get_registry  # noqa: PLC0415
 
@@ -147,8 +149,9 @@ class ToolRunner:
             return _json.dumps({"error": f"Unknown tool: {tool_name}"})
 
         handler = info["handler"]
+
         try:
-            # Skill-backed tools need session_id injected
+            # Skill-backed tools (from project_skills/) route through SkillRunner
             if info.get("_skill_backed") and self._skill_runner is not None:
                 result = self._skill_runner.execute_skill(
                     tool_name=tool_name,
@@ -157,15 +160,33 @@ class ToolRunner:
                 )
                 return _json.dumps(result.to_dict(), ensure_ascii=False)
 
-            result = handler(**arguments)
+            # Built-in tools — inject ToolContext if the handler accepts it
+            if _accepts_context(handler):
+                ctx = ToolContext(
+                    session_id=session_id,
+                    project_root=self._project_root,
+                    database=self._database,
+                    runtime_config=self._runtime_config,
+                )
+                result = handler(ctx, **arguments)
+            else:
+                result = handler(**arguments)
         except TypeError as e:
-            return _json.dumps({"error": f"Invalid arguments for {tool_name}: {e}"})
+            return _json.dumps(
+                {"error": f"Invalid arguments for {tool_name}: {e}"}
+            )
         except Exception:
             logger.exception("Tool execution failed: %s", tool_name)
-            return _json.dumps({"error": f"Tool {tool_name} raised an unexpected error."})
+            return _json.dumps(
+                {"error": f"Tool {tool_name} raised an unexpected error."}
+            )
 
         if isinstance(result, ToolResult):
             return _json.dumps(result.to_dict(), ensure_ascii=False)
+
+        # SkillResult (from migrated tools still using the skill context module)
+        if hasattr(result, "to_dict"):
+            return _json.dumps(result.to_dict(), ensure_ascii=False)  # noqa: B010
 
         return _json.dumps(result, ensure_ascii=False)
 
@@ -182,7 +203,7 @@ class ToolRunner:
 
 
 # ------------------------------------------------------------------
-# Internal: scan system_skills/ for type:tool entries
+# Internal: scan project_skills/ for type:tool entries
 # ------------------------------------------------------------------
 
 
@@ -205,17 +226,16 @@ def _discover_tool_skills(
 
     for skill_file in sorted(skills_dir.glob("*/SKILL.md")):
         try:
-            ftype, name, description, params = _parse_skill_frontmatter(skill_file, yaml)
-        except (OSError, ValueError, TypeError, KeyError):
-            logger.debug("Skipping unparseable skill: %s", skill_file)
+            ftype, name, description, params = _parse_skill_frontmatter(
+                skill_file, yaml
+            )
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            logger.debug("Skipping unparseable skill: %s (%s)", skill_file, exc)
             continue
 
         if ftype != "tool":
             continue
 
-        # Register a skill-backed handler in the tool registry.
-        # The actual execution is handled by ToolRunner.execute_tool()
-        # which checks the _skill_backed flag.
         _register(
             name=name,
             description=description,
@@ -230,11 +250,7 @@ def _parse_skill_frontmatter(
     skill_file: Path,
     yaml_module: Any,  # noqa: ANN401
 ) -> tuple[str, str, str, dict[str, Any]]:
-    """Extract fields from a SKILL.md YAML frontmatter.
-
-    Returns ``("skill", ...)`` with empty description/params on parse failure
-    so callers can skip without crashing.
-    """
+    """Extract fields from a SKILL.md YAML frontmatter."""
     text = skill_file.read_text(encoding="utf-8")
     if not text.startswith("---"):
         return ("skill", "", "", {})
@@ -262,14 +278,35 @@ def _parse_skill_frontmatter(
 def _make_skill_backed_stub(name: str) -> Any:  # noqa: ANN401
     """Return a stub handler for a skill-backed tool.
 
-    The stub is never called directly -- ``ToolRunner.execute_tool()``
+    The stub is never called directly — ``ToolRunner.execute_tool()``
     detects ``_skill_backed`` and routes to ``SkillRunner`` instead.
-    It exists only so the tool registry entry is non-None.
     """
 
     def _stub(**kwargs: object) -> dict[str, Any]:  # noqa: ARG001
-        msg = f"Skill-backed tool {name} was called through the stub. This is a bug."
+        msg = (
+            f"Skill-backed tool {name} was called through the stub. "
+            f"This is a bug."
+        )
         raise RuntimeError(msg)
 
     _stub.__name__ = f"_stub_{name}"
     return _stub
+
+
+def _accepts_context(handler: Any) -> bool:
+    """Return True if ``handler`` accepts a ``ToolContext`` first argument."""
+    try:
+        sig = inspect.signature(handler)
+    except (ValueError, TypeError):
+        return False
+    params = list(sig.parameters.values())
+    if not params:
+        return False
+    first = params[0]
+    ann = first.annotation
+    if ann is inspect.Parameter.empty:
+        return first.name == "ctx"
+    # Handle string annotations (PEP 563: from __future__ import annotations)
+    if isinstance(ann, str):
+        return ann == "ToolContext"
+    return getattr(ann, "__name__", "") == "ToolContext"

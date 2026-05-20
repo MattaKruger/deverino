@@ -21,7 +21,7 @@ def test_direct_skill_invocation_dispatches_without_chat(
     calls: dict[str, Any] = {}
 
     monkeypatch.setattr(
-        "harness_poc.repl.execute_named_skill",
+        "harness_poc.repl.execute_named_tool",
         lambda _app_state, skill_name, argument: calls.update(
             {"skill": skill_name, "argument": argument}
         ),

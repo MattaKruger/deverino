@@ -1,1 +1,0 @@
-"""Read memory skill plugin."""

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import yaml
 from sqlalchemy.exc import OperationalError as SAOperationalError
 
+from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.db_engine import create_db_engine
@@ -13,6 +15,7 @@ from harness_poc.core.event_bus import EventBus
 from harness_poc.core.event_store import EventStore
 from harness_poc.core.logging import configure_logging
 from harness_poc.core.models import SQLModel
+from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.pipeline_runner import PipelineRunner
 from harness_poc.core.pydantic_runtime import (
     PydanticAgentRuntime,
@@ -32,8 +35,6 @@ from harness_poc.system_tools.knowledge_tools import init_knowledge_context
 _TUI_BLOCKED_SKILLS: frozenset[str] = frozenset({"execute_python", "spec_writer"})
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from pydantic_ai.messages import ModelMessage
     from pydantic_ai.models import Model
 
@@ -91,6 +92,11 @@ class AppState:
     streaming: StreamingContext
 
 
+def _permissive_for_tools() -> SkillPermissions:
+    """Full permissions for built-in tools (read_write + blackboard access)."""
+    return SkillPermissions(blackboard="read_write", workspace="read_write")
+
+
 def build_app_state() -> AppState:
     config = HarnessConfig.load()
     configure_logging(config.project_root)
@@ -106,7 +112,13 @@ def build_app_state() -> AppState:
     project_state = database.ensure_project_state()
     session_state = database.ensure_session_state(session_id)
     skill_runner = SkillRunner(database=database, config=config)
-    tool_runner = ToolRunner(config=config, skill_runner=skill_runner)
+    db_proxy = BlackboardAccessProxy(database, _permissive_for_tools())
+    tool_runner = ToolRunner(
+        config=config,
+        skill_runner=skill_runner,
+        database=db_proxy,
+        runtime_config=config.runtime,
+    )
     workflow_runner = WorkflowRunner(skill_runner)
     pipeline_runner = PipelineRunner(config.paths.pipelines)
     messages: list[Message] = [

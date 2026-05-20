@@ -6,7 +6,7 @@ from harness_poc.app_factory import build_app_state
 from harness_poc.cli import app
 from harness_poc.core.processors.circuit_breaker import run_circuit_breaker
 from harness_poc.core.processors.llm_worker import run_llm_worker
-from harness_poc.core.processors.skill_worker import run_skill_worker
+from harness_poc.core.processors.tool_worker import run_skill_worker
 
 
 async def run_async_main(session_id: str | None = None) -> None:

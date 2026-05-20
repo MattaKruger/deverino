@@ -1,3 +1,9 @@
+"""container_spawn — create a session-scoped container.
+
+Migrated from ``system_skills/container_spawn/skill.py`` (Phase 4).
+Accepts ``ToolContext`` for session identity, config, and database access.
+"""
+
 from __future__ import annotations
 
 import contextlib
@@ -9,7 +15,8 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
-from harness_poc.core.skill_context import SkillContext, SkillResult
+from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.tool_context import ToolContext
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -21,45 +28,47 @@ SCRATCH_TARGET = "/scratch"
 logger = logging.getLogger(__name__)
 
 
-def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noqa: PLR0911
+def container_spawn(  # noqa: PLR0911
+    ctx: ToolContext,
+    image: str = "",
+    container_name: str = "",
+) -> SkillResult:
+    """Create a detached container for the current workflow session.
+
+    Idempotent — if the container already exists, returns it without
+    recreating.
+    """
     session_id = ctx.session_id
-    image = str(
-        arguments.get("image")
-        or ctx.config.runtime.default_container_image
+    runtime = ctx.runtime_config
+
+    image = (
+        image.strip()
+        or (runtime.default_container_image if runtime else "")
         or ""
     ).strip()
-    container_name = str(
-        arguments.get("container_name") or f"harness-{session_id[:12]}"
+    container_name = (
+        container_name.strip() or f"harness-{session_id[:12]}"
     ).strip()
     backend = _resolve_backend()
 
     error = _validate_inputs(image, backend)
     if error:
-        logger.error(
-            "Container spawn input validation failed",
-            extra={
-                "session_id": session_id,
-                "image": image,
-                "container_name": container_name,
-                "backend": backend,
-                "error": error,
-            },
-        )
         return SkillResult(status="failed", content=error)
-    backend = cast("str", backend)  # validated above
+    backend = cast("str", backend)
 
-    _cleanup_stale_harness_containers(
-        backend,
-        exclude={container_name},
-        ttl_seconds=ctx.config.runtime.container_ttl_seconds,
-        max_containers=ctx.config.runtime.max_harness_containers,
-    )
+    if runtime:
+        _cleanup_stale_harness_containers(
+            backend,
+            exclude={container_name},
+            ttl_seconds=runtime.container_ttl_seconds,
+            max_containers=runtime.max_harness_containers,
+        )
 
-    # Auto-build: if image not found locally and a Dockerfile exists, build it
-    project_root = str(ctx.config.project_root.resolve())
-    dockerfile_path = ctx.config.project_root / "Dockerfile"
+    project_root = ctx.project_root
+    project_str = str(project_root.resolve())
+    dockerfile_path = project_root / "Dockerfile"
     build_result = _ensure_image_available(
-        backend, image, project_root, dockerfile_path
+        backend, image, project_str, dockerfile_path
     )
     if build_result is not None:
         return build_result
@@ -67,17 +76,10 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
     # Idempotent: check if container already exists
     existing = _inspect_container(backend, container_name)
     if existing:
-        logger.info(
-            "Container already exists",
-            extra={
-                "session_id": session_id,
-                "container_name": container_name,
-                "backend": backend,
-            },
-        )
-        ctx.database.write_memory(
-            session_id, f"container.{container_name}", existing
-        )
+        if ctx.database is not None:
+            ctx.database.write_memory(
+                session_id, f"container.{container_name}", existing
+            )
         return SkillResult(
             status="success",
             content=json.dumps(existing, indent=2, sort_keys=True),
@@ -85,48 +87,27 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
 
     # Create the container
-    scratch_dir = ctx.config.project_root / ".deverino-scratch" / session_id
+    scratch_dir = project_root / ".deverino-scratch" / session_id
     scratch_dir.mkdir(parents=True, exist_ok=True)
     scratch_str = str(scratch_dir.resolve())
     create_cmd: list[str] = [
         backend,
         "run",
         "-d",
-        "--name",
-        container_name,
-        "--label",
-        "deverino.managed=true",
-        "--label",
-        f"deverino.session_id={session_id}",
-        "-v",
-        f"{project_root}:/workspace:ro",
-        "-v",
-        f"{scratch_str}:{SCRATCH_TARGET}:rw",
-        "-w",
-        "/workspace",
-        # Direct all temporary/cache output to the writable scratch
-        "-e",
-        f"TMPDIR={SCRATCH_TARGET}",
-        "-e",
-        f"TMP={SCRATCH_TARGET}",
-        "-e",
-        f"TEMP={SCRATCH_TARGET}",
-        "-e",
-        f"HOME={SCRATCH_TARGET}",
-        "-e",
-        f"PYTHONPYCACHEPREFIX={SCRATCH_TARGET}/pycache",
+        "--name", container_name,
+        "--label", "deverino.managed=true",
+        "--label", f"deverino.session_id={session_id}",
+        "-v", f"{project_str}:/workspace:ro",
+        "-v", f"{scratch_str}:{SCRATCH_TARGET}:rw",
+        "-w", "/workspace",
+        "-e", f"TMPDIR={SCRATCH_TARGET}",
+        "-e", f"TMP={SCRATCH_TARGET}",
+        "-e", f"TEMP={SCRATCH_TARGET}",
+        "-e", f"HOME={SCRATCH_TARGET}",
+        "-e", f"PYTHONPYCACHEPREFIX={SCRATCH_TARGET}/pycache",
         image,
     ]
     create_cmd.extend(KEEPALIVE_CMD)
-    logger.info(
-        "Creating container",
-        extra={
-            "session_id": session_id,
-            "backend": backend,
-            "image": image,
-            "container_name": container_name,
-        },
-    )
 
     try:
         result = subprocess.run(  # noqa: S603
@@ -137,15 +118,6 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
             check=False,
         )
     except subprocess.TimeoutExpired:
-        logger.exception(
-            "Container creation timed out",
-            extra={
-                "session_id": session_id,
-                "backend": backend,
-                "image": image,
-                "container_name": container_name,
-            },
-        )
         return SkillResult(
             status="failed",
             content=f"Container creation timed out for image '{image}'.",
@@ -156,15 +128,6 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
             },
         )
     except OSError as exc:
-        logger.exception(
-            "Container runtime invocation failed",
-            extra={
-                "session_id": session_id,
-                "backend": backend,
-                "image": image,
-                "container_name": container_name,
-            },
-        )
         return SkillResult(
             status="failed",
             content=f"Failed to invoke {backend}: {exc}",
@@ -176,21 +139,11 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         )
 
     if result.returncode != 0:
-        logger.error(
-            "Container creation failed",
-            extra={
-                "session_id": session_id,
-                "backend": backend,
-                "image": image,
-                "container_name": container_name,
-                "exit_code": result.returncode,
-                "stderr": result.stderr.strip(),
-            },
-        )
         return SkillResult(
             status="failed",
             content=(
-                f"Failed to create container '{container_name}': {result.stderr.strip()}"
+                f"Failed to create container '{container_name}': "
+                f"{result.stderr.strip()}"
             ),
             artifacts={
                 "backend": backend,
@@ -202,23 +155,13 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
 
     container_id = result.stdout.strip()
 
-    # Wait for container to actually start (macOS Docker Desktop can lag)
+    # Wait for container to actually start
     for _attempt in range(10):
         info = _inspect_container(backend, container_name)
         if info and info.get("running"):
             break
         time.sleep(0.5)
     else:
-        logger.error(
-            "Container created but did not start",
-            extra={
-                "session_id": session_id,
-                "backend": backend,
-                "image": image,
-                "container_name": container_name,
-                "container_id": container_id,
-            },
-        )
         return SkillResult(
             status="failed",
             content=(
@@ -232,7 +175,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
             },
         )
 
-    output = {
+    output: dict[str, Any] = {
         "backend": backend,
         "image": image,
         "container_name": container_name,
@@ -241,16 +184,10 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         "scratch_dir": SCRATCH_TARGET,
     }
 
-    ctx.database.write_memory(session_id, f"container.{container_name}", output)
-    logger.info(
-        "Container created",
-        extra={
-            "session_id": session_id,
-            "backend": backend,
-            "container_name": container_name,
-            "container_id": container_id,
-        },
-    )
+    if ctx.database is not None:
+        ctx.database.write_memory(
+            session_id, f"container.{container_name}", output
+        )
 
     return SkillResult(
         status="success",
@@ -260,7 +197,6 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
 
 
 def _validate_inputs(image: str, backend: str | None) -> str:
-    """Return an error message if inputs are invalid, or empty string if ok."""
     if not image:
         return (
             "No container image specified. Provide an 'image' argument "
@@ -282,12 +218,6 @@ def _ensure_image_available(  # noqa: PLR0911
     project_root: str,
     dockerfile_path: Path,
 ) -> SkillResult | None:
-    """Check if the container image exists locally; auto-build from Dockerfile if missing.
-
-    Returns None if the image is available (locally or after build).
-    Returns a SkillResult with status='failed' if the build fails or no Dockerfile exists.
-    """
-    # Check if image exists locally
     try:
         result = subprocess.run(  # noqa: S603
             [backend, "images", "-q", image],
@@ -303,15 +233,9 @@ def _ensure_image_available(  # noqa: PLR0911
         )
 
     if result.stdout.strip():
-        logger.debug("Container image found locally", extra={"image": image})
         return None
 
-    # Image not found — try auto-build if Dockerfile exists
     if not dockerfile_path.exists():
-        logger.debug(
-            "Image not found and no Dockerfile — will attempt pull",
-            extra={"image": image, "project_root": project_root},
-        )
         return None  # Let docker/podman pull from registry
 
     logger.info(
@@ -323,7 +247,7 @@ def _ensure_image_available(  # noqa: PLR0911
             [backend, "build", "-t", image, project_root],
             capture_output=True,
             text=True,
-            timeout=300,  # 5 min for first build
+            timeout=300,
             check=False,
         )
     except subprocess.TimeoutExpired:
@@ -338,18 +262,11 @@ def _ensure_image_available(  # noqa: PLR0911
         )
 
     if build_result.returncode != 0:
-        logger.error(
-            "Docker build failed",
-            extra={
-                "image": image,
-                "exit_code": build_result.returncode,
-                "stderr": build_result.stderr.strip()[-500:],
-            },
-        )
         return SkillResult(
             status="failed",
             content=(
-                f"Failed to build image '{image}': {build_result.stderr.strip()[-300:]}"
+                f"Failed to build image '{image}': "
+                f"{build_result.stderr.strip()[-300:]}"
             ),
         )
 
@@ -394,7 +311,7 @@ def _cleanup_stale_harness_containers(
     ]
     if max_containers > 0 and len(retained) > max_containers:
         retained.sort(
-            key=lambda container: float(container.get("created_at_ts", 0))
+            key=lambda c: float(c.get("created_at_ts", 0))
         )
         stale_names.update(
             str(container["container_name"])
@@ -444,7 +361,6 @@ def _remove_container(backend: str, container_name: str) -> None:
 def _inspect_container(
     backend: str, container_name: str
 ) -> dict[str, Any] | None:
-    """Check if a container exists and return its info, or None."""
     try:
         result = subprocess.run(  # noqa: S603
             [backend, "inspect", container_name],
@@ -494,3 +410,37 @@ def _parse_created_at(created_at: str) -> float:
         return datetime.fromisoformat(normalized).timestamp()
     except ValueError:
         return 0.0
+
+
+# ── Register ──────────────────────────────────────────────────────────
+
+from harness_poc.system_tools import register as _register  # noqa: E402
+
+_register(
+    name="container_spawn",
+    description=(
+        "Creates a detached container for the current workflow session. "
+        "Returns the container name and backend used. Idempotent — if the "
+        "container already exists, returns it without recreating."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "image": {
+                "type": "string",
+                "description": (
+                    "Container image name. Defaults to "
+                    "runtime.default_container_image from harness.yaml."
+                ),
+            },
+            "container_name": {
+                "type": "string",
+                "description": (
+                    "Custom container name. Defaults to "
+                    "harness-<session_id_prefix>."
+                ),
+            },
+        },
+    },
+    handler=container_spawn,
+)

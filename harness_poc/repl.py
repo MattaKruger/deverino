@@ -355,7 +355,7 @@ def _handle_direct_resource_command(app_state: AppState, user_input: str) -> boo
                     "Use /skill, /workflow, or /pipeline to disambiguate."
                 )
             elif matches == ["skill"]:
-                execute_named_skill(app_state, name, argument)
+                execute_named_tool(app_state, name, argument)
             elif matches == ["workflow"]:
                 run_workflow(app_state, name, argument)
             elif matches == ["pipeline"]:
@@ -599,7 +599,7 @@ def is_skill_name(app_state: AppState, skill_name: str) -> bool:
     }
 
 
-def execute_named_skill(app_state: AppState, skill_name: str, argument: str) -> None:
+def execute_named_tool(app_state: AppState, skill_name: str, argument: str) -> None:
     result = app_state.skill_runner.execute_skill(
         tool_name=skill_name,
         arguments=_parse_skill_arguments(app_state, skill_name, argument),

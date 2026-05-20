@@ -29,7 +29,8 @@ def test_skill_list_renders_discovered_skills() -> None:
     result = runner.invoke(app, ["skill", "list"])
 
     assert result.exit_code == 0
-    assert "container_exec" in result.output
+    # Agent skills still in system_skills/ + project_skills/
+    assert "delegate_task" in result.output
     assert "reflect_on_result" in result.output
     assert "consolidate_state" in result.output
 
