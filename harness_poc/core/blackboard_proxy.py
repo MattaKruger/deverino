@@ -72,7 +72,7 @@ class BlackboardAccessProxy:
         self._require_write()
         return self._db.approve_state_proposal(proposal_id, project_id)
 
-    # ---- async wrappers (Phase 3) ----
+    # ---- async wrappers ----
 
     async def read_memory_async(self, session_id: str, key: str) -> dict[str, Any] | str | None:
         self._require_read()

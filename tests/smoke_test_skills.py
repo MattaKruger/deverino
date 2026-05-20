@@ -10,7 +10,6 @@ graceful-failure / missing-dependency paths.
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 from harness_poc.core.config import (
@@ -27,8 +26,9 @@ from harness_poc.core.skill_runner import SkillRunner
 def main() -> int:
     repo_root = Path.cwd()
 
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
-        db_path = tf.name
+    import os  # noqa: PLC0415  # deferred to avoid module-level side effects
+
+    database_url = os.getenv("TEST_DATABASE_URL", "postgresql://deverino:deverino@localhost/deverino")
 
     config = HarnessConfig(
         project_root=repo_root,
@@ -42,15 +42,14 @@ def main() -> int:
             personas=repo_root / "personas",
         ),
         runtime=RuntimeConfig(
-            database_path=Path(db_path),
+            database_url=database_url,
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
         llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
     )
 
-    database = BlackboardDatabase(db_path)
-    database.create_tables()
+    database = BlackboardDatabase.from_url(database_url)
     session_id = database.start_session("smoke-test")
     runner = SkillRunner(database=database, config=config)
 
@@ -215,7 +214,6 @@ def main() -> int:
     print(f"Results: {passed} passed, {failed} failed, {exceptions} exceptions")
     print("=" * 60)
 
-    Path(db_path).unlink(missing_ok=True)
     return 0 if (failed == 0 and exceptions == 0) else 1
 
 

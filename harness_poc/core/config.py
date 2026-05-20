@@ -21,7 +21,7 @@ class HarnessPaths:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeConfig:
-    database_path: Path
+    database_url: str
     default_container_image: str
     max_retries: int = 3
     max_tokens: int = 10_000
@@ -112,9 +112,8 @@ class HarnessConfig:
             personas=_resolve_path(project_root, paths_raw.get("personas", "personas")),
         )
         runtime = RuntimeConfig(
-            database_path=_resolve_path(
-                project_root,
-                runtime_raw.get("database_path", "harness_poc/blackboard.db"),
+            database_url=str(
+                runtime_raw.get("database_url", "sqlite:///harness_poc/blackboard.db")
             ),
             default_container_image=str(
                 runtime_raw.get("default_container_image", "python:3.12-slim")

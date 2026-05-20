@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from sqlalchemy import Engine
+
 from harness_poc.core.config import (
     HarnessConfig,
     HarnessPaths,
@@ -19,9 +21,9 @@ if TYPE_CHECKING:
 
 
 def test_single_positional_skill_argument_maps_to_primary_parameter(
-    tmp_path: Path,
+    db_engine: Engine,
 ) -> None:
-    app_state = _fake_app_state(tmp_path)
+    app_state = _fake_app_state(db_engine)
 
     arguments = _parse_skill_arguments(
         app_state,
@@ -32,16 +34,15 @@ def test_single_positional_skill_argument_maps_to_primary_parameter(
     assert arguments == {"memory_key": "research_reflection"}
 
 
-def test_known_skill_name_is_discovered(tmp_path: Path) -> None:
-    app_state = _fake_app_state(tmp_path)
+def test_known_skill_name_is_discovered(db_engine: Engine) -> None:
+    app_state = _fake_app_state(db_engine)
 
     assert is_skill_name(app_state, "summarize_memory")
 
 
-def _fake_app_state(tmp_path: Path) -> AppState:
-    config = _test_config(tmp_path)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+def _fake_app_state(engine: Engine) -> AppState:
+    config = _test_config(engine)
+    database = BlackboardDatabase(engine)
     return cast(
         "AppState",
         _FakeAppState(
@@ -57,7 +58,7 @@ class _FakeAppState:
         self.config = config
 
 
-def _test_config(tmp_path: Path) -> HarnessConfig:
+def _test_config(engine: Engine) -> HarnessConfig:
     project_root = Path.cwd()
     return HarnessConfig(
         project_root=project_root,
@@ -71,7 +72,7 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             personas=project_root / "personas",
         ),
         runtime=RuntimeConfig(
-            database_path=tmp_path / "blackboard.db",
+            database_url=engine.url.render_as_string(hide_password=False),
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),

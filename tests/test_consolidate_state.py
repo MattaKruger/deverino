@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from sqlalchemy import Engine
+
 from harness_poc.core.config import (
     HarnessConfig,
     HarnessPaths,
@@ -13,10 +15,9 @@ from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.skill_runner import SkillRunner
 
 
-def test_consolidate_state_preview_returns_session_state(tmp_path: Path) -> None:
-    config = _test_config(tmp_path)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+def test_consolidate_state_preview_returns_session_state(db_engine: Engine) -> None:
+    config = _test_config(db_engine)
+    database = BlackboardDatabase(db_engine)
     session_id = database.start_session("test")
     database.ensure_session_state(session_id)
     database.append_session_state(
@@ -37,10 +38,9 @@ def test_consolidate_state_preview_returns_session_state(tmp_path: Path) -> None
     assert result.artifacts["proposal_status"] == "not_created"
 
 
-def test_consolidate_state_approve_updates_project_state(tmp_path: Path) -> None:
-    config = _test_config(tmp_path)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+def test_consolidate_state_approve_updates_project_state(db_engine: Engine) -> None:
+    config = _test_config(db_engine)
+    database = BlackboardDatabase(db_engine)
     session_id = database.start_session("test")
     database.ensure_session_state(session_id)
     database.append_session_state(
@@ -62,7 +62,7 @@ def test_consolidate_state_approve_updates_project_state(tmp_path: Path) -> None
     assert "Approve this decision." in project_state.decisions
 
 
-def _test_config(tmp_path: Path) -> HarnessConfig:
+def _test_config(engine: Engine) -> HarnessConfig:
     project_root = Path.cwd()
     return HarnessConfig(
         project_root=project_root,
@@ -76,7 +76,7 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             personas=project_root / "personas",
         ),
         runtime=RuntimeConfig(
-            database_path=tmp_path / "blackboard.db",
+            database_url=engine.url.render_as_string(hide_password=False),
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),

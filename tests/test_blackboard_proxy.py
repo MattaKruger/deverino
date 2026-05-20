@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import tempfile
-
 import pytest
+from sqlalchemy import Engine
 
 from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 from harness_poc.core.database import BlackboardDatabase
@@ -12,11 +11,8 @@ from harness_poc.core.permissions import SkillPermissions
 
 
 @pytest.fixture
-def db() -> BlackboardDatabase:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
-        path = tf.name
-    database = BlackboardDatabase(path)
-    database.create_tables()
+def db(db_engine: Engine) -> BlackboardDatabase:
+    database = BlackboardDatabase(db_engine)
     session_id = database.start_session("test")
     database.write_memory(session_id, "greeting", "hello")
     return database

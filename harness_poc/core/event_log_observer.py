@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from sqlmodel import Session, select
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
+
+from harness_poc.core.models import DbStateEvent
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,7 +22,7 @@ class EventLogRow:
 
 
 def fetch_event_log_rows(
-    database_path: Path | str,
+    engine: Engine,
     *,
     after_id: int = 0,
     session_id: str | None = None,
@@ -28,47 +33,22 @@ def fetch_event_log_rows(
         msg = "limit must be greater than zero"
         raise ValueError(msg)
 
-    db_path = Path(database_path)
-    if not db_path.exists():
-        return []
+    with Session(engine) as session:
+        stmt = select(DbStateEvent).where(DbStateEvent.id > after_id)  # type: ignore[operator]
+        if session_id:
+            stmt = stmt.where(DbStateEvent.scope_id == session_id)
+        if event_types:
+            stmt = stmt.where(DbStateEvent.event_type.in_(event_types))
+        stmt = stmt.order_by(DbStateEvent.id.asc())  # type: ignore[arg-type]
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        rows = session.exec(stmt).all()
 
-    clauses = ["id > ?"]
-    parameters: list[object] = [after_id]
-    if session_id:
-        clauses.append("scope_id = ?")
-        parameters.append(session_id)
-    if event_types:
-        placeholders = ",".join("?" for _ in event_types)
-        clauses.append(f"event_type IN ({placeholders})")
-        parameters.extend(event_types)
-
-    limit_clause = ""
-    if limit is not None:
-        limit_clause = " LIMIT ?"
-        parameters.append(limit)
-
-    query = f"""
-        SELECT id, scope_id, event_type, payload, created_at
-        FROM state_events
-        WHERE {" AND ".join(clauses)}
-        ORDER BY id ASC
-        {limit_clause}
-        """  # noqa: S608
-
-    try:
-        with sqlite3.connect(db_path, timeout=5.0) as connection:
-            connection.row_factory = sqlite3.Row
-            rows = connection.execute(query, parameters).fetchall()
-    except sqlite3.OperationalError as exc:
-        if "no such table: state_events" in str(exc):
-            return []
-        raise
-
-    return [_decode_row(row) for row in rows]
+    return [_to_event_log_row(row) for row in rows]
 
 
 def fetch_latest_event_log_rows(
-    database_path: Path | str,
+    engine: Engine,
     *,
     session_id: str | None = None,
     event_types: list[str] | None = None,
@@ -78,40 +58,16 @@ def fetch_latest_event_log_rows(
         msg = "limit must be greater than zero"
         raise ValueError(msg)
 
-    db_path = Path(database_path)
-    if not db_path.exists():
-        return []
+    with Session(engine) as session:
+        stmt = select(DbStateEvent)
+        if session_id:
+            stmt = stmt.where(DbStateEvent.scope_id == session_id)
+        if event_types:
+            stmt = stmt.where(DbStateEvent.event_type.in_(event_types))
+        stmt = stmt.order_by(DbStateEvent.id.desc()).limit(limit)  # type: ignore[arg-type]
+        rows = session.exec(stmt).all()
 
-    clauses: list[str] = []
-    parameters: list[object] = []
-    if session_id:
-        clauses.append("scope_id = ?")
-        parameters.append(session_id)
-    if event_types:
-        placeholders = ",".join("?" for _ in event_types)
-        clauses.append(f"event_type IN ({placeholders})")
-        parameters.extend(event_types)
-
-    where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    parameters.append(limit)
-    query = f"""
-        SELECT id, scope_id, event_type, payload, created_at
-        FROM state_events
-        {where_clause}
-        ORDER BY id DESC
-        LIMIT ?
-        """  # noqa: S608
-
-    try:
-        with sqlite3.connect(db_path, timeout=5.0) as connection:
-            connection.row_factory = sqlite3.Row
-            rows = connection.execute(query, parameters).fetchall()
-    except sqlite3.OperationalError as exc:
-        if "no such table: state_events" in str(exc):
-            return []
-        raise
-
-    return [_decode_row(row) for row in reversed(rows)]
+    return [_to_event_log_row(row) for row in reversed(rows)]
 
 
 def render_event_log_row(
@@ -129,13 +85,8 @@ def render_event_log_row(
         summary_suffix = f" {summary}" if summary else ""
         return f"{line}{summary_suffix}"
 
-    payload = json.dumps(
-        row.payload,
-        ensure_ascii=False,
-        indent=2,
-        sort_keys=True,
-    )
-    payload_lines = "\n".join(f"    {payload_line}" for payload_line in payload.splitlines())
+    payload = json.dumps(row.payload, ensure_ascii=False, indent=2, sort_keys=True)
+    payload_lines = "\n".join(f"    {pl}" for pl in payload.splitlines())
     header_lines = [
         f"{row.id:06d} {row.event_type}",
         f"  created_at: {row.created_at}",
@@ -146,25 +97,17 @@ def render_event_log_row(
     return "\n".join([*header_lines, "  payload:", payload_lines])
 
 
-def _decode_row(row: sqlite3.Row) -> EventLogRow:
-    outer = _decode_json_object(str(row["payload"]))
-    payload = outer.get("payload")
-    payload_dict = payload if isinstance(payload, dict) else outer
+def _to_event_log_row(row: DbStateEvent) -> EventLogRow:
+    outer = row.payload  # already a dict from JSON/JSONB column
+    inner = outer.get("payload")
+    payload_dict = inner if isinstance(inner, dict) else outer
     return EventLogRow(
-        id=int(row["id"]),
-        session_id=str(row["scope_id"]),
-        event_type=str(row["event_type"]),
-        created_at=str(row["created_at"]),
+        id=row.id or 0,
+        session_id=row.scope_id,
+        event_type=row.event_type,
+        created_at=str(row.created_at),
         payload=payload_dict,
     )
-
-
-def _decode_json_object(raw: str) -> dict[str, Any]:
-    try:
-        decoded = json.loads(raw)
-    except json.JSONDecodeError:
-        return {"raw": raw}
-    return decoded if isinstance(decoded, dict) else {"raw": decoded}
 
 
 def _event_summary(row: EventLogRow) -> str:

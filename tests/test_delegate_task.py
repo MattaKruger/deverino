@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from sqlalchemy import Engine
 
 from harness_poc.core.config import (
     HarnessConfig,
@@ -16,9 +17,9 @@ from harness_poc.core.skill_runner import SkillRunner
 
 
 def test_delegate_task_uses_pydanticai_fallback_and_writes_memory(
-    tmp_path: Path,
+    db_engine: Engine,
 ) -> None:
-    runner, database, session_id = _runner(tmp_path)
+    runner, database, session_id = _runner(db_engine)
 
     result = runner.execute_skill(
         tool_name="delegate_task",
@@ -43,8 +44,8 @@ def test_delegate_task_uses_pydanticai_fallback_and_writes_memory(
     assert memory["artifacts"]["model_output"]["status"] == "completed"
 
 
-def test_delegate_task_accepts_template_name_alias(tmp_path: Path) -> None:
-    runner, database, session_id = _runner(tmp_path)
+def test_delegate_task_accepts_template_name_alias(db_engine: Engine) -> None:
+    runner, database, session_id = _runner(db_engine)
 
     result = runner.execute_skill(
         tool_name="delegate_task",
@@ -62,8 +63,8 @@ def test_delegate_task_accepts_template_name_alias(tmp_path: Path) -> None:
     assert memory["artifacts"]["persona"] == "web_researcher"
 
 
-def test_delegate_task_streams_summary_chunks(tmp_path: Path) -> None:
-    runner, _database, session_id = _runner(tmp_path)
+def test_delegate_task_streams_summary_chunks(db_engine: Engine) -> None:
+    runner, _database, session_id = _runner(db_engine)
     chunks: list[str] = []
 
     result = runner.execute_skill(
@@ -82,8 +83,8 @@ def test_delegate_task_streams_summary_chunks(tmp_path: Path) -> None:
     assert "Stream delegated research" in "".join(chunks)
 
 
-def test_delegate_task_requires_persona_and_objective(tmp_path: Path) -> None:
-    runner, _database, session_id = _runner(tmp_path)
+def test_delegate_task_requires_persona_and_objective(db_engine: Engine) -> None:
+    runner, _database, session_id = _runner(db_engine)
 
     with pytest.raises(ValueError, match="delegate_task requires objective"):
         runner.execute_skill(
@@ -93,15 +94,14 @@ def test_delegate_task_requires_persona_and_objective(tmp_path: Path) -> None:
         )
 
 
-def _runner(tmp_path: Path) -> tuple[SkillRunner, BlackboardDatabase, str]:
-    config = _test_config(tmp_path)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+def _runner(engine: Engine) -> tuple[SkillRunner, BlackboardDatabase, str]:
+    config = _test_config(engine)
+    database = BlackboardDatabase(engine)
     session_id = database.start_session("Delegate task test session.")
     return SkillRunner(database=database, config=config), database, session_id
 
 
-def _test_config(tmp_path: Path) -> HarnessConfig:
+def _test_config(engine: Engine) -> HarnessConfig:
     project_root = Path.cwd()
     return HarnessConfig(
         project_root=project_root,
@@ -115,7 +115,7 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             personas=project_root / "personas",
         ),
         runtime=RuntimeConfig(
-            database_path=tmp_path / "blackboard.db",
+            database_url=engine.url.render_as_string(hide_password=False),
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),

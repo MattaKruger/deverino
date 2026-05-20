@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from sqlalchemy import Engine
+
 from harness_poc.core.config import (
     HarnessConfig,
     HarnessPaths,
@@ -13,35 +15,27 @@ from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.skill_runner import SkillRunner
 
 
-def test_read_memory_lists_keys_when_no_key_provided(tmp_path: Path) -> None:
-    runner, session_id, database = _runner(tmp_path)
+def test_read_memory_lists_keys_when_no_key_provided(db_engine: Engine) -> None:
+    runner, session_id, database = _runner(db_engine)
     database.write_memory(session_id, "key1", "value1")
     database.write_memory(session_id, "key2", {"nested": True})
 
-    result = runner.execute_skill(
-        tool_name="read_memory",
-        arguments={},
-        session_id=session_id,
-    )
+    result = runner.execute_skill(tool_name="read_memory", arguments={}, session_id=session_id)
     assert result.status == "success"
     assert "key1" in result.content
     assert "key2" in result.content
 
 
-def test_read_memory_returns_empty_list_when_no_memory(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_read_memory_returns_empty_list_when_no_memory(db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(db_engine)
 
-    result = runner.execute_skill(
-        tool_name="read_memory",
-        arguments={},
-        session_id=session_id,
-    )
+    result = runner.execute_skill(tool_name="read_memory", arguments={}, session_id=session_id)
     assert result.status == "success"
     assert "memory_keys" in result.content
 
 
-def test_read_memory_returns_payload_for_specific_key(tmp_path: Path) -> None:
-    runner, session_id, database = _runner(tmp_path)
+def test_read_memory_returns_payload_for_specific_key(db_engine: Engine) -> None:
+    runner, session_id, database = _runner(db_engine)
     database.write_memory(session_id, "my_key", {"data": "test payload"})
 
     result = runner.execute_skill(
@@ -54,8 +48,8 @@ def test_read_memory_returns_payload_for_specific_key(tmp_path: Path) -> None:
     assert result.artifacts["memory_key"] == "my_key"
 
 
-def test_read_memory_returns_failed_when_key_missing(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_read_memory_returns_failed_when_key_missing(db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(db_engine)
 
     result = runner.execute_skill(
         tool_name="read_memory",
@@ -66,8 +60,8 @@ def test_read_memory_returns_failed_when_key_missing(tmp_path: Path) -> None:
     assert "No memory found" in result.content
 
 
-def test_read_memory_handles_string_payload(tmp_path: Path) -> None:
-    runner, session_id, database = _runner(tmp_path)
+def test_read_memory_handles_string_payload(db_engine: Engine) -> None:
+    runner, session_id, database = _runner(db_engine)
     database.write_memory(session_id, "string_key", "just a string")
 
     result = runner.execute_skill(
@@ -79,15 +73,14 @@ def test_read_memory_handles_string_payload(tmp_path: Path) -> None:
     assert "just a string" in result.content
 
 
-def _runner(tmp_path: Path) -> tuple[SkillRunner, str, BlackboardDatabase]:
-    config = _test_config(tmp_path)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+def _runner(engine: Engine) -> tuple[SkillRunner, str, BlackboardDatabase]:
+    config = _test_config(engine)
+    database = BlackboardDatabase(engine)
     session_id = database.start_session("test")
     return SkillRunner(database=database, config=config), session_id, database
 
 
-def _test_config(tmp_path: Path) -> HarnessConfig:
+def _test_config(engine: Engine) -> HarnessConfig:
     repo_root = Path.cwd()
     return HarnessConfig(
         project_root=repo_root,
@@ -101,7 +94,7 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             personas=repo_root / "personas",
         ),
         runtime=RuntimeConfig(
-            database_path=tmp_path / "blackboard.db",
+            database_url=engine.url.render_as_string(hide_password=False),
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),

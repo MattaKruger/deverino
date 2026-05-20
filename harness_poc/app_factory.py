@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.database import BlackboardDatabase
+from harness_poc.core.db_engine import create_db_engine
 from harness_poc.core.event_bus import EventBus
 from harness_poc.core.event_store import EventStore
 from harness_poc.core.logging import configure_logging
+from harness_poc.core.models import SQLModel
 from harness_poc.core.pipeline_runner import PipelineRunner
 from harness_poc.core.pydantic_runtime import (
     PydanticAgentRuntime,
@@ -60,7 +62,7 @@ class StreamingContext:
 STARTUP_ERRORS = (
     OSError,
     RuntimeError,
-    sqlite3.OperationalError,
+    SAOperationalError,
     TypeError,
     ValueError,
     yaml.YAMLError,
@@ -88,8 +90,13 @@ class AppState:
 def build_app_state() -> AppState:
     config = HarnessConfig.load()
     configure_logging(config.project_root)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+
+    engine = create_db_engine(config.runtime.database_url)
+    SQLModel.metadata.create_all(engine)
+
+    database = BlackboardDatabase(engine)
+    event_store = EventStore(engine)
+
     system_prompt = config.paths.soul.read_text(encoding="utf-8")
     session_id = database.start_session("Interactive proof of concept session.")
     project_state = database.ensure_project_state()
@@ -115,7 +122,6 @@ def build_app_state() -> AppState:
             build_state_context(project_state, session_state),
         ],
     )
-    event_store = EventStore(config.runtime.database_path)
     event_bus = EventBus(event_store)
 
     if config.observability.logfire_enabled:

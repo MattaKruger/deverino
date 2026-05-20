@@ -1,69 +1,48 @@
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
-import sqlite3
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import aiosqlite
+from sqlmodel import Session, select
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
 
 from harness_poc.core.events import EVENT_REGISTRY, BaseEvent
+from harness_poc.core.models import DbStateEvent
 
 logger = logging.getLogger(__name__)
 
 
 class EventStore:
-    def __init__(self, database_path: Path | str) -> None:
-        self.database_path = Path(database_path)
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    @property
+    def engine(self) -> Engine:
+        return self._engine
 
     def persist(self, event: BaseEvent) -> None:
-        payload = json.dumps(
-            {
-                "event_type": event.event_type,
-                "payload": event.model_dump(mode="json"),
-            },
-            sort_keys=True,
-        )
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO state_events (scope, scope_id, event_type, payload, created_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    "session",
-                    event.session_id,
-                    event.event_type,
-                    payload,
-                    event.created_at.isoformat(timespec="seconds"),
-                ),
+        payload = {
+            "event_type": event.event_type,
+            "payload": event.model_dump(mode="json"),
+        }
+        with Session(self._engine) as session:
+            row = DbStateEvent(
+                scope="session",
+                scope_id=event.session_id,
+                event_type=event.event_type,
+                payload=payload,
+                created_at=event.created_at.isoformat(timespec="seconds"),
             )
-            event.id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            event.id = row.id or 0
 
     async def persist_async(self, event: BaseEvent) -> None:
-        payload = json.dumps(
-            {
-                "event_type": event.event_type,
-                "payload": event.model_dump(mode="json"),
-            },
-            sort_keys=True,
-        )
-        async with aiosqlite.connect(self.database_path, timeout=5.0) as conn:
-            cursor = await conn.execute(
-                """
-                INSERT INTO state_events (scope, scope_id, event_type, payload, created_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    "session",
-                    event.session_id,
-                    event.event_type,
-                    payload,
-                    event.created_at.isoformat(timespec="seconds"),
-                ),
-            )
-            await conn.commit()
-            event.id = int(cursor.lastrowid or 0)
+        await asyncio.to_thread(self.persist, event)
 
     def get_recent_events(
         self,
@@ -72,55 +51,31 @@ class EventStore:
         event_types: list[type[BaseEvent]] | None = None,
     ) -> list[BaseEvent]:
         type_names = [t.__name__ for t in event_types] if event_types is not None else None
-        with self._connect() as conn:
+        with Session(self._engine) as session:
+            stmt = (
+                select(DbStateEvent)
+                .where(DbStateEvent.scope == "session")
+                .where(DbStateEvent.scope_id == session_id)
+            )
             if type_names:
-                placeholders = ",".join("?" * len(type_names))
-                cursor = conn.execute(
-                    f"""
-                    SELECT id, payload FROM state_events
-                    WHERE scope = 'session'
-                      AND scope_id = ?
-                      AND event_type IN ({placeholders})
-                    ORDER BY id DESC
-                    LIMIT ?
-                    """,  # noqa: S608
-                    (session_id, *type_names, limit),
-                )
-            else:
-                cursor = conn.execute(
-                    """
-                    SELECT id, payload FROM state_events
-                    WHERE scope = 'session'
-                      AND scope_id = ?
-                    ORDER BY id DESC
-                    LIMIT ?
-                    """,
-                    (session_id, limit),
-                )
-            rows = cursor.fetchall()
+                stmt = stmt.where(DbStateEvent.event_type.in_(type_names))
+            stmt = stmt.order_by(DbStateEvent.id.desc()).limit(limit)  # type: ignore[arg-type]
+            rows = session.exec(stmt).all()
 
         events: list[BaseEvent] = []
         for row in rows:
             try:
-                outer = json.loads(str(row["payload"]))
-                event_type_name = outer.get("event_type", "")
+                outer = row.payload
+                event_type_name = str(outer.get("event_type", ""))
                 event_cls = EVENT_REGISTRY.get(event_type_name)
                 if event_cls is None:
-                    logger.warning(
-                        "Unknown event_type in store, skipping: %s",
-                        event_type_name,
-                    )
+                    logger.warning("Unknown event_type in store, skipping: %s", event_type_name)
                     continue
-                event = event_cls.model_validate(outer["payload"])
-                event.id = int(row["id"])
-                events.append(event)
-            except (json.JSONDecodeError, ValueError, KeyError):
+                evt = event_cls.model_validate(outer["payload"])
+                evt.id = row.id or 0
+                events.append(evt)
+            except (ValueError, KeyError):
                 logger.warning("Skipping malformed event row", exc_info=True)
 
         events.reverse()
         return events
-
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.database_path, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        return conn

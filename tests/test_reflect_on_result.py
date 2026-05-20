@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from sqlalchemy import Engine
 
 from harness_poc.core.config import (
     HarnessConfig,
@@ -17,8 +18,8 @@ from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.skill_runner import SkillRunner
 
 
-def test_reflect_on_result_requires_objective(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_reflect_on_result_requires_objective(db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(db_engine)
     with pytest.raises(ValueError, match="reflect_on_result requires objective"):
         runner.execute_skill(
             tool_name="reflect_on_result",
@@ -27,8 +28,8 @@ def test_reflect_on_result_requires_objective(tmp_path: Path) -> None:
         )
 
 
-def test_reflect_on_result_requires_memory_key(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_reflect_on_result_requires_memory_key(db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(db_engine)
     with pytest.raises(ValueError, match="reflect_on_result requires memory_key"):
         runner.execute_skill(
             tool_name="reflect_on_result",
@@ -37,8 +38,8 @@ def test_reflect_on_result_requires_memory_key(tmp_path: Path) -> None:
         )
 
 
-def test_reflect_on_result_fails_when_payload_missing(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_reflect_on_result_fails_when_payload_missing(db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(db_engine)
 
     result = runner.execute_skill(
         tool_name="reflect_on_result",
@@ -54,8 +55,8 @@ def test_reflect_on_result_fails_when_payload_missing(tmp_path: Path) -> None:
     assert "No result was found" in reflection["summary"]
 
 
-def test_reflect_on_result_writes_to_memory(tmp_path: Path) -> None:
-    runner, session_id, database = _runner(tmp_path)
+def test_reflect_on_result_writes_to_memory(db_engine: Engine) -> None:
+    runner, session_id, database = _runner(db_engine)
     database.write_memory(
         session_id, "result_key", {"output": "research completed", "status": "done"}
     )
@@ -78,8 +79,8 @@ def test_reflect_on_result_writes_to_memory(tmp_path: Path) -> None:
     assert memory["verdict"] in {"pass", "fail"}
 
 
-def test_reflect_on_result_uses_default_output_key(tmp_path: Path) -> None:
-    runner, session_id, database = _runner(tmp_path)
+def test_reflect_on_result_uses_default_output_key(db_engine: Engine) -> None:
+    runner, session_id, database = _runner(db_engine)
     database.write_memory(session_id, "result_key", {"output": "work done"})
 
     runner.execute_skill(
@@ -149,15 +150,14 @@ def test_fallback_verdict_detects_failed_status() -> None:
     assert _fallback_verdict("just a string") == "pass"
 
 
-def _runner(tmp_path: Path) -> tuple[SkillRunner, str, BlackboardDatabase]:
-    config = _test_config(tmp_path)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+def _runner(engine: Engine) -> tuple[SkillRunner, str, BlackboardDatabase]:
+    config = _test_config(engine)
+    database = BlackboardDatabase(engine)
     session_id = database.start_session("test")
     return SkillRunner(database=database, config=config), session_id, database
 
 
-def _test_config(tmp_path: Path) -> HarnessConfig:
+def _test_config(engine: Engine) -> HarnessConfig:
     repo_root = Path.cwd()
     return HarnessConfig(
         project_root=repo_root,
@@ -171,7 +171,7 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             personas=repo_root / "personas",
         ),
         runtime=RuntimeConfig(
-            database_path=tmp_path / "blackboard.db",
+            database_url=engine.url.render_as_string(hide_password=False),
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),

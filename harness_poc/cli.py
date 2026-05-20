@@ -46,12 +46,13 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
+
+    from sqlalchemy import Engine
 
 
 @dataclass(frozen=True, slots=True)
 class EventLogOptions:
-    database_path: Path | str
+    engine: Engine
     session_id: str | None
     event_types: list[str]
     since_id: int | None
@@ -443,9 +444,11 @@ def events_log(  # noqa: PLR0913
     """Observe processor events written to the durable event log."""
     try:
         config = HarnessConfig.load()
+        from harness_poc.core.db_engine import create_db_engine  # noqa: PLC0415
+
         _print_events_log(
             EventLogOptions(
-                database_path=config.runtime.database_path,
+                engine=create_db_engine(config.runtime.database_url),
                 session_id=session_id,
                 event_types=event_types or [],
                 since_id=since_id,
@@ -470,14 +473,14 @@ def _print_events_log(options: EventLogOptions) -> None:
     while True:
         if last_seen_id is None:
             rows = fetch_latest_event_log_rows(
-                options.database_path,
+                options.engine,
                 session_id=options.session_id,
                 event_types=options.event_types,
                 limit=options.limit,
             )
         else:
             rows = fetch_event_log_rows(
-                options.database_path,
+                options.engine,
                 after_id=last_seen_id,
                 session_id=options.session_id,
                 event_types=options.event_types,

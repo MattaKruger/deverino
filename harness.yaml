@@ -16,7 +16,7 @@ paths:
   pipelines: pipelines
 
 runtime:
-  database_path: harness_poc/blackboard.db
+  database_url: postgresql://deverino:deverino@localhost/deverino
   default_container_image: deverino-python:latest
   container_ttl_seconds: 14400
   max_harness_containers: 5

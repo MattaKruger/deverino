@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from sqlalchemy import Engine
+
 from harness_poc.core.config import (
     HarnessConfig,
     HarnessPaths,
@@ -20,8 +22,9 @@ MAX_QUESTIONS = 3
 
 def test_spec_writer_questions_mode_returns_focused_questions(
     tmp_path: Path,
+    db_engine: Engine,
 ) -> None:
-    runner, session_id, _database = _runner(tmp_path)
+    runner, session_id, _database = _runner(tmp_path, db_engine)
 
     result = runner.execute_skill(
         tool_name="spec_writer",
@@ -34,8 +37,8 @@ def test_spec_writer_questions_mode_returns_focused_questions(
     assert "Clarifying Questions" in result.content
 
 
-def test_spec_writer_draft_requires_enough_intent(tmp_path: Path) -> None:
-    runner, session_id, _database = _runner(tmp_path)
+def test_spec_writer_draft_requires_enough_intent(tmp_path: Path, db_engine: Engine) -> None:
+    runner, session_id, _database = _runner(tmp_path, db_engine)
 
     result = runner.execute_skill(
         tool_name="spec_writer",
@@ -47,8 +50,8 @@ def test_spec_writer_draft_requires_enough_intent(tmp_path: Path) -> None:
     assert "existing behavior" in result.content
 
 
-def test_spec_writer_draft_writes_spec_file_and_memory(tmp_path: Path) -> None:
-    runner, session_id, database = _runner(tmp_path)
+def test_spec_writer_draft_writes_spec_file_and_memory(tmp_path: Path, db_engine: Engine) -> None:
+    runner, session_id, database = _runner(tmp_path, db_engine)
 
     result = runner.execute_skill(
         tool_name="spec_writer",
@@ -82,8 +85,8 @@ def test_spec_writer_draft_writes_spec_file_and_memory(tmp_path: Path) -> None:
     assert memory["spec_path"] == str(spec_path)
 
 
-def test_spec_writer_refine_uses_previous_draft(tmp_path: Path) -> None:
-    runner, session_id, database = _runner(tmp_path)
+def test_spec_writer_refine_uses_previous_draft(tmp_path: Path, db_engine: Engine) -> None:
+    runner, session_id, database = _runner(tmp_path, db_engine)
     database.write_memory(
         session_id,
         "existing_spec",
@@ -107,15 +110,14 @@ def test_spec_writer_refine_uses_previous_draft(tmp_path: Path) -> None:
     assert "Old objective" in result.content
 
 
-def _runner(tmp_path: Path) -> tuple[SkillRunner, str, BlackboardDatabase]:
-    config = _test_config(tmp_path)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+def _runner(tmp_path: Path, db_engine: Engine) -> tuple[SkillRunner, str, BlackboardDatabase]:
+    config = _test_config(tmp_path, db_engine)
+    database = BlackboardDatabase(db_engine)
     session_id = database.start_session("test")
     return SkillRunner(database=database, config=config), session_id, database
 
 
-def _test_config(tmp_path: Path) -> HarnessConfig:
+def _test_config(tmp_path: Path, engine: Engine) -> HarnessConfig:
     repo_root = Path.cwd()
     return HarnessConfig(
         project_root=tmp_path,
@@ -129,7 +131,7 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             personas=repo_root / "personas",
         ),
         runtime=RuntimeConfig(
-            database_path=tmp_path / "blackboard.db",
+            database_url=engine.url.render_as_string(hide_password=False),
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
@@ -137,9 +139,9 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
     )
 
 
-def test_gather_state_round_trips_through_blackboard(tmp_path: Path) -> None:
-    _runner_obj, session_id, database = _runner(tmp_path)
-    config = _test_config(tmp_path)
+def test_gather_state_round_trips_through_blackboard(tmp_path: Path, db_engine: Engine) -> None:
+    _runner_obj, session_id, database = _runner(tmp_path, db_engine)
+    config = _test_config(tmp_path, db_engine)
     from harness_poc.core.skill_context import SkillContext
     from skills.spec_writer.skill import (
         GatherState,
@@ -175,9 +177,9 @@ def test_gather_state_round_trips_through_blackboard(tmp_path: Path) -> None:
     assert loaded.current_component_index == 1
 
 
-def test_load_gather_state_returns_none_when_missing(tmp_path: Path) -> None:
-    _runner_obj, session_id, database = _runner(tmp_path)
-    config = _test_config(tmp_path)
+def test_load_gather_state_returns_none_when_missing(tmp_path: Path, db_engine: Engine) -> None:
+    _runner_obj, session_id, database = _runner(tmp_path, db_engine)
+    config = _test_config(tmp_path, db_engine)
     from harness_poc.core.skill_context import SkillContext
     from skills.spec_writer.skill import _load_gather_state
 
@@ -375,8 +377,8 @@ def test_write_xml_context_file_creates_file(tmp_path: Path) -> None:
     assert path.read_text() == xml + "\n"
 
 
-def test_gather_first_call_asks_project_overview(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_gather_first_call_asks_project_overview(tmp_path: Path, db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(tmp_path, db_engine)
     result = runner.execute_skill(
         tool_name="spec_writer",
         arguments={"mode": "gather", "gather_key": "test_gather"},
@@ -388,8 +390,8 @@ def test_gather_first_call_asks_project_overview(tmp_path: Path) -> None:
     assert result.artifacts["gather_key"] == "test_gather"
 
 
-def test_gather_answer_advances_to_next_phase(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_gather_answer_advances_to_next_phase(tmp_path: Path, db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(tmp_path, db_engine)
     # First call — get project overview question
     runner.execute_skill(
         tool_name="spec_writer",
@@ -410,8 +412,8 @@ def test_gather_answer_advances_to_next_phase(tmp_path: Path) -> None:
     assert result.artifacts["phase"] == "awaiting_feature_request"
 
 
-def test_gather_full_flow_produces_xml(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_gather_full_flow_produces_xml(tmp_path: Path, db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(tmp_path, db_engine)
     key = "full_gather_test"
 
     def call(answer: str = "") -> SkillResult:
@@ -444,8 +446,9 @@ def test_gather_full_flow_produces_xml(tmp_path: Path) -> None:
 
 def test_gather_uses_default_gather_key_when_not_provided(
     tmp_path: Path,
+    db_engine: Engine,
 ) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+    runner, session_id, _ = _runner(tmp_path, db_engine)
     result = runner.execute_skill(
         tool_name="spec_writer",
         arguments={"mode": "gather"},
@@ -456,9 +459,10 @@ def test_gather_uses_default_gather_key_when_not_provided(
 
 def test_draft_with_gather_key_reads_completed_xml_from_blackboard(
     tmp_path: Path,
+    db_engine: Engine,
 ) -> None:
-    runner, session_id, database = _runner(tmp_path)
-    config = _test_config(tmp_path)
+    runner, session_id, database = _runner(tmp_path, db_engine)
+    config = _test_config(tmp_path, db_engine)
     from harness_poc.core.skill_context import SkillContext
     from skills.spec_writer.skill import GatherState, _save_gather_state
 
@@ -495,8 +499,8 @@ def test_draft_with_gather_key_reads_completed_xml_from_blackboard(
     assert "## Objective" in result.content
 
 
-def test_draft_without_gather_key_works_as_before(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_draft_without_gather_key_works_as_before(tmp_path: Path, db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(tmp_path, db_engine)
     result = runner.execute_skill(
         tool_name="spec_writer",
         arguments={

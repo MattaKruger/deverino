@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+from typing import Any
+
+from sqlalchemy import Column, DateTime, Index, Text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import JSON
+from sqlmodel import Field, SQLModel
+
+# JSONB on PostgreSQL, JSON on everything else (SQLite for tests)
+_StateJSON = JSON().with_variant(JSONB(), "postgresql")
+
+
+class DbSession(SQLModel, table=True):
+    __tablename__ = "sessions"  # type: ignore[assignment]
+
+    session_id: str = Field(primary_key=True)
+    global_objective: str
+    status: str
+    created_at: str
+
+
+class DbSharedMemory(SQLModel, table=True):
+    __tablename__ = "shared_memory"  # type: ignore[assignment]
+    __table_args__ = (
+        Index("idx_shared_memory_session_key", "session_id", "memory_key", "created_at"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    session_id: str = Field(foreign_key="sessions.session_id")
+    memory_key: str
+    # TEXT: can be a raw string or a JSON-encoded string (str | dict via write_memory)
+    data_payload: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: str
+
+
+class DbProjectState(SQLModel, table=True):
+    __tablename__ = "project_state"  # type: ignore[assignment]
+
+    project_id: str = Field(primary_key=True)
+    state_payload: Any = Field(sa_column=Column(_StateJSON, nullable=False))
+    version: int
+    updated_at: str
+
+
+class DbSessionState(SQLModel, table=True):
+    __tablename__ = "session_state"  # type: ignore[assignment]
+
+    session_id: str = Field(primary_key=True, foreign_key="sessions.session_id")
+    state_payload: Any = Field(sa_column=Column(_StateJSON, nullable=False))
+    version: int
+    dirty: bool
+    updated_at: str
+
+
+class DbStateProposal(SQLModel, table=True):
+    __tablename__ = "state_proposals"  # type: ignore[assignment]
+
+    proposal_id: str = Field(primary_key=True)
+    session_id: str = Field(foreign_key="sessions.session_id")
+    status: str
+    proposal_payload: Any = Field(sa_column=Column(_StateJSON, nullable=False))
+    created_at: str
+    resolved_at: str | None = Field(default=None, sa_column=Column(DateTime, nullable=True))
+
+
+class DbStateEvent(SQLModel, table=True):
+    __tablename__ = "state_events"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    scope: str
+    scope_id: str
+    event_type: str
+    payload: Any = Field(sa_column=Column(_StateJSON, nullable=False))
+    created_at: str
+
+
+class DbSessionSnapshot(SQLModel, table=True):
+    __tablename__ = "session_snapshots"  # type: ignore[assignment]
+
+    session_id: str = Field(primary_key=True)
+    last_offset: int
+    state_payload: Any = Field(sa_column=Column(_StateJSON, nullable=False))
+    updated_at: str | None = Field(default=None)

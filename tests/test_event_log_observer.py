@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-import tempfile
 
-from harness_poc.core.database import BlackboardDatabase
+from sqlalchemy import Engine
+
 from harness_poc.core.event_log_observer import (
     fetch_event_log_rows,
     fetch_latest_event_log_rows,
@@ -13,15 +13,8 @@ from harness_poc.core.event_store import EventStore
 from harness_poc.core.events import AgentInputAdded, LLMActionEmitted, SkillCompleted
 
 
-def _make_store() -> EventStore:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as handle:
-        db_path = handle.name
-    BlackboardDatabase(db_path).create_tables()
-    return EventStore(db_path)
-
-
-def test_fetch_event_log_rows_filters_by_session_type_and_offset() -> None:
-    store = _make_store()
+def test_fetch_event_log_rows_filters_by_session_type_and_offset(db_engine: Engine) -> None:
+    store = EventStore(db_engine)
     store.persist(AgentInputAdded(session_id="s1", user_content="hello"))
     store.persist(LLMActionEmitted(session_id="s1", model="fake", tokens_used=12))
     store.persist(LLMActionEmitted(session_id="s2", model="fake", tokens_used=99))
@@ -35,7 +28,7 @@ def test_fetch_event_log_rows_filters_by_session_type_and_offset() -> None:
     )
 
     rows = fetch_event_log_rows(
-        store.database_path,
+        db_engine,
         after_id=1,
         session_id="s1",
         event_types=["LLMActionEmitted", "SkillCompleted"],
@@ -45,32 +38,34 @@ def test_fetch_event_log_rows_filters_by_session_type_and_offset() -> None:
     assert all(row.session_id == "s1" for row in rows)
 
 
-def test_fetch_event_log_rows_respects_limit() -> None:
-    store = _make_store()
+def test_fetch_event_log_rows_respects_limit(db_engine: Engine) -> None:
+    store = EventStore(db_engine)
     store.persist(AgentInputAdded(session_id="s1", user_content="one"))
     store.persist(AgentInputAdded(session_id="s1", user_content="two"))
 
-    rows = fetch_event_log_rows(store.database_path, session_id="s1", limit=1)
+    rows = fetch_event_log_rows(db_engine, session_id="s1", limit=1)
 
     assert len(rows) == 1
     assert rows[0].payload["user_content"] == "one"
 
 
-def test_fetch_latest_event_log_rows_returns_recent_rows_chronologically() -> None:
-    store = _make_store()
+def test_fetch_latest_event_log_rows_returns_recent_rows_chronologically(
+    db_engine: Engine,
+) -> None:
+    store = EventStore(db_engine)
     store.persist(AgentInputAdded(session_id="s1", user_content="one"))
     store.persist(AgentInputAdded(session_id="s1", user_content="two"))
     store.persist(AgentInputAdded(session_id="s1", user_content="three"))
 
-    rows = fetch_latest_event_log_rows(store.database_path, session_id="s1", limit=2)
+    rows = fetch_latest_event_log_rows(db_engine, session_id="s1", limit=2)
 
     assert [row.payload["user_content"] for row in rows] == ["two", "three"]
 
 
-def test_render_event_log_row_shows_pretty_payload_by_default() -> None:
-    store = _make_store()
+def test_render_event_log_row_shows_pretty_payload_by_default(db_engine: Engine) -> None:
+    store = EventStore(db_engine)
     store.persist(LLMActionEmitted(session_id="s1", model="fake", tokens_used=12))
-    row = fetch_event_log_rows(store.database_path, session_id="s1")[0]
+    row = fetch_event_log_rows(db_engine, session_id="s1")[0]
 
     rendered = render_event_log_row(row)
 
@@ -81,10 +76,10 @@ def test_render_event_log_row_shows_pretty_payload_by_default() -> None:
     assert '    "tokens_used": 12' in rendered
 
 
-def test_render_event_log_row_can_hide_payload() -> None:
-    store = _make_store()
+def test_render_event_log_row_can_hide_payload(db_engine: Engine) -> None:
+    store = EventStore(db_engine)
     store.persist(LLMActionEmitted(session_id="s1", model="fake", tokens_used=12))
-    row = fetch_event_log_rows(store.database_path, session_id="s1")[0]
+    row = fetch_event_log_rows(db_engine, session_id="s1")[0]
 
     rendered = render_event_log_row(row, include_payload=False)
 
@@ -92,10 +87,10 @@ def test_render_event_log_row_can_hide_payload() -> None:
     assert "payload:" not in rendered
 
 
-def test_render_event_log_row_json_outputs_full_payload() -> None:
-    store = _make_store()
+def test_render_event_log_row_json_outputs_full_payload(db_engine: Engine) -> None:
+    store = EventStore(db_engine)
     store.persist(AgentInputAdded(session_id="s1", user_content="hello"))
-    row = fetch_event_log_rows(store.database_path, session_id="s1")[0]
+    row = fetch_event_log_rows(db_engine, session_id="s1")[0]
 
     rendered = json.loads(render_event_log_row(row, json_output=True))
 

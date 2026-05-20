@@ -1,9 +1,10 @@
-# ruff: noqa: PLC0415, PLR2004, ARG001
+# ruff: noqa: PLC0415, PLR2004
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
+from sqlalchemy import Engine
 
 from harness_poc.core.config import (
     HarnessConfig,
@@ -16,8 +17,8 @@ from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.skill_runner import SkillRunner
 
 
-def test_web_search_requires_query(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_web_search_requires_query(db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(db_engine)
     with pytest.raises(ValueError, match="web_search requires a query string"):
         runner.execute_skill(
             tool_name="web_search",
@@ -26,9 +27,9 @@ def test_web_search_requires_query(tmp_path: Path) -> None:
         )
 
 
-def test_web_search_returns_results(tmp_path: Path) -> None:
+def test_web_search_returns_results(db_engine: Engine) -> None:
     """Works in both mock and live mode — returns success with results."""
-    runner, session_id, _ = _runner(tmp_path)
+    runner, session_id, _ = _runner(db_engine)
     result = runner.execute_skill(
         tool_name="web_search",
         arguments={"query": "PydanticAI"},
@@ -39,7 +40,7 @@ def test_web_search_returns_results(tmp_path: Path) -> None:
     assert isinstance(result.artifacts.get("results"), list)
 
 
-def test_web_search_mock_mode_is_available(tmp_path: Path) -> None:
+def test_web_search_mock_mode_is_available() -> None:
     """When no API key is configured, returns mock results with [MOCK] prefix."""
     # Test the mock output function directly to verify it works
     from skills.web_search.skill import _mock_result
@@ -52,7 +53,7 @@ def test_web_search_mock_mode_is_available(tmp_path: Path) -> None:
     assert len(result.artifacts["results"]) > 0
 
 
-def test_web_search_count_clamping(tmp_path: Path) -> None:
+def test_web_search_count_clamping() -> None:
     """Count is clamped between 1 and MAX_RESULTS (20)."""
     from skills.web_search.skill import _clamp_count
 
@@ -63,8 +64,8 @@ def test_web_search_count_clamping(tmp_path: Path) -> None:
     assert _clamp_count(None) == 5
 
 
-def test_web_search_empty_query_raises(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_web_search_empty_query_raises(db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(db_engine)
     with pytest.raises(ValueError, match="web_search requires a query string"):
         runner.execute_skill(
             tool_name="web_search",
@@ -73,9 +74,9 @@ def test_web_search_empty_query_raises(tmp_path: Path) -> None:
         )
 
 
-def test_web_search_formats_results(tmp_path: Path) -> None:
+def test_web_search_formats_results(db_engine: Engine) -> None:
     """Result formatting works regardless of live/mock mode."""
-    runner, session_id, _ = _runner(tmp_path)
+    runner, session_id, _ = _runner(db_engine)
     result = runner.execute_skill(
         tool_name="web_search",
         arguments={"query": "format test", "count": 2},
@@ -84,15 +85,14 @@ def test_web_search_formats_results(tmp_path: Path) -> None:
     assert "Web search results for: format test" in result.content
 
 
-def _runner(tmp_path: Path) -> tuple[SkillRunner, str, BlackboardDatabase]:
-    config = _test_config(tmp_path)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+def _runner(engine: Engine) -> tuple[SkillRunner, str, BlackboardDatabase]:
+    config = _test_config(engine)
+    database = BlackboardDatabase(engine)
     session_id = database.start_session("test")
     return SkillRunner(database=database, config=config), session_id, database
 
 
-def _test_config(tmp_path: Path) -> HarnessConfig:
+def _test_config(engine: Engine) -> HarnessConfig:
     repo_root = Path.cwd()
     return HarnessConfig(
         project_root=repo_root,
@@ -106,7 +106,7 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             personas=repo_root / "personas",
         ),
         runtime=RuntimeConfig(
-            database_path=tmp_path / "blackboard.db",
+            database_url=engine.url.render_as_string(hide_password=False),
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),

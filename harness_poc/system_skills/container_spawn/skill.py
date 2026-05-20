@@ -448,6 +448,7 @@ def _inspect_container(backend: str, container_name: str) -> dict[str, Any] | No
     container = inspect_data[0]
     state = container.get("State", {})
     created_at = str(container.get("Created", ""))
+
     return {
         "backend": backend,
         "container_name": container_name,

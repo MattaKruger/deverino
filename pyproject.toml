@@ -1,7 +1,7 @@
 [project]
 name = "llm-agent-harness-poc"
 version = "0.1.0"
-description = "Proof of concept LLM agent harness using a SQLite blackboard."
+description = "Proof of concept LLM agent harness backed by PostgreSQL."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,7 +15,8 @@ dependencies = [
     "pydantic-ai>=1.97.0",
     "logfire[pydantic-ai]>=4.33.0",
     "textual>=1.0.0",
-    "aiosqlite>=0.22.1",
+    "sqlmodel>=0.0.22",
+    "psycopg2-binary>=2.9.9",
     "polars>=1.40.1",
 ]
 
@@ -62,7 +63,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101"]
+"tests/**/*.py" = ["S101", "TC002"]
 
 [tool.ruff.format]
 quote-style = "double"

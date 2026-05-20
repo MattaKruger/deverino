@@ -21,10 +21,12 @@ if TYPE_CHECKING:
 
     import pytest
 
+from sqlalchemy import Engine
 
-def test_container_spawn_fails_when_no_image(tmp_path: Path) -> None:
+
+def test_container_spawn_fails_when_no_image(db_engine: Engine) -> None:
     """Without a configured image, container_spawn should fail gracefully."""
-    runner, session_id, _ = _runner(tmp_path, default_container_image="")
+    runner, session_id, _ = _runner(db_engine, default_container_image="")
 
     result = runner.execute_skill(
         tool_name="container_spawn",
@@ -35,13 +37,13 @@ def test_container_spawn_fails_when_no_image(tmp_path: Path) -> None:
     assert "No container image" in result.content
 
 
-def test_container_spawn_fails_when_no_backend(tmp_path: Path) -> None:
+def test_container_spawn_fails_when_no_backend(db_engine: Engine) -> None:
     """If neither docker nor podman is on PATH, should get a clear error.
 
     When a backend is available, container may fail to pull/run the image,
     which is also a valid failure path.
     """
-    runner, session_id, _ = _runner(tmp_path)
+    runner, session_id, _ = _runner(db_engine)
 
     result = runner.execute_skill(
         tool_name="container_spawn",
@@ -62,8 +64,8 @@ def test_container_spawn_fails_when_no_backend(tmp_path: Path) -> None:
         )
 
 
-def test_container_exec_requires_command(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_container_exec_requires_command(db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(db_engine)
 
     result = runner.execute_skill(
         tool_name="container_exec",
@@ -74,8 +76,8 @@ def test_container_exec_requires_command(tmp_path: Path) -> None:
     assert "requires a command" in result.content
 
 
-def test_container_exec_requires_container(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_container_exec_requires_container(db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(db_engine)
 
     result = runner.execute_skill(
         tool_name="container_exec",
@@ -86,9 +88,9 @@ def test_container_exec_requires_container(tmp_path: Path) -> None:
     assert "requires a container" in result.content
 
 
-def test_container_exec_fails_when_no_backend(tmp_path: Path) -> None:
+def test_container_exec_fails_when_no_backend(db_engine: Engine) -> None:
     # Docker/podman may be available — test runs successfully or fails gracefully
-    runner, session_id, _ = _runner(tmp_path)
+    runner, session_id, _ = _runner(db_engine)
 
     result = runner.execute_skill(
         tool_name="container_exec",
@@ -107,8 +109,8 @@ def test_container_exec_fails_when_no_backend(tmp_path: Path) -> None:
     )
 
 
-def test_container_destroy_requires_container_name(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_container_destroy_requires_container_name(db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(db_engine)
 
     result = runner.execute_skill(
         tool_name="container_destroy",
@@ -120,12 +122,11 @@ def test_container_destroy_requires_container_name(tmp_path: Path) -> None:
 
 
 def test_container_spawn_mounts_scratch_outside_read_only_workspace(
-    tmp_path: Path,
+    db_engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = _test_config(tmp_path)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+    config = _test_config(db_engine)
+    database = BlackboardDatabase(db_engine)
     session_id = database.start_session("test")
     ctx = SkillContext(
         session_id=session_id,
@@ -201,11 +202,10 @@ def test_container_spawn_cleanup_removes_only_stale_harness_containers(
 
 
 def _runner(
-    tmp_path: Path, default_container_image: str = "python:3.12-slim"
+    engine: Engine, default_container_image: str = "python:3.12-slim"
 ) -> tuple[SkillRunner, str, BlackboardDatabase]:
-    config = _test_config(tmp_path, default_container_image)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+    config = _test_config(engine, default_container_image)
+    database = BlackboardDatabase(engine)
     session_id = database.start_session("test")
     return SkillRunner(database=database, config=config), session_id, database
 
@@ -243,7 +243,7 @@ def _inspect_after_run() -> Callable[[str, str], dict[str, object] | None]:
 
 
 def _test_config(
-    tmp_path: Path, default_container_image: str = "python:3.12-slim"
+    engine: Engine, default_container_image: str = "python:3.12-slim"
 ) -> HarnessConfig:
     repo_root = Path.cwd()
     return HarnessConfig(
@@ -258,7 +258,7 @@ def _test_config(
             personas=repo_root / "personas",
         ),
         runtime=RuntimeConfig(
-            database_path=tmp_path / "blackboard.db",
+            database_url=engine.url.render_as_string(hide_password=False),
             default_container_image=default_container_image,
         ),
         observability=ObservabilityConfig(logfire_enabled=False),

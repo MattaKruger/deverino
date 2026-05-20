@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from sqlalchemy import Engine
 
 from harness_poc.core.config import (
     HarnessConfig,
@@ -16,8 +17,8 @@ from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.skill_runner import SkillRunner
 
 
-def test_review_work_requires_memory_key(tmp_path: Path) -> None:
-    runner, session_id, _ = _runner(tmp_path)
+def test_review_work_requires_memory_key(db_engine: Engine) -> None:
+    runner, session_id, _ = _runner(db_engine)
     with pytest.raises(ValueError, match="review_work requires memory_key"):
         runner.execute_skill(
             tool_name="review_work",
@@ -26,8 +27,8 @@ def test_review_work_requires_memory_key(tmp_path: Path) -> None:
         )
 
 
-def test_review_work_fails_when_memory_missing(tmp_path: Path) -> None:
-    runner, session_id, _database = _runner(tmp_path)
+def test_review_work_fails_when_memory_missing(db_engine: Engine) -> None:
+    runner, session_id, _database = _runner(db_engine)
 
     result = runner.execute_skill(
         tool_name="review_work",
@@ -43,8 +44,8 @@ def test_review_work_fails_when_memory_missing(tmp_path: Path) -> None:
     assert "No result was found" in review["summary"]
 
 
-def test_review_work_passes_when_memory_exists(tmp_path: Path) -> None:
-    runner, session_id, database = _runner(tmp_path)
+def test_review_work_passes_when_memory_exists(db_engine: Engine) -> None:
+    runner, session_id, database = _runner(db_engine)
     database.write_memory(session_id, "result_key", {"output": "some work"})
 
     result = runner.execute_skill(
@@ -61,8 +62,8 @@ def test_review_work_passes_when_memory_exists(tmp_path: Path) -> None:
     assert "A result exists" in review["summary"]
 
 
-def test_review_work_writes_to_output_key(tmp_path: Path) -> None:
-    runner, session_id, database = _runner(tmp_path)
+def test_review_work_writes_to_output_key(db_engine: Engine) -> None:
+    runner, session_id, database = _runner(db_engine)
     database.write_memory(session_id, "result_key", {"output": "work"})
 
     result = runner.execute_skill(
@@ -81,8 +82,8 @@ def test_review_work_writes_to_output_key(tmp_path: Path) -> None:
     assert memory["verdict"] == "pass"
 
 
-def test_review_work_uses_default_output_key(tmp_path: Path) -> None:
-    runner, session_id, database = _runner(tmp_path)
+def test_review_work_uses_default_output_key(db_engine: Engine) -> None:
+    runner, session_id, database = _runner(db_engine)
     database.write_memory(session_id, "result_key", {"output": "work"})
 
     runner.execute_skill(
@@ -99,15 +100,14 @@ def test_review_work_uses_default_output_key(tmp_path: Path) -> None:
     assert memory["verdict"] == "pass"
 
 
-def _runner(tmp_path: Path) -> tuple[SkillRunner, str, BlackboardDatabase]:
-    config = _test_config(tmp_path)
-    database = BlackboardDatabase(config.runtime.database_path)
-    database.create_tables()
+def _runner(engine: Engine) -> tuple[SkillRunner, str, BlackboardDatabase]:
+    config = _test_config(engine)
+    database = BlackboardDatabase(engine)
     session_id = database.start_session("test")
     return SkillRunner(database=database, config=config), session_id, database
 
 
-def _test_config(tmp_path: Path) -> HarnessConfig:
+def _test_config(engine: Engine) -> HarnessConfig:
     repo_root = Path.cwd()
     return HarnessConfig(
         project_root=repo_root,
@@ -121,7 +121,7 @@ def _test_config(tmp_path: Path) -> HarnessConfig:
             personas=repo_root / "personas",
         ),
         runtime=RuntimeConfig(
-            database_path=tmp_path / "blackboard.db",
+            database_url=engine.url.render_as_string(hide_password=False),
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
