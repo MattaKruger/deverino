@@ -35,7 +35,6 @@ _ILLEGAL_CONTROL_RE = re.compile(
 )
 IGNORED_DIR_NAMES = frozenset({".git", ".venv", "__pycache__", ".deverino-scratch"})
 IGNORED_FILE_GLOBS = frozenset({"*.db", ".env", "*.pem", "*.key", "id_rsa", "credentials.json"})
-MAX_FILE_BYTES = 5 * 1024 * 1024
 
 
 @dataclass
@@ -214,14 +213,14 @@ class DocumentIndexer:
             return _FileResult(uri=uri, status="skipped", skipped=1)
 
         try:
-            if file_path.stat().st_size > MAX_FILE_BYTES:
+            if file_path.stat().st_size > self._config.max_file_bytes:
                 return _FileResult(
                     uri=uri,
                     status="failed",
                     failed=1,
                     failure={
                         "uri": uri,
-                        "error": f"file exceeds {MAX_FILE_BYTES} bytes",
+                        "error": f"file exceeds {self._config.max_file_bytes} bytes",
                     },
                 )
             text = _sanitize_text(_read_document_text(file_path))

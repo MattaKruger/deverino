@@ -58,6 +58,7 @@ class RetrievalConfig:
     chunk_size_chars: int = 1800
     chunk_overlap_chars: int = 200
     max_feed_workers: int = 5
+    max_file_bytes: int = 5 * 1024 * 1024
     query_timeout_seconds: int = 5
 
 
@@ -169,6 +170,7 @@ class HarnessConfig:
             chunk_size_chars=int(retrieval_raw.get("chunk_size_chars", 1800)),
             chunk_overlap_chars=int(retrieval_raw.get("chunk_overlap_chars", 200)),
             max_feed_workers=int(retrieval_raw.get("max_feed_workers", 5)),
+            max_file_bytes=int(retrieval_raw.get("max_file_bytes", 5 * 1024 * 1024)),
             query_timeout_seconds=int(retrieval_raw.get("query_timeout_seconds", 5)),
         )
 
