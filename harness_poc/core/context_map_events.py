@@ -69,6 +69,7 @@ class ContextualInsightDiscovered(ContextMapEvent):
 
 class MapEntryPromoted(ContextMapEvent):
     event_type: Literal["map_entry_promoted"] = "map_entry_promoted"
+    entry_id: str | None = None
     entry_key: str
     from_section: str
     to_section: str
@@ -76,6 +77,7 @@ class MapEntryPromoted(ContextMapEvent):
 
 class MapEntryEvicted(ContextMapEvent):
     event_type: Literal["map_entry_evicted"] = "map_entry_evicted"
+    entry_id: str | None = None
     entry_key: str
     section: str
     reason: str

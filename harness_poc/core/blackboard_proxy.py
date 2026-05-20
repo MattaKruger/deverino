@@ -122,9 +122,16 @@ class BlackboardAccessProxy:
         map_json: dict[str, Any],
         token_count: int,
         event_ids: list[str],
+        freeze_until: str | None = None,
     ) -> None:
         self._require_write()
-        self._db.write_map_and_mark_processed(corpus_key, map_json, token_count, event_ids)
+        self._db.write_map_and_mark_processed(
+            corpus_key,
+            map_json,
+            token_count,
+            event_ids,
+            freeze_until,
+        )
 
     # ---- async wrappers ----
 

@@ -35,6 +35,8 @@ class RuntimeConfig:
     materializer_poll_interval: float = 30.0
     materializer_max_event_tokens: int = 8000
     materializer_token_budget: int = 1024
+    materializer_freeze_threshold: int = 3
+    materializer_freeze_seconds: int = 300
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +159,10 @@ class HarnessConfig:
                 runtime_raw.get("materializer_max_event_tokens", 8000)
             ),
             materializer_token_budget=int(runtime_raw.get("materializer_token_budget", 1024)),
+            materializer_freeze_threshold=int(
+                runtime_raw.get("materializer_freeze_threshold", 3)
+            ),
+            materializer_freeze_seconds=int(runtime_raw.get("materializer_freeze_seconds", 300)),
         )
         observability = ObservabilityConfig(
             logfire_enabled=bool(observability_raw.get("logfire", False)),

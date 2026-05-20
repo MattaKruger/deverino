@@ -5,6 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import inspect, text
 from sqlmodel import Session, col, select
 
 if TYPE_CHECKING:
@@ -46,6 +47,7 @@ class BlackboardDatabase:
 
     def create_tables(self) -> None:
         SQLModel.metadata.create_all(self._engine)
+        self._ensure_context_map_freeze_column()
 
     def start_session(self, objective: str) -> str:
         session_id = str(uuid.uuid4())
@@ -426,12 +428,30 @@ class BlackboardDatabase:
         except json.JSONDecodeError:
             return None
 
+    def is_map_frozen(self, corpus_key: str, now: str | None = None) -> bool:
+        if now is None:
+            now = self._utc_now()
+        with Session(self._engine) as session:
+            row = session.get(DbContextMap, corpus_key)
+        if row is None or row.freeze_until is None:
+            return False
+        return row.freeze_until > now
+
+    def set_map_freeze(self, corpus_key: str, freeze_until: str) -> None:
+        with Session(self._engine) as session:
+            row = session.get(DbContextMap, corpus_key)
+            if row is not None:
+                row.freeze_until = freeze_until
+                session.add(row)
+                session.commit()
+
     def write_map_and_mark_processed(
         self,
         corpus_key: str,
         map_json: dict[str, Any],
         token_count: int,
         event_ids: list[str],
+        freeze_until: str | None = None,
     ) -> None:
         now = self._utc_now()
         serialized = json.dumps(map_json, sort_keys=True)
@@ -445,6 +465,7 @@ class BlackboardDatabase:
                         token_count=token_count,
                         version=1,
                         last_updated=now,
+                        freeze_until=freeze_until,
                     )
                 )
             else:
@@ -452,6 +473,7 @@ class BlackboardDatabase:
                 row.token_count = token_count
                 row.version += 1
                 row.last_updated = now
+                row.freeze_until = freeze_until
                 session.add(row)
             for event_id in event_ids:
                 event_row = session.get(DbContextMapEvent, event_id)
@@ -459,6 +481,16 @@ class BlackboardDatabase:
                     event_row.processed = 1
                     session.add(event_row)
             session.commit()
+
+    def _ensure_context_map_freeze_column(self) -> None:
+        inspector = inspect(self._engine)
+        if not inspector.has_table("context_map"):
+            return
+        columns = {column["name"] for column in inspector.get_columns("context_map")}
+        if "freeze_until" in columns:
+            return
+        with self._engine.begin() as connection:
+            connection.execute(text("ALTER TABLE context_map ADD COLUMN freeze_until TEXT"))
 
     @staticmethod
     def _utc_now() -> str:

@@ -61,6 +61,8 @@ runtime:
   materializer_poll_interval: 30
   materializer_max_event_tokens: 8000
   materializer_token_budget: 1024
+  materializer_freeze_threshold: 3
+  materializer_freeze_seconds: 300
 
 retrieval:
   enabled: true
@@ -161,6 +163,20 @@ Current context-map components:
 - automatic `document_retrieved` and `search_failed` events from
   `search_documents`
 - prompt injection of the stored context map during app-state creation
+
+The materializer avoids repeated LLM calls when a corpus is stable. Each skill
+run reports whether the persisted map actually changed; after
+`runtime.materializer_freeze_threshold` consecutive no-change cycles, the runner
+sets `context_map.freeze_until` for `runtime.materializer_freeze_seconds`.
+Pending events are left unprocessed during the freeze and are picked up after it
+expires.
+
+Map entries also carry stable 8-character `entry_id` values in addition to their
+human-readable slug keys. `ADD` creates a new ID, `REPLACE` keeps the existing ID,
+and old map rows are normalized on the next materializer pass. Budget evictions
+and upward section promotions append `map_entry_evicted` and
+`map_entry_promoted` derivation events, including the affected `entry_id` when
+available, so map evolution remains auditable.
 
 Context maps are keyed by corpus, using the configured project id. App startup
 currently injects the `deverino:default` map when present; `search_documents`
@@ -305,6 +321,8 @@ skill activity appends typed orientation events, and the background materializer
 turns unprocessed events into a compact map that is loaded into future system
 prompts. This map is a cache, not a source of truth; if materialization fails,
 events remain unprocessed and are retried on a later poll.
+Stable maps can be temporarily frozen to save materializer LLM calls, while new
+events continue accumulating in the event log.
 
 The TUI and pipeline agent nodes still use the tested `GoalRunner` path for some
 flows while the migration settles. `GoalRunner` includes semantic retry

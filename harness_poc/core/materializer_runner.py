@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,12 +19,15 @@ class MaterializerRunner:
         db: BlackboardDatabase,
         skill_runner: SkillRunner,
         config: HarnessConfig,
+        session_id: str,
         poll_interval: float = 30.0,
     ) -> None:
         self._db = db
         self._skill_runner = skill_runner
         self._config = config
+        self._session_id = session_id
         self._poll_interval = poll_interval
+        self._no_change_count: dict[str, int] = {}
 
     async def run_forever(self) -> None:
         while True:
@@ -35,7 +39,10 @@ class MaterializerRunner:
 
     async def _poll_once(self) -> None:
         corpus_keys = self._db.get_pending_corpus_keys()
+        now = datetime.now(tz=UTC).isoformat(timespec="seconds")
         for corpus_key in corpus_keys:
+            if self._db.is_map_frozen(corpus_key, now):
+                continue
             await self._materialize(corpus_key)
 
     async def _materialize(self, corpus_key: str) -> None:
@@ -46,8 +53,27 @@ class MaterializerRunner:
                 "corpus_key": corpus_key,
                 "max_event_tokens": self._config.runtime.materializer_max_event_tokens,
                 "token_budget": self._config.runtime.materializer_token_budget,
+                "session_id": self._session_id,
             },
             "materializer",
         )
         if result.status != "success":
             logger.warning("Materializer failed for %s: %s", corpus_key, result.content)
+            return
+
+        map_changed = bool(result.artifacts.get("map_changed", True))
+        if map_changed:
+            self._no_change_count[corpus_key] = 0
+            return
+
+        self._no_change_count[corpus_key] = self._no_change_count.get(corpus_key, 0) + 1
+        threshold = self._config.runtime.materializer_freeze_threshold
+        if self._no_change_count[corpus_key] < threshold:
+            return
+
+        freeze_until = (
+            datetime.now(tz=UTC)
+            + timedelta(seconds=self._config.runtime.materializer_freeze_seconds)
+        ).isoformat(timespec="seconds")
+        self._db.set_map_freeze(corpus_key, freeze_until)
+        logger.info("Froze map for %s until %s", corpus_key, freeze_until)

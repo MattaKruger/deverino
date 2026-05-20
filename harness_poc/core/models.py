@@ -145,3 +145,4 @@ class DbContextMap(SQLModel, table=True):
     token_count: int
     version: int = Field(default=1)
     last_updated: str
+    freeze_until: str | None = Field(default=None, sa_column=Column(Text, nullable=True))

@@ -30,6 +30,8 @@ runtime:
   materializer_poll_interval: 30
   materializer_max_event_tokens: 8000
   materializer_token_budget: 1024
+  materializer_freeze_threshold: 3
+  materializer_freeze_seconds: 300
 
 observability:
   logfire: true   # set to true and export LOGFIRE_TOKEN to enable

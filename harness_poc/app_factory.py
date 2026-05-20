@@ -14,7 +14,6 @@ from harness_poc.core.db_engine import create_db_engine
 from harness_poc.core.event_bus import EventBus
 from harness_poc.core.event_store import EventStore
 from harness_poc.core.logging import configure_logging
-from harness_poc.core.models import SQLModel
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.pipeline_runner import PipelineRunner
 from harness_poc.core.pydantic_runtime import (
@@ -106,9 +105,8 @@ def build_app_state() -> AppState:
     configure_logging(config.project_root)
 
     engine = create_db_engine(config.runtime.database_url)
-    SQLModel.metadata.create_all(engine)
-
     database = BlackboardDatabase(engine)
+    database.create_tables()
     event_store = EventStore(engine)
 
     system_prompt = config.paths.soul.read_text(encoding="utf-8")
@@ -164,6 +162,7 @@ def build_app_state() -> AppState:
         db=database,
         skill_runner=skill_runner,
         config=config,
+        session_id=session_id,
         poll_interval=config.runtime.materializer_poll_interval,
     )
 
