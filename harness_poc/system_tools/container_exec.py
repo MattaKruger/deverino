@@ -148,7 +148,7 @@ def _resolve_backend(backend_arg: str) -> str | None:
     return None
 
 
-def _parse_timeout(raw: int | float | None) -> int:
+def _parse_timeout(raw: float | None) -> int:
     if raw is None:
         return DEFAULT_TIMEOUT_SECONDS
     try:

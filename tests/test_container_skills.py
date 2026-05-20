@@ -14,16 +14,11 @@ from harness_poc.core.config import (
 )
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.permissions import SkillPermissions
-from harness_poc.core.skill_context import SkillContext
 from harness_poc.core.tool_runner import ToolRunner
-
 from harness_poc.system_tools.container_spawn import (
     _cleanup_stale_harness_containers,
-    _inspect_container,
-    _resolve_backend,
     container_spawn,
 )
-from harness_poc.system_tools.container_destroy import container_destroy
 
 if TYPE_CHECKING:
     from collections.abc import Callable

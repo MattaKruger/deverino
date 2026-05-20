@@ -130,7 +130,7 @@ def test_pipeline_started_roundtrip() -> None:
     assert event.event_type == "PipelineStarted"
     restored = PipelineStarted.model_validate(event.model_dump())
     assert restored.pipeline_name == "my-pipe"
-    assert restored.node_count == 3  # noqa: PLR2004
+    assert restored.node_count == 3
 
 
 def test_pipeline_node_started_roundtrip() -> None:
@@ -154,7 +154,7 @@ def test_pipeline_completed_roundtrip() -> None:
         session_id="s1", pipeline_name="my-pipe", status="completed", duration_s=1.5
     )
     restored = PipelineCompleted.model_validate(event.model_dump())
-    assert restored.duration_s == 1.5  # noqa: PLR2004
+    assert restored.duration_s == 1.5
 
 
 def test_pipeline_events_in_registry() -> None:

@@ -15,6 +15,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 logger = logging.getLogger(__name__)
 
 # ── In-process cache ─────────────────────────────────────────────────
@@ -90,8 +92,6 @@ def _scan_knowledge_skills(
     knowledge_dirs: list[Path],
 ) -> list[tuple[str, str]]:
     """Return sorted (name, description) pairs for all knowledge skills."""
-    import yaml
-
     seen: set[str] = set()
     result: list[tuple[str, str]] = []
 

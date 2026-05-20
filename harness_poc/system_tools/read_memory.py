@@ -6,7 +6,6 @@ Migrated from ``system_skills/read_memory/skill.py`` (Phase 4).
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from harness_poc.core.skill_context import SkillResult
 from harness_poc.core.tool_context import ToolContext

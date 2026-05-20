@@ -141,7 +141,7 @@ def _format_content(artifacts: dict[str, Any]) -> str:
     return json.dumps(output, indent=2, sort_keys=True)
 
 
-def _parse_timeout(raw: int | float | None) -> int:
+def _parse_timeout(raw: float | None) -> int:
     if raw is None:
         return DEFAULT_TIMEOUT_SECONDS
     try:

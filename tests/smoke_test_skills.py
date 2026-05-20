@@ -195,7 +195,7 @@ def main() -> int:
             )
             status = result.status
             content_preview = (
-                result.content[:150] + "..." if len(result.content) > 150 else result.content  # noqa: PLR2004
+                result.content[:150] + "..." if len(result.content) > 150 else result.content
             ).replace("\n", "\\n")
             print(f"  status: {status}")
             print(f"  content: {content_preview}")
