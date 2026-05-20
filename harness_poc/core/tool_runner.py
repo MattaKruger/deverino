@@ -78,15 +78,11 @@ class ToolRunner:
                 try:
                     importlib.import_module(module_name)
                 except Exception:
-                    logger.exception(
-                        "Failed to load tool module: %s", py_file
-                    )
+                    logger.exception("Failed to load tool module: %s", py_file)
 
         # 2. Tool-level skills from project_skills/ (SKILL.md with type: tool)
         # These are still skill-backed — their code lives in skills/*/skill.py.
-        _discover_tool_skills(
-            self._project_skills_dir, self._skill_runner
-        )
+        _discover_tool_skills(self._project_skills_dir, self._skill_runner)
 
         self._discovered = True
 
@@ -172,21 +168,17 @@ class ToolRunner:
             else:
                 result = handler(**arguments)
         except TypeError as e:
-            return _json.dumps(
-                {"error": f"Invalid arguments for {tool_name}: {e}"}
-            )
+            return _json.dumps({"error": f"Invalid arguments for {tool_name}: {e}"})
         except Exception:
             logger.exception("Tool execution failed: %s", tool_name)
-            return _json.dumps(
-                {"error": f"Tool {tool_name} raised an unexpected error."}
-            )
+            return _json.dumps({"error": f"Tool {tool_name} raised an unexpected error."})
 
         if isinstance(result, ToolResult):
             return _json.dumps(result.to_dict(), ensure_ascii=False)
 
         # SkillResult (from migrated tools still using the skill context module)
         if hasattr(result, "to_dict"):
-            return _json.dumps(result.to_dict(), ensure_ascii=False)  # noqa: B010
+            return _json.dumps(result.to_dict(), ensure_ascii=False)
 
         return _json.dumps(result, ensure_ascii=False)
 
@@ -226,9 +218,7 @@ def _discover_tool_skills(
 
     for skill_file in sorted(skills_dir.glob("*/SKILL.md")):
         try:
-            ftype, name, description, params = _parse_skill_frontmatter(
-                skill_file, yaml
-            )
+            ftype, name, description, params = _parse_skill_frontmatter(skill_file, yaml)
         except (OSError, ValueError, TypeError, KeyError) as exc:
             logger.debug("Skipping unparseable skill: %s (%s)", skill_file, exc)
             continue
@@ -283,10 +273,7 @@ def _make_skill_backed_stub(name: str) -> Any:  # noqa: ANN401
     """
 
     def _stub(**kwargs: object) -> dict[str, Any]:  # noqa: ARG001
-        msg = (
-            f"Skill-backed tool {name} was called through the stub. "
-            f"This is a bug."
-        )
+        msg = f"Skill-backed tool {name} was called through the stub. This is a bug."
         raise RuntimeError(msg)
 
     _stub.__name__ = f"_stub_{name}"

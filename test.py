@@ -44,9 +44,7 @@ def draw_pipeline_dag() -> None:
     color_map = {"skill": "#aec7e8", "agent": "#ffbb78"}
     node_colors = [color_map[graph.nodes[n]["type"]] for n in graph.nodes()]
 
-    nx.draw_networkx_nodes(
-        graph, pos, node_color=node_colors, node_size=3500, edgecolors="#333"
-    )
+    nx.draw_networkx_nodes(graph, pos, node_color=node_colors, node_size=3500, edgecolors="#333")
     nx.draw_networkx_labels(graph, pos, font_size=11, font_weight="bold")
 
     # Draw edges with dependency annotation
@@ -108,9 +106,7 @@ def draw_pipeline_dag() -> None:
     ]
     plt.legend(handles=legend_elements, loc="lower right", fontsize=9)
 
-    plt.title(
-        "Pipeline DAG — research-and-write", fontsize=14, fontweight="bold"
-    )
+    plt.title("Pipeline DAG — research-and-write", fontsize=14, fontweight="bold")
     plt.axis("off")
     plt.tight_layout()
     plt.savefig("pipeline_dag.png", dpi=150)
@@ -215,9 +211,7 @@ def draw_workflow_statechart() -> None:
         },
     )
 
-    plt.title(
-        "Workflow State Machine — research_task", fontsize=14, fontweight="bold"
-    )
+    plt.title("Workflow State Machine — research_task", fontsize=14, fontweight="bold")
     plt.ylim(-0.8, 0.8)
     plt.axis("off")
     plt.tight_layout()
@@ -271,9 +265,7 @@ def draw_event_bus_statechart() -> None:
 
     plt.figure(figsize=(10, 6))
 
-    nx.draw_networkx_nodes(
-        graph, pos, node_color="#b2dfdb", node_size=3000, edgecolors="#333"
-    )
+    nx.draw_networkx_nodes(graph, pos, node_color="#b2dfdb", node_size=3000, edgecolors="#333")
     nx.draw_networkx_labels(graph, pos, font_size=9, font_weight="bold")
     nx.draw_networkx_edges(
         graph,
@@ -306,9 +298,7 @@ def draw_event_bus_statechart() -> None:
             },
         )
 
-    plt.title(
-        "EventBus Lifecycle — Typed Event Flow", fontsize=14, fontweight="bold"
-    )
+    plt.title("EventBus Lifecycle — Typed Event Flow", fontsize=14, fontweight="bold")
     plt.axis("off")
     plt.tight_layout()
     plt.savefig("eventbus_statechart.png", dpi=150)

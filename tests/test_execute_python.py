@@ -55,9 +55,7 @@ def test_execute_python_spawns_container_and_executes_encoded_code(
     tool_runner, session_id, _database = _tool_runner(db_engine)
     calls: dict[str, Any] = {}
 
-    def fake_spawn(
-        ctx: ToolContext, image: str = "", container_name: str = ""
-    ) -> SkillResult:
+    def fake_spawn(ctx: ToolContext, image: str = "", container_name: str = "") -> SkillResult:
         calls["spawn"] = {
             "session_id": ctx.session_id,
             "container_name": container_name,
@@ -130,9 +128,7 @@ def test_execute_python_uses_existing_container_without_spawning(
     tool_runner, session_id, _database = _tool_runner(db_engine)
     spawned = False
 
-    def fake_spawn(
-        ctx: ToolContext, image: str = "", container_name: str = ""
-    ) -> SkillResult:
+    def fake_spawn(ctx: ToolContext, image: str = "", container_name: str = "") -> SkillResult:
         del ctx, image, container_name
         nonlocal spawned
         spawned = True
@@ -268,7 +264,5 @@ def _test_config(engine: Engine) -> HarnessConfig:
             default_container_image="python:3.12-slim",
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
-        llm=LLMConfig(
-            provider="deepseek", model="deepseek-v4-flash", base_url=None
-        ),
+        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
     )

@@ -34,9 +34,7 @@ from sqlalchemy import Engine
 
 
 def test_container_spawn_fails_when_no_image(db_engine: Engine) -> None:
-    tool_runner, session_id, _ = _tool_runner(
-        db_engine, default_container_image=""
-    )
+    tool_runner, session_id, _ = _tool_runner(db_engine, default_container_image="")
 
     import json
 
@@ -190,9 +188,7 @@ def test_container_spawn_mounts_scratch_outside_read_only_workspace(
     result = container_spawn(ctx, container_name="harness-python-test")
 
     assert result.status == "success"
-    create_cmd = next(
-        cmd for cmd in calls if any("run" in arg for arg in cmd)
-    )
+    create_cmd = next(cmd for cmd in calls if any("run" in arg for arg in cmd))
     assert any(mount.endswith(":/workspace:ro") for mount in create_cmd)
     assert any(mount.endswith(":/scratch:rw") for mount in create_cmd)
     assert not any(mount.endswith(":/workspace:rw") for mount in create_cmd)
@@ -271,9 +267,7 @@ def _noop_cleanup(
 def _inspect_after_run() -> Callable[[str, str], dict[str, object] | None]:
     calls = {"count": 0}
 
-    def inspect(
-        _backend: str, container_name: str
-    ) -> dict[str, object] | None:
+    def inspect(_backend: str, container_name: str) -> dict[str, object] | None:
         calls["count"] += 1
         if calls["count"] == 1:
             return None
@@ -313,7 +307,5 @@ def _test_config(
             default_container_image=default_container_image,
         ),
         observability=ObservabilityConfig(logfire_enabled=False),
-        llm=LLMConfig(
-            provider="deepseek", model="deepseek-v4-flash", base_url=None
-        ),
+        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
     )

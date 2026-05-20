@@ -33,10 +33,7 @@ def container_destroy(
     if backend is None:
         return SkillResult(
             status="failed",
-            content=(
-                "No container runtime found. "
-                f"Tried: {', '.join(BACKENDS)}."
-            ),
+            content=(f"No container runtime found. Tried: {', '.join(BACKENDS)}."),
         )
 
     # Stop (best-effort)
@@ -82,9 +79,7 @@ def container_destroy(
         "backend": backend,
         "container": container,
         "removed": rm_result.returncode == 0,
-        "stderr": (
-            rm_result.stderr.strip() if rm_result.returncode != 0 else ""
-        ),
+        "stderr": (rm_result.stderr.strip() if rm_result.returncode != 0 else ""),
     }
 
     return SkillResult(
@@ -107,10 +102,7 @@ from harness_poc.system_tools import register as _register  # noqa: E402
 
 _register(
     name="container_destroy",
-    description=(
-        "Stops and removes a container. Cleans up the blackboard "
-        "memory entry."
-    ),
+    description=("Stops and removes a container. Cleans up the blackboard memory entry."),
     parameters={
         "type": "object",
         "properties": {

@@ -29,9 +29,7 @@ def read_memory(
         keys = ctx.database.list_memory_keys(ctx.session_id)
         return SkillResult(
             status="success",
-            content=json.dumps(
-                {"memory_keys": keys}, indent=2, sort_keys=True
-            ),
+            content=json.dumps({"memory_keys": keys}, indent=2, sort_keys=True),
             artifacts={"memory_keys": keys},
         )
 
@@ -44,9 +42,7 @@ def read_memory(
         )
 
     content = (
-        json.dumps(payload, indent=2, sort_keys=True)
-        if isinstance(payload, dict)
-        else str(payload)
+        json.dumps(payload, indent=2, sort_keys=True) if isinstance(payload, dict) else str(payload)
     )
     return SkillResult(
         status="success",
@@ -64,18 +60,13 @@ from harness_poc.system_tools import register as _register  # noqa: E402
 
 _register(
     name="read_memory",
-    description=(
-        "Retrieves data stored in the shared SQLite blackboard for "
-        "the current session."
-    ),
+    description=("Retrieves data stored in the shared SQLite blackboard for the current session."),
     parameters={
         "type": "object",
         "properties": {
             "memory_key": {
                 "type": "string",
-                "description": (
-                    "Key to read. Omit to list all available keys."
-                ),
+                "description": ("Key to read. Omit to list all available keys."),
             },
         },
     },

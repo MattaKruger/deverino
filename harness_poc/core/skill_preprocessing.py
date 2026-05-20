@@ -16,9 +16,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Matches ${PROJECT_ROOT} / ${SESSION_ID} / ${SCRATCH_DIR} tokens.
-_SKILL_TEMPLATE_RE = re.compile(
-    r"\$\{(PROJECT_ROOT|SESSION_ID|SCRATCH_DIR)\}"
-)
+_SKILL_TEMPLATE_RE = re.compile(r"\$\{(PROJECT_ROOT|SESSION_ID|SCRATCH_DIR)\}")
 
 # Matches inline shell snippets:  !`cmd`
 # Non-greedy, single-line only — no newlines inside the backticks.
@@ -60,7 +58,9 @@ def substitute_template_vars(
 
 
 def _run_inline_shell(
-    command: str, cwd: Path | None, timeout: int,
+    command: str,
+    cwd: Path | None,
+    timeout: int,
 ) -> str:
     """Execute a single inline-shell snippet and return its stdout.
 

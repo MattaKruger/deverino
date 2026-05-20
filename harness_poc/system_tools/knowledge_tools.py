@@ -84,10 +84,7 @@ def skills_list(category: str = "") -> dict[str, Any]:  # noqa: ARG001
     skills = _discover_knowledge_skills()
     return {
         "success": True,
-        "skills": [
-            {"name": s["name"], "description": s["description"]}
-            for s in skills
-        ],
+        "skills": [{"name": s["name"], "description": s["description"]} for s in skills],
         "count": len(skills),
         "hint": "Use skill_view(name) to load full content.",
     }
@@ -161,9 +158,7 @@ def skill_view(name: str, file_path: str = "") -> dict[str, Any]:
     }
     if supporting:
         result["linked_files"] = {"supporting": supporting}
-        result["hint"] = (
-            "Load supporting files with skill_view(name, file_path=...)."
-        )
+        result["hint"] = "Load supporting files with skill_view(name, file_path=...)."
 
     return result
 
@@ -264,7 +259,7 @@ def _strip_frontmatter(text: str) -> str:
     end = text.find("\n---", 3)
     if end == -1:
         return text
-    return text[end + 4:].strip()
+    return text[end + 4 :].strip()
 
 
 def _create_skill(name: str, content: str) -> dict[str, Any]:

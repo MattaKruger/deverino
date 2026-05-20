@@ -23,7 +23,12 @@ class DbSession(SQLModel, table=True):
 class DbSharedMemory(SQLModel, table=True):
     __tablename__ = "shared_memory"  # type: ignore[assignment]
     __table_args__ = (
-        Index("idx_shared_memory_session_key", "session_id", "memory_key", "created_at"),
+        Index(
+            "idx_shared_memory_session_key",
+            "session_id",
+            "memory_key",
+            "created_at",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -102,9 +107,7 @@ class DbDocumentSource(SQLModel, table=True):
 
 class DbDocumentChunk(SQLModel, table=True):
     __tablename__ = "document_chunks"  # type: ignore[assignment]
-    __table_args__ = (
-        Index("idx_document_chunks_source", "source_id", "chunk_index"),
-    )
+    __table_args__ = (Index("idx_document_chunks_source", "source_id", "chunk_index"),)
 
     chunk_id: str = Field(primary_key=True)
     source_id: str = Field(foreign_key="document_sources.source_id")

@@ -34,9 +34,7 @@ BINARY_NON_PRINTABLE_RATIO = 0.30
 MIN_SUBSTRING_HINT_LENGTH = 2
 RG_PARSE_PARTS = 2
 RG_SEARCH_ERROR_EXIT_CODE = 2
-IMAGE_EXTENSIONS = frozenset(
-    {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico"}
-)
+IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico"})
 BINARY_EXTENSIONS = (
     frozenset(
         {
@@ -139,11 +137,7 @@ def _is_likely_binary_content(sample: str) -> bool:
     check = sample[:1000]
     if "\x00" in check:
         return True
-    non_printable = sum(
-        1
-        for c in check
-        if ord(c) < ASCII_CONTROL_BOUNDARY and c not in "\n\r\t"
-    )
+    non_printable = sum(1 for c in check if ord(c) < ASCII_CONTROL_BOUNDARY and c not in "\n\r\t")
     return non_printable / len(check) > BINARY_NON_PRINTABLE_RATIO
 
 
@@ -197,9 +191,7 @@ def _suggest_similar_files(path: str, project_root: Path) -> list[str]:
     return [fp for _, fp in scored[:5]]
 
 
-def _run_rg(
-    args: list[str], cwd: Path | None = None, timeout: int = 60
-) -> tuple[str, int]:
+def _run_rg(args: list[str], cwd: Path | None = None, timeout: int = 60) -> tuple[str, int]:
     """Run ripgrep, return (stdout, exit_code)."""
     rg_path = shutil.which("rg")
     if rg_path is None:
@@ -351,9 +343,7 @@ def _fuzzy_find_and_replace(  # noqa: PLR0911, PLR0912
 
     match_indices: list[int] = []
     for i in range(len(content_lines) - len(old_lines) + 1):
-        window = [
-            line.strip() for line in content_lines[i : i + len(old_lines)]
-        ]
+        window = [line.strip() for line in content_lines[i : i + len(old_lines)]]
         if window == old_lines:
             match_indices.append(i)
 
@@ -600,7 +590,9 @@ def patch(  # noqa: PLR0911
         lower_old = old_string.strip().lower()
         lower_content = content.lower()
         if lower_old in lower_content:
-            error_msg += " (hint: a case-insensitive match exists — verify exact whitespace and indentation)"
+            error_msg += (
+                " (hint: a case-insensitive match exists — verify exact whitespace and indentation)"
+            )
         return {"error": error_msg}
 
     if not replace_all and match_count > 1 and strategy is None:
@@ -705,9 +697,7 @@ def _search_files_by_content(  # noqa: PLR0912, PLR0913
     stdout, exit_code = _run_rg(args, cwd=cwd)
 
     if exit_code == -1:
-        return {
-            "error": "ripgrep (rg) is required. Install: https://github.com/BurntSushi/ripgrep"
-        }
+        return {"error": "ripgrep (rg) is required. Install: https://github.com/BurntSushi/ripgrep"}
     if exit_code == RG_SEARCH_ERROR_EXIT_CODE and not stdout.strip():
         return {"error": "Search failed (exit code 2)"}
 
@@ -774,11 +764,7 @@ def _search_files_by_name(
     cwd: Path,
 ) -> dict[str, Any]:
     """Find files by glob pattern using ripgrep --files."""
-    glob_pattern = (
-        f"*{pattern}"
-        if "/" not in pattern and not pattern.startswith("*")
-        else pattern
-    )
+    glob_pattern = f"*{pattern}" if "/" not in pattern and not pattern.startswith("*") else pattern
 
     args = ["--files", "--sortr=modified", "-g", glob_pattern, path]
     stdout, exit_code = _run_rg(args, cwd=cwd, timeout=60)

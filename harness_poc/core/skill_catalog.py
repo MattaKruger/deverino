@@ -75,9 +75,7 @@ def build_skill_catalog(
         "If a skill you loaded was missing steps, had wrong commands, or "
         "needed pitfalls you discovered, update it before finishing.\n"
         "\n"
-        "<available_skills>\n"
-        + "\n".join(lines)
-        + "\n"
+        "<available_skills>\n" + "\n".join(lines) + "\n"
         "</available_skills>\n"
         "\n"
         "Only proceed without loading a skill if genuinely none are "
@@ -111,9 +109,7 @@ def _scan_knowledge_skills(
             if frontmatter_end == -1:
                 continue
             try:
-                parts = list(
-                    yaml.safe_load_all(text[3:frontmatter_end])
-                )
+                parts = list(yaml.safe_load_all(text[3:frontmatter_end]))
                 fm: dict[str, Any] = parts[0] if parts else {}
             except yaml.YAMLError:
                 continue

@@ -36,9 +36,7 @@ def container_exec(
 
     if not command:
         logger.error("Container exec missing command")
-        return SkillResult(
-            status="failed", content="container_exec requires a command"
-        )
+        return SkillResult(status="failed", content="container_exec requires a command")
     if not container:
         logger.error("Container exec missing container")
         return SkillResult(

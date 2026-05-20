@@ -41,14 +41,8 @@ def container_spawn(  # noqa: PLR0911
     session_id = ctx.session_id
     runtime = ctx.runtime_config
 
-    image = (
-        image.strip()
-        or (runtime.default_container_image if runtime else "")
-        or ""
-    ).strip()
-    container_name = (
-        container_name.strip() or f"harness-{session_id[:12]}"
-    ).strip()
+    image = (image.strip() or (runtime.default_container_image if runtime else "") or "").strip()
+    container_name = (container_name.strip() or f"harness-{session_id[:12]}").strip()
     backend = _resolve_backend()
 
     error = _validate_inputs(image, backend)
@@ -67,9 +61,7 @@ def container_spawn(  # noqa: PLR0911
     project_root = ctx.project_root
     project_str = str(project_root.resolve())
     dockerfile_path = project_root / "Dockerfile"
-    build_result = _ensure_image_available(
-        backend, image, project_str, dockerfile_path
-    )
+    build_result = _ensure_image_available(backend, image, project_str, dockerfile_path)
     if build_result is not None:
         return build_result
 
@@ -77,9 +69,7 @@ def container_spawn(  # noqa: PLR0911
     existing = _inspect_container(backend, container_name)
     if existing:
         if ctx.database is not None:
-            ctx.database.write_memory(
-                session_id, f"container.{container_name}", existing
-            )
+            ctx.database.write_memory(session_id, f"container.{container_name}", existing)
         return SkillResult(
             status="success",
             content=json.dumps(existing, indent=2, sort_keys=True),
@@ -94,17 +84,28 @@ def container_spawn(  # noqa: PLR0911
         backend,
         "run",
         "-d",
-        "--name", container_name,
-        "--label", "deverino.managed=true",
-        "--label", f"deverino.session_id={session_id}",
-        "-v", f"{project_str}:/workspace:ro",
-        "-v", f"{scratch_str}:{SCRATCH_TARGET}:rw",
-        "-w", "/workspace",
-        "-e", f"TMPDIR={SCRATCH_TARGET}",
-        "-e", f"TMP={SCRATCH_TARGET}",
-        "-e", f"TEMP={SCRATCH_TARGET}",
-        "-e", f"HOME={SCRATCH_TARGET}",
-        "-e", f"PYTHONPYCACHEPREFIX={SCRATCH_TARGET}/pycache",
+        "--name",
+        container_name,
+        "--label",
+        "deverino.managed=true",
+        "--label",
+        f"deverino.session_id={session_id}",
+        "-v",
+        f"{project_str}:/workspace:ro",
+        "-v",
+        f"{scratch_str}:{SCRATCH_TARGET}:rw",
+        "-w",
+        "/workspace",
+        "-e",
+        f"TMPDIR={SCRATCH_TARGET}",
+        "-e",
+        f"TMP={SCRATCH_TARGET}",
+        "-e",
+        f"TEMP={SCRATCH_TARGET}",
+        "-e",
+        f"HOME={SCRATCH_TARGET}",
+        "-e",
+        f"PYTHONPYCACHEPREFIX={SCRATCH_TARGET}/pycache",
         image,
     ]
     create_cmd.extend(KEEPALIVE_CMD)
@@ -141,10 +142,7 @@ def container_spawn(  # noqa: PLR0911
     if result.returncode != 0:
         return SkillResult(
             status="failed",
-            content=(
-                f"Failed to create container '{container_name}': "
-                f"{result.stderr.strip()}"
-            ),
+            content=(f"Failed to create container '{container_name}': {result.stderr.strip()}"),
             artifacts={
                 "backend": backend,
                 "image": image,
@@ -164,9 +162,7 @@ def container_spawn(  # noqa: PLR0911
     else:
         return SkillResult(
             status="failed",
-            content=(
-                f"Container '{container_name}' created but did not start."
-            ),
+            content=(f"Container '{container_name}' created but did not start."),
             artifacts={
                 "backend": backend,
                 "image": image,
@@ -185,9 +181,7 @@ def container_spawn(  # noqa: PLR0911
     }
 
     if ctx.database is not None:
-        ctx.database.write_memory(
-            session_id, f"container.{container_name}", output
-        )
+        ctx.database.write_memory(session_id, f"container.{container_name}", output)
 
     return SkillResult(
         status="success",
@@ -264,10 +258,7 @@ def _ensure_image_available(  # noqa: PLR0911
     if build_result.returncode != 0:
         return SkillResult(
             status="failed",
-            content=(
-                f"Failed to build image '{image}': "
-                f"{build_result.stderr.strip()[-300:]}"
-            ),
+            content=(f"Failed to build image '{image}': {build_result.stderr.strip()[-300:]}"),
         )
 
     logger.info("Container image built successfully", extra={"image": image})
@@ -305,14 +296,10 @@ def _cleanup_stale_harness_containers(
         if now - float(container.get("created_at_ts", now)) > ttl_seconds
     }
     retained = [
-        container
-        for container in containers
-        if container["container_name"] not in stale_names
+        container for container in containers if container["container_name"] not in stale_names
     ]
     if max_containers > 0 and len(retained) > max_containers:
-        retained.sort(
-            key=lambda c: float(c.get("created_at_ts", 0))
-        )
+        retained.sort(key=lambda c: float(c.get("created_at_ts", 0)))
         stale_names.update(
             str(container["container_name"])
             for container in retained[: len(retained) - max_containers]
@@ -358,9 +345,7 @@ def _remove_container(backend: str, container_name: str) -> None:
         )
 
 
-def _inspect_container(
-    backend: str, container_name: str
-) -> dict[str, Any] | None:
+def _inspect_container(backend: str, container_name: str) -> dict[str, Any] | None:
     try:
         result = subprocess.run(  # noqa: S603
             [backend, "inspect", container_name],
@@ -394,9 +379,7 @@ def _inspect_container(
         "image": str(container.get("Config", {}).get("Image", "")),
         "status": str(state.get("Status", "")),
         "running": bool(state.get("Running", False)),
-        "workdir": str(
-            container.get("Config", {}).get("WorkingDir", "/workspace")
-        ),
+        "workdir": str(container.get("Config", {}).get("WorkingDir", "/workspace")),
         "created_at": created_at,
         "created_at_ts": _parse_created_at(created_at),
     }
@@ -435,10 +418,7 @@ _register(
             },
             "container_name": {
                 "type": "string",
-                "description": (
-                    "Custom container name. Defaults to "
-                    "harness-<session_id_prefix>."
-                ),
+                "description": ("Custom container name. Defaults to harness-<session_id_prefix>."),
             },
         },
     },

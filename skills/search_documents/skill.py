@@ -75,8 +75,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
         return SkillResult(
             status="success",
             content=(
-                "No results found. If you haven't indexed documents yet, "
-                "run index_documents first."
+                "No results found. If you haven't indexed documents yet, run index_documents first."
             ),
             artifacts=artifacts,
         )

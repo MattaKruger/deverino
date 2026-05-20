@@ -58,18 +58,13 @@ def execute_python(
         if spawn_result.status != "success":
             return SkillResult(
                 status=spawn_result.status,
-                content=(
-                    "execute_python could not prepare a container: "
-                    f"{spawn_result.content}"
-                ),
+                content=(f"execute_python could not prepare a container: {spawn_result.content}"),
                 artifacts={
                     "error": "container_spawn_failed",
                     "spawn": spawn_result.artifacts,
                 },
             )
-        container = str(
-            spawn_result.artifacts.get("container_name") or container_name
-        )
+        container = str(spawn_result.artifacts.get("container_name") or container_name)
 
     encoded = base64.b64encode(code.encode("utf-8")).decode("ascii")
     command = (
@@ -127,12 +122,8 @@ def _merge_artifacts(
 
 
 def _format_content(artifacts: dict[str, Any]) -> str:
-    stdout, _stdout_meta = _cap_stream(
-        str(artifacts.get("stdout", "")), MAX_STDOUT_CHARS
-    )
-    stderr, _stderr_meta = _cap_stream(
-        str(artifacts.get("stderr", "")), MAX_STDERR_CHARS
-    )
+    stdout, _stdout_meta = _cap_stream(str(artifacts.get("stdout", "")), MAX_STDOUT_CHARS)
+    stderr, _stderr_meta = _cap_stream(str(artifacts.get("stderr", "")), MAX_STDERR_CHARS)
     output = {
         "container": artifacts.get("container"),
         "backend": artifacts.get("backend"),
@@ -140,19 +131,11 @@ def _format_content(artifacts: dict[str, Any]) -> str:
         "stdout": stdout,
         "stderr": stderr,
         "timeout_seconds": artifacts.get("timeout_seconds"),
-        "stdout_original_chars": artifacts.get(
-            "stdout_original_chars", len(stdout)
-        ),
-        "stdout_retained_chars": artifacts.get(
-            "stdout_retained_chars", len(stdout)
-        ),
+        "stdout_original_chars": artifacts.get("stdout_original_chars", len(stdout)),
+        "stdout_retained_chars": artifacts.get("stdout_retained_chars", len(stdout)),
         "stdout_truncated": artifacts.get("stdout_truncated", False),
-        "stderr_original_chars": artifacts.get(
-            "stderr_original_chars", len(stderr)
-        ),
-        "stderr_retained_chars": artifacts.get(
-            "stderr_retained_chars", len(stderr)
-        ),
+        "stderr_original_chars": artifacts.get("stderr_original_chars", len(stderr)),
+        "stderr_retained_chars": artifacts.get("stderr_retained_chars", len(stderr)),
         "stderr_truncated": artifacts.get("stderr_truncated", False),
     }
     return json.dumps(output, indent=2, sort_keys=True)
@@ -168,9 +151,7 @@ def _parse_timeout(raw: int | float | None) -> int:
     return max(1, min(timeout, MAX_TIMEOUT_SECONDS))
 
 
-def _cap_stream(
-    text: str, max_chars: int
-) -> tuple[str, dict[str, int | bool]]:
+def _cap_stream(text: str, max_chars: int) -> tuple[str, dict[str, int | bool]]:
     original_chars = len(text)
     if original_chars <= max_chars:
         return text, {
@@ -212,8 +193,7 @@ _register(
             "container": {
                 "type": "string",
                 "description": (
-                    "Container name or ID. If omitted, a new container "
-                    "is spawned automatically."
+                    "Container name or ID. If omitted, a new container is spawned automatically."
                 ),
             },
             "image": {
@@ -222,10 +202,7 @@ _register(
             },
             "workdir": {
                 "type": "string",
-                "description": (
-                    "Working directory inside the container "
-                    "(relative to /workspace)."
-                ),
+                "description": ("Working directory inside the container (relative to /workspace)."),
             },
             "timeout_seconds": {
                 "type": "integer",

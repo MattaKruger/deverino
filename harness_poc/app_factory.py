@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -35,6 +34,8 @@ from harness_poc.system_tools.knowledge_tools import init_knowledge_context
 _TUI_BLOCKED_SKILLS: frozenset[str] = frozenset({"execute_python", "spec_writer"})
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pydantic_ai.messages import ModelMessage
     from pydantic_ai.models import Model
 

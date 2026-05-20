@@ -76,9 +76,7 @@ class TestSubstituteTemplateVars:
         assert result == "Root is /my/project."
 
     def test_replaces_session_id(self) -> None:
-        result = substitute_template_vars(
-            "Session: ${SESSION_ID}", session_id="abc-123"
-        )
+        result = substitute_template_vars("Session: ${SESSION_ID}", session_id="abc-123")
         assert result == "Session: abc-123"
 
     def test_replaces_multiple_tokens(self) -> None:
@@ -90,21 +88,14 @@ class TestSubstituteTemplateVars:
         assert result == "Root=/x, Session=s1"
 
     def test_leaves_unresolved_unchanged(self) -> None:
-        result = substitute_template_vars(
-            "Root=${PROJECT_ROOT}", project_root=None
-        )
+        result = substitute_template_vars("Root=${PROJECT_ROOT}", project_root=None)
         assert result == "Root=${PROJECT_ROOT}"
 
     def test_empty_string(self) -> None:
         assert substitute_template_vars("", project_root=Path("/x")) == ""
 
     def test_no_tokens(self) -> None:
-        assert (
-            substitute_template_vars(
-                "Hello world", project_root=Path("/x")
-            )
-            == "Hello world"
-        )
+        assert substitute_template_vars("Hello world", project_root=Path("/x")) == "Hello world"
 
     def test_unknown_token_left_unchanged(self) -> None:
         result = substitute_template_vars("${UNKNOWN}", project_root=Path("/x"))
@@ -148,17 +139,13 @@ class TestStripFrontmatter:
 
 
 class TestDiscoverKnowledgeSkills:
-    def test_discovers_knowledge_skill(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_discovers_knowledge_skill(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         skills = _discover_knowledge_skills()
         assert len(skills) == 1
         assert skills[0]["name"] == "test-knowledge-skill"
         assert "test knowledge skill" in skills[0]["description"].lower()
 
-    def test_skips_non_knowledge_skills(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_skips_non_knowledge_skills(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         # Add a type:tool skill — should NOT appear in knowledge list
         tool_dir = tmp_skills_dir / "some-tool"
         tool_dir.mkdir()
@@ -181,17 +168,13 @@ class TestDiscoverKnowledgeSkills:
 
 
 class TestSkillsList:
-    def test_lists_knowledge_skills(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_lists_knowledge_skills(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         result = skills_list()
         assert result["success"] is True
         assert result["count"] == 1
         assert result["skills"][0]["name"] == "test-knowledge-skill"
 
-    def test_hint_included(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_hint_included(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         result = skills_list()
         assert "skill_view" in result["hint"]
 
@@ -200,9 +183,7 @@ class TestSkillsList:
 
 
 class TestSkillView:
-    def test_loads_skill_content(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_loads_skill_content(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         result = skill_view("test-knowledge-skill")
         assert result["success"] is True
         assert "# Test Skill" in result["content"]
@@ -210,9 +191,7 @@ class TestSkillView:
         assert "/fake/project" in result["content"]
         assert "test-session-123" in result["content"]
 
-    def test_missing_skill(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_missing_skill(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         result = skill_view("nonexistent")
         assert result["success"] is False
         assert "not found" in result["error"]
@@ -222,29 +201,19 @@ class TestSkillView:
         result = skill_view("")
         assert result["success"] is False
 
-    def test_linked_files_hint(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_linked_files_hint(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         result = skill_view("test-knowledge-skill")
         assert result["success"] is True
         assert "linked_files" in result
         assert "references/api.md" in str(result["linked_files"])
 
-    def test_load_supporting_file(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
-        result = skill_view(
-            "test-knowledge-skill", file_path="references/api.md"
-        )
+    def test_load_supporting_file(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
+        result = skill_view("test-knowledge-skill", file_path="references/api.md")
         assert result["success"] is True
         assert "API Reference" in result["content"]
 
-    def test_supporting_file_path_escape(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
-        result = skill_view(
-            "test-knowledge-skill", file_path="../../../etc/passwd"
-        )
+    def test_supporting_file_path_escape(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
+        result = skill_view("test-knowledge-skill", file_path="../../../etc/passwd")
         assert result["success"] is False
         assert "escapes" in result["error"].lower()
 
@@ -253,9 +222,7 @@ class TestSkillView:
 
 
 class TestSkillManage:
-    def test_create_and_delete(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_create_and_delete(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         # Create
         r = skill_manage(
             action="create",
@@ -270,9 +237,7 @@ class TestSkillManage:
         assert r2["success"] is True
         assert not (tmp_skills_dir / "new-skill").exists()
 
-    def test_patch(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_patch(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         r = skill_manage(
             action="patch",
             name="test-knowledge-skill",
@@ -280,15 +245,10 @@ class TestSkillManage:
             new_string="Do the OTHER thing.",
         )
         assert r["success"] is True
-        content = (
-            (tmp_skills_dir / "test-knowledge-skill" / "SKILL.md")
-            .read_text()
-        )
+        content = (tmp_skills_dir / "test-knowledge-skill" / "SKILL.md").read_text()
         assert "Do the OTHER thing." in content
 
-    def test_patch_not_found(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_patch_not_found(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         r = skill_manage(
             action="patch",
             name="test-knowledge-skill",
@@ -298,15 +258,11 @@ class TestSkillManage:
         assert r["success"] is False
         assert "not found" in r["error"].lower()
 
-    def test_create_no_name(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_create_no_name(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         r = skill_manage(action="create")
         assert r["success"] is False
 
-    def test_unknown_action(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_unknown_action(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         r = skill_manage(action="rename")
         assert r["success"] is False
         assert "unknown action" in r["error"].lower()
@@ -316,9 +272,7 @@ class TestSkillManage:
 
 
 class TestSkillCatalog:
-    def test_builds_catalog_block(
-        self, tmp_skills_dir: Path, knowledge_ctx: None
-    ) -> None:
+    def test_builds_catalog_block(self, tmp_skills_dir: Path, knowledge_ctx: None) -> None:
         catalog = build_skill_catalog([tmp_skills_dir])
         assert "<available_skills>" in catalog
         assert "</available_skills>" in catalog
@@ -331,9 +285,7 @@ class TestSkillCatalog:
         catalog = build_skill_catalog([empty])
         assert catalog == ""
 
-    def test_no_knowledge_skills_returns_empty(
-        self, tmp_path: Path
-    ) -> None:
+    def test_no_knowledge_skills_returns_empty(self, tmp_path: Path) -> None:
         # Only type:tool skills — no knowledge skills
         d = tmp_path / "tools-only"
         d.mkdir()
@@ -352,7 +304,8 @@ class TestSkillCatalog:
 
 class TestSkillRunnerExcludesKnowledge:
     def test_knowledge_skills_not_in_executable_tools(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Knowledge skills should NOT appear as executable PydanticAI tools."""
         from pathlib import Path as P
@@ -371,9 +324,7 @@ class TestSkillRunnerExcludesKnowledge:
         # Use tmp_path for DB + a custom skills dir
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
-        (skills_dir / "my-knowledge" / "SKILL.md").parent.mkdir(
-            parents=True
-        )
+        (skills_dir / "my-knowledge" / "SKILL.md").parent.mkdir(parents=True)
         (skills_dir / "my-knowledge" / "SKILL.md").write_text(
             "---\nname: my-knowledge\ntype: knowledge\ndescription: K\n---\n"
         )
@@ -395,14 +346,10 @@ class TestSkillRunnerExcludesKnowledge:
                 default_container_image="python:3.12-slim",
             ),
             observability=ObservabilityConfig(logfire_enabled=False),
-            llm=LLMConfig(
-                provider="deepseek", model="deepseek-v4-flash", base_url=None
-            ),
+            llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
         )
         db = BlackboardDatabase.from_url(config.runtime.database_url)
         runner = SkillRunner(database=db, config=config)
         discovered = runner.discover_skills()
         names = {t["function"]["name"] for t in discovered}
-        assert "my-knowledge" not in names, (
-            "Knowledge skills should not appear in executable tools"
-        )
+        assert "my-knowledge" not in names, "Knowledge skills should not appear in executable tools"
