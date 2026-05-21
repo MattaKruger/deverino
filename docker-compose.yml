@@ -29,4 +29,6 @@ services:
 
 volumes:
   pgdata:
+    name: deverino_pgdata
   vespadata:
+    name: deverino_vespadata

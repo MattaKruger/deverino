@@ -25,6 +25,18 @@ Vespa can take a short time to become ready before deployment succeeds. The
 application package lives in `vespa/document_retrieval/` and is mounted into the
 container at `/vespa-app`.
 
+Stop the services without deleting indexed state:
+
+```bash
+docker compose stop
+```
+
+PostgreSQL and Vespa data live in stable named Docker volumes
+`deverino_pgdata` and `deverino_vespadata`. Avoid `docker compose down -v`
+unless you intentionally want to delete the database and Vespa index.
+The Postgres 18 container mounts the named volume at `/var/lib/postgresql` so
+the image can manage its version-specific data subdirectory.
+
 Run the harness:
 
 ```bash
@@ -76,10 +88,10 @@ retrieval:
 
 API keys are read from environment variables or a project-root `.env` file:
 
-| Provider | Env var |
-| --- | --- |
-| `deepseek` | `DEEPSEEK_API_KEY` |
-| `openai` | `OPENAI_API_KEY` |
+| Provider    | Env var             |
+| ----------- | ------------------- |
+| `deepseek`  | `DEEPSEEK_API_KEY`  |
+| `openai`    | `OPENAI_API_KEY`    |
 | `anthropic` | `ANTHROPIC_API_KEY` |
 
 If no key is available for the configured provider, Deverino falls back to mock
@@ -124,10 +136,16 @@ Force reindexing even when content hashes have not changed:
 uv run harness-poc documents index docs/example.pdf --force
 ```
 
+Skip generated or non-prose directories while indexing:
+
+```bash
+uv run harness-poc documents index docs --exclude-dir docs/acdl
+```
+
 From the TUI, ask the agent to use retrieval skills directly:
 
 ```text
-Use index_documents with {"paths":["docs", "README.md"]}
+Use index_documents with {"paths":["docs", "README.md"], "exclude_dirs":["docs/acdl"]}
 Use search_documents with {"query":"state consolidation proposals","mode":"hybrid","hits":5}
 ```
 
@@ -218,6 +236,7 @@ uv run harness-poc goal "Summarize retrieval" --max-tokens 8000 --max-seconds 60
 # Documents
 uv run harness-poc documents index docs/example.pdf
 uv run harness-poc documents index docs --glob "*.md" --force
+uv run harness-poc documents index docs --exclude-dir docs/acdl
 
 # Skills and tools
 uv run harness-poc skill list
@@ -343,30 +362,30 @@ Deverino separates four kinds of callable/project knowledge:
 
 Common built-in tools and project tools:
 
-| Name | Purpose |
-| --- | --- |
-| `read_file`, `write_file`, `patch`, `search_files` | Workspace file operations |
-| `container_spawn`, `container_exec`, `container_destroy` | Docker/Podman sandbox management |
-| `execute_python` | Run Python in a session-scoped container |
-| `read_memory` | Read blackboard memory |
-| `web_search` | LangSearch-backed web search |
-| `semble_search` | Semantic code search |
-| `append_event` | Append typed context-map events |
-| `context-map-materializer` | Materialize context-map events into a prompt cache |
-| `index_documents` | Feed project documents into Vespa |
-| `search_documents` | Search indexed Vespa chunks |
-| `review_work` | Review the current working tree |
+| Name                                                     | Purpose                                            |
+| -------------------------------------------------------- | -------------------------------------------------- |
+| `read_file`, `write_file`, `patch`, `search_files`       | Workspace file operations                          |
+| `container_spawn`, `container_exec`, `container_destroy` | Docker/Podman sandbox management                   |
+| `execute_python`                                         | Run Python in a session-scoped container           |
+| `read_memory`                                            | Read blackboard memory                             |
+| `web_search`                                             | LangSearch-backed web search                       |
+| `semble_search`                                          | Semantic code search                               |
+| `append_event`                                           | Append typed context-map events                    |
+| `context-map-materializer`                               | Materialize context-map events into a prompt cache |
+| `index_documents`                                        | Feed project documents into Vespa                  |
+| `search_documents`                                       | Search indexed Vespa chunks                        |
+| `review_work`                                            | Review the current working tree                    |
 
 Common agent skills:
 
-| Name | Purpose |
-| --- | --- |
-| `delegate_task` | Spawn a persona-specific sub-agent |
-| `evaluate_goal` | Structured goal completion/blockage signal |
-| `consolidate_state` | Preview, propose, or approve state consolidation |
-| `summarize_memory` | Summarize a blackboard memory key |
-| `reflect_on_result` | Judge whether a result satisfies an objective |
-| `spec_writer` | Gather requirements and draft implementation specs |
+| Name                | Purpose                                            |
+| ------------------- | -------------------------------------------------- |
+| `delegate_task`     | Spawn a persona-specific sub-agent                 |
+| `evaluate_goal`     | Structured goal completion/blockage signal         |
+| `consolidate_state` | Preview, propose, or approve state consolidation   |
+| `summarize_memory`  | Summarize a blackboard memory key                  |
+| `reflect_on_result` | Judge whether a result satisfies an objective      |
+| `spec_writer`       | Gather requirements and draft implementation specs |
 
 ## Workflows And Pipelines
 
