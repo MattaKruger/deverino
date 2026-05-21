@@ -85,10 +85,18 @@ STARTUP_ERRORS = (
 )
 
 
-@dataclass(slots=True)
-class AppState:
+@dataclass(frozen=True, slots=True)
+class Identity:
     session_id: str
     database: BlackboardDatabase
+    event_bus: EventBus
+    event_store: EventStore
+    config_project_root: Path
+    config_project_id: str
+
+
+@dataclass(slots=True)
+class Runtime:
     config: HarnessConfig
     skill_runner: SkillRunner
     tool_runner: ToolRunner
@@ -96,13 +104,85 @@ class AppState:
     workflow_runner: WorkflowRunner
     pipeline_runner: PipelineRunner
     pydantic_runtime: PydanticAgentRuntime
+    tools: list[dict[str, Any]]
+    skill_catalog: str
+
+
+@dataclass(slots=True)
+class LongLived:
+    materializer: MaterializerRunner | None
+    supervisor: object | None = None
+
+
+@dataclass(slots=True)
+class ActiveRunHandle:
+    kind: str
+    name: str
+    started_at: str
+
+
+@dataclass(slots=True)
+class AppState:
+    identity: Identity
+    runtime: Runtime
+    long_lived: LongLived
     pydantic_messages: list[ModelMessage]
     goal_decision_model: Model | None
     messages: list[Message]
-    tools: list[dict[str, Any]]
-    event_bus: EventBus
     streaming: StreamingContext
-    materializer_runner: MaterializerRunner | None = None
+    active_run: ActiveRunHandle | None = None
+
+    @property
+    def session_id(self) -> str:
+        return self.identity.session_id
+
+    @property
+    def database(self) -> BlackboardDatabase:
+        return self.identity.database
+
+    @property
+    def event_bus(self) -> EventBus:
+        return self.identity.event_bus
+
+    @property
+    def config(self) -> HarnessConfig:
+        return self.runtime.config
+
+    @property
+    def skill_runner(self) -> SkillRunner:
+        return self.runtime.skill_runner
+
+    @property
+    def tool_runner(self) -> ToolRunner:
+        return self.runtime.tool_runner
+
+    @property
+    def skill_scaffolder(self) -> SkillScaffolder:
+        return self.runtime.skill_scaffolder
+
+    @property
+    def workflow_runner(self) -> WorkflowRunner:
+        return self.runtime.workflow_runner
+
+    @property
+    def pipeline_runner(self) -> PipelineRunner:
+        return self.runtime.pipeline_runner
+
+    @property
+    def pydantic_runtime(self) -> PydanticAgentRuntime:
+        return self.runtime.pydantic_runtime
+
+    @property
+    def tools(self) -> list[dict[str, Any]]:
+        return self.runtime.tools
+
+    @tools.setter
+    def tools(self, value: list[dict[str, Any]]) -> None:
+        self.runtime.tools = value
+
+    @property
+    def materializer_runner(self) -> MaterializerRunner | None:
+        return self.long_lived.materializer
 
 
 def _check_vespa_health(config: HarnessConfig) -> None:
@@ -229,58 +309,43 @@ def _ensure_history_consistent(messages: list[ModelMessage]) -> list[ModelMessag
     return [*messages, repair]
 
 
-def build_app_state(session_id: str | None = None) -> AppState:
-    config = HarnessConfig.load()
-    configure_logging(config.project_root)
+def _resolve_or_create_session(database: BlackboardDatabase, session_id: str | None) -> str:
+    if session_id is not None:
+        if not database.session_exists(session_id):
+            msg = f"Session {session_id} not found"
+            raise ValueError(msg)
+        return session_id
+    return database.start_session("Interactive proof of concept session.")
 
+
+def build_identity(config: HarnessConfig, session_id: str | None) -> Identity:
     engine = create_db_engine(config.runtime.database_url)
     database = BlackboardDatabase(engine)
     database.create_tables()
     event_store = EventStore(engine)
+    event_bus = EventBus(event_store)
+    effective_session_id = _resolve_or_create_session(database, session_id)
+    return Identity(
+        session_id=effective_session_id,
+        database=database,
+        event_bus=event_bus,
+        event_store=event_store,
+        config_project_root=config.project_root,
+        config_project_id=config.project_id,
+    )
 
+
+def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
+    """Build the reloadable runtime layer."""
     system_prompt = config.paths.soul.read_text(encoding="utf-8")
-    resumed = session_id is not None
-    if resumed:
-        if not database.session_exists(session_id):  # type: ignore[arg-type]
-            msg = f"Session {session_id} not found"
-            raise ValueError(msg)
-    else:
-        session_id = database.start_session("Interactive proof of concept session.")
-    assert session_id is not None  # noqa: S101
-    project_state = database.ensure_project_state()
-    session_state = database.ensure_session_state(session_id)
-    corpus_key = f"{config.project_id}:default"
-    context_map = database.get_context_map(corpus_key)
+    project_state = identity.database.ensure_project_state()
+    session_state = identity.database.ensure_session_state(identity.session_id)
+    corpus_key = f"{identity.config_project_id}:default"
+    context_map = identity.database.get_context_map(corpus_key)
     context_map_block = ""
     if context_map:
         context_map_block = f"--- Context Map ---\n{json.dumps(context_map, indent=2)}\n---"
     state_context = build_state_context(project_state, session_state)
-    skill_runner = SkillRunner(database=database, config=config)
-    db_proxy = BlackboardAccessProxy(database, _permissive_for_tools())
-    tool_runner = ToolRunner(
-        config=config,
-        skill_runner=skill_runner,
-        database=db_proxy,
-        runtime_config=config.runtime,
-    )
-    workflow_runner = WorkflowRunner(skill_runner)
-    pipeline_runner = PipelineRunner(config.paths.pipelines)
-    messages: list[Message] = [
-        {
-            "role": "system",
-            "content": "\n\n".join(
-                filter(
-                    None,
-                    [
-                        system_prompt,
-                        state_context,
-                        context_map_block or None,
-                    ],
-                ),
-            ),
-        },
-    ]
-    tools = skill_runner.discover_skills()
     full_system_prompt = "\n\n".join(
         filter(
             None,
@@ -291,27 +356,18 @@ def build_app_state(session_id: str | None = None) -> AppState:
             ],
         ),
     )
-    event_bus = EventBus(event_store)
-    from harness_poc.core.materializer_runner import MaterializerRunner  # noqa: PLC0415
 
-    materializer = MaterializerRunner(
-        db=database,
-        skill_runner=skill_runner,
+    skill_runner = SkillRunner(database=identity.database, config=config)
+    db_proxy = BlackboardAccessProxy(identity.database, _permissive_for_tools())
+    tool_runner = ToolRunner(
         config=config,
-        session_id=session_id,
-        poll_interval=config.runtime.materializer_poll_interval,
+        skill_runner=skill_runner,
+        database=db_proxy,
+        runtime_config=config.runtime,
     )
+    workflow_runner = WorkflowRunner(skill_runner)
+    pipeline_runner = PipelineRunner(config.paths.pipelines)
 
-    if config.observability.logfire_enabled:
-        from harness_poc.core.logfire_subscriber import (  # noqa: PLC0415
-            configure_logfire,
-            wire_logfire,
-        )
-
-        configure_logfire(include_content=config.observability.logfire_include_content)
-        wire_logfire(event_bus)
-
-    # ── Knowledge skill context ────────────────────────────────────
     knowledge_dirs = [config.paths.project_skills]
     if config.paths.system_skills.exists():
         knowledge_dirs.append(config.paths.system_skills)
@@ -319,20 +375,12 @@ def build_app_state(session_id: str | None = None) -> AppState:
         knowledge_dirs,
         project_root=config.project_root,
         scratch_base=None,
-        session_id=session_id,
+        session_id=identity.session_id,
     )
     skill_catalog = build_skill_catalog(knowledge_dirs)
+    tools = skill_runner.discover_skills()
 
-    restored_messages: list[ModelMessage] = []
-    if resumed:
-        blob = database.load_session_messages(session_id)
-        if blob:
-            restored_messages = ModelMessagesTypeAdapter.validate_python(blob)
-            restored_messages = _ensure_history_consistent(restored_messages)
-
-    return AppState(
-        session_id=session_id,
-        database=database,
+    return Runtime(
         config=config,
         skill_runner=skill_runner,
         tool_runner=tool_runner,
@@ -340,8 +388,8 @@ def build_app_state(session_id: str | None = None) -> AppState:
         workflow_runner=workflow_runner,
         pipeline_runner=pipeline_runner,
         pydantic_runtime=build_runtime(
-            session_id=session_id,
-            database=database,
+            session_id=identity.session_id,
+            database=identity.database,
             config=config,
             skill_runner=skill_runner,
             tool_runner=tool_runner,
@@ -351,11 +399,97 @@ def build_app_state(session_id: str | None = None) -> AppState:
             blocked_skills=_TUI_BLOCKED_SKILLS,
             skill_catalog=skill_catalog,
         ),
+        tools=tools,
+        skill_catalog=skill_catalog,
+    )
+
+
+def build_long_lived(identity: Identity, runtime: Runtime) -> LongLived:
+    from harness_poc.core.materializer_runner import MaterializerRunner  # noqa: PLC0415
+
+    materializer = MaterializerRunner(
+        db=identity.database,
+        skill_runner=runtime.skill_runner,
+        config=runtime.config,
+        session_id=identity.session_id,
+        poll_interval=runtime.config.runtime.materializer_poll_interval,
+    )
+    return LongLived(materializer=materializer)
+
+
+def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
+    system_prompt = config.paths.soul.read_text(encoding="utf-8")
+    project_state = identity.database.ensure_project_state()
+    session_state = identity.database.ensure_session_state(identity.session_id)
+    state_context = build_state_context(project_state, session_state)
+    corpus_key = f"{identity.config_project_id}:default"
+    context_map = identity.database.get_context_map(corpus_key)
+    context_map_block = (
+        f"--- Context Map ---\n{json.dumps(context_map, indent=2)}\n---" if context_map else ""
+    )
+    return {
+        "role": "system",
+        "content": "\n\n".join(
+            filter(
+                None,
+                [
+                    system_prompt,
+                    state_context,
+                    context_map_block or None,
+                ],
+            ),
+        ),
+    }
+
+
+def _build_app_state_with(
+    *,
+    identity: Identity,
+    runtime: Runtime,
+    long_lived: LongLived,
+    config: HarnessConfig,
+    session_id_was_resumed: bool,
+) -> AppState:
+    messages: list[Message] = [_system_message_for(identity, config)]
+
+    restored_messages: list[ModelMessage] = []
+    if session_id_was_resumed:
+        blob = identity.database.load_session_messages(identity.session_id)
+        if blob:
+            restored_messages = ModelMessagesTypeAdapter.validate_python(blob)
+            restored_messages = _ensure_history_consistent(restored_messages)
+
+    return AppState(
+        identity=identity,
+        runtime=runtime,
+        long_lived=long_lived,
         pydantic_messages=restored_messages,
         goal_decision_model=None,
         messages=messages,
-        tools=tools,
-        event_bus=event_bus,
         streaming=StreamingContext(),
-        materializer_runner=materializer,
+    )
+
+
+def build_app_state(session_id: str | None = None) -> AppState:
+    config = HarnessConfig.load()
+    configure_logging(config.project_root)
+    identity = build_identity(config, session_id)
+    runtime = build_runtime_layer(identity, config)
+    long_lived = build_long_lived(identity, runtime)
+
+    if config.observability.logfire_enabled:
+        from harness_poc.core.logfire_subscriber import (  # noqa: PLC0415
+            configure_logfire,
+            wire_logfire,
+        )
+
+        configure_logfire(include_content=config.observability.logfire_include_content)
+        wire_logfire(identity.event_bus)
+
+    return _build_app_state_with(
+        identity=identity,
+        runtime=runtime,
+        long_lived=long_lived,
+        config=config,
+        session_id_was_resumed=session_id is not None,
     )
