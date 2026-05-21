@@ -20,6 +20,7 @@ from textual.widgets import Markdown, OptionList, Static, TextArea
 from harness_poc.console import clear_tui_handlers, set_tui_handlers
 from harness_poc.repl_completion import completions_for_text
 from harness_poc.tui_vim import (
+    ChatVimHandler,
     InputVimHandler,
     VimMode,
     VimPane,
@@ -251,7 +252,15 @@ class ChatApp(App[None]):
             mode=initial_mode if tui_cfg.vim_enabled else VimMode.INSERT,
             initial_mode=initial_mode,
         )
-        self._vim_input = InputVimHandler(self._vim)
+        self._chat_messages: list[str] = []
+        self._vim_input = InputVimHandler(self._vim, copy_callback=self.copy_to_clipboard)
+        self._vim_chat = ChatVimHandler(
+            self._vim,
+            copy_callback=self.copy_to_clipboard,
+            focus_input_insert=self._focus_input_for_insert,
+            copy_last_response=self.action_copy_last_response,
+            message_texts=lambda: list(self._chat_messages),
+        )
 
     def compose(self) -> ComposeResult:
         yield Static("", id="header")
@@ -359,6 +368,10 @@ class ChatApp(App[None]):
         self.query_one("#spinner", Static).update("")
 
     def action_submit_editor(self) -> None:
+        if self._vim.enabled and self._vim.pane == VimPane.CHAT:
+            # In chat-pane normal mode, ctrl+d is half-page scroll, not submit.
+            self.query_one("#chat", VerticalScroll).scroll_page_down()
+            return
         self._submit_editor_text()
 
     def action_toggle_vim(self) -> None:
@@ -395,12 +408,38 @@ class ChatApp(App[None]):
 
     def _cycle_vim_pane(self) -> None:
         next_pane = cycle_pane(self._vim)
-        target_id = "#input" if next_pane == VimPane.INPUT else "#chat"
-        self.query_one(target_id).focus()
-        # Coming back to input from chat normal-mode resets pending state,
-        # but does not auto-enter insert — that requires explicit `i`/`a`/`A`.
+        if next_pane == VimPane.INPUT:
+            self.query_one("#input", TextArea).focus()
+        else:
+            self.query_one("#chat", VerticalScroll).focus()
+            # Chat pane has no insert mode; force normal while focused there.
+            self._vim.mode = VimMode.NORMAL
         self._vim.reset()
         self._update_vim_status()
+
+    def _focus_input_for_insert(self) -> None:
+        self._vim.pane = VimPane.INPUT
+        self._vim.mode = VimMode.INSERT
+        self._vim.reset()
+        self.query_one("#input", TextArea).focus()
+        self._update_vim_status()
+
+    def on_key(self, event: events.Key) -> None:
+        # Completion menu has priority over Vim while it is visible.
+        if self._completion_visible:
+            return
+        if not self._vim.enabled:
+            return
+        if self._vim.pane != VimPane.CHAT:
+            return
+        if event.key in {"tab", "shift+tab"}:
+            return  # handled by the cycle-completion actions
+        chat = self.query_one("#chat", VerticalScroll)
+        key = normalize_key(event.key)
+        if self._vim_chat.handle(key, chat):
+            self._update_vim_status()
+            event.stop()
+            event.prevent_default()
 
     def action_cycle_completion_forward(self) -> None:
         if self._vim.enabled and not self._completion_visible:
@@ -531,6 +570,7 @@ class ChatApp(App[None]):
     def _submit(self, text: str) -> None:
         chat = self.query_one("#chat", VerticalScroll)
         chat.mount(Static(f"[cyan]You:[/cyan] {text}", classes="user-msg", markup=True))
+        self._chat_messages.append(f"You: {text}")
         self._start_spinner()
         chat.scroll_end(animate=False)
         self.run_worker(self._chat_worker(text, chat))
@@ -624,6 +664,7 @@ class ChatApp(App[None]):
                 await chat.mount(Markdown(linkified, open_links=False))
             else:
                 await chat.mount(Static(response, markup=False))
+            self._chat_messages.append(f"Agent: {response}")
         self._stop_spinner()
         chat.scroll_end(animate=False)
         self._app_state.streaming.reset_callbacks()

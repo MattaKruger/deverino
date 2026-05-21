@@ -173,6 +173,69 @@ async def test_vim_normal_mode_i_returns_to_insert() -> None:
         assert editor.text == "a"
 
 
+async def test_vim_visual_mode_y_copies_selection_and_returns_normal() -> None:
+    app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
+    async with app.run_test() as pilot:
+        editor = pilot.app.query_one("#input", TextArea)
+        await pilot.press("h", "e", "l", "l", "o")
+        await pilot.press("escape")  # → normal
+        await pilot.press("0")  # cursor to line start
+        await pilot.press("v")
+        assert pilot.app._vim.mode.value == "visual"
+        await pilot.press("l", "l", "l")  # extend 3 right
+        assert editor.selected_text != ""
+        await pilot.press("y")
+        assert pilot.app._vim.mode.value == "normal"
+
+
+async def test_vim_visual_mode_d_deletes_selection() -> None:
+    app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
+    async with app.run_test() as pilot:
+        editor = pilot.app.query_one("#input", TextArea)
+        await pilot.press("a", "b", "c", "d", "e")
+        await pilot.press("escape", "0", "v", "l", "l", "d")
+        # "ab" should be deleted, leaving "cde".
+        assert editor.text == "cde"
+        assert pilot.app._vim.mode.value == "normal"
+
+
+async def test_vim_count_prefix_repeats_motion_in_textarea() -> None:
+    app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
+    async with app.run_test() as pilot:
+        editor = pilot.app.query_one("#input", TextArea)
+        await pilot.press("h", "e", "l", "l", "o")
+        await pilot.press("escape", "0")
+        # Move right 3 times via count prefix, then delete the next char.
+        await pilot.press("3", "l", "x")
+        # Started at col 0 of "hello", moved to col 3 (over 'l'), x removed it.
+        assert editor.text == "helo"
+
+
+async def test_vim_chat_pane_j_scrolls_does_not_type_into_editor() -> None:
+    app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
+    async with app.run_test() as pilot:
+        await pilot.press("tab")  # focus → chat
+        assert pilot.app._vim.pane.value == "chat"
+        editor = pilot.app.query_one("#input", TextArea)
+        before = editor.text
+        await pilot.press("j", "j", "k")
+        # j/k must not leak into the input buffer while chat is focused.
+        assert editor.text == before
+
+
+async def test_vim_chat_i_returns_focus_to_input_in_insert() -> None:
+    app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
+    async with app.run_test() as pilot:
+        await pilot.press("tab")
+        assert pilot.app._vim.pane.value == "chat"
+        await pilot.press("i")
+        assert pilot.app._vim.pane.value == "input"
+        assert pilot.app._vim.mode.value == "insert"
+        editor = pilot.app.query_one("#input", TextArea)
+        await pilot.press("x")
+        assert editor.text == "x"
+
+
 def test_spinner_status_combines_independent_icon_phrase_and_dots() -> None:
     status = _format_spinner_status("(งツ)ว", "doing the thing", "...")
 
