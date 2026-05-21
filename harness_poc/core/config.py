@@ -52,6 +52,15 @@ class LLMConfig:
     base_url: str | None  # None unless overriding endpoint (openai-compatible only)
 
 
+_VIM_INITIAL_MODES = frozenset({"insert", "normal"})
+
+
+@dataclass(frozen=True, slots=True)
+class TuiConfig:
+    vim_enabled: bool = False
+    vim_initial_mode: str = "insert"
+
+
 @dataclass(frozen=True, slots=True)
 class RetrievalConfig:
     enabled: bool = True
@@ -107,6 +116,7 @@ class HarnessConfig:
     runtime: RuntimeConfig
     observability: ObservabilityConfig
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
+    tui: TuiConfig = field(default_factory=TuiConfig)
     project_id: str = field(default="default")
 
     @classmethod
@@ -194,6 +204,19 @@ class HarnessConfig:
             ),
         )
 
+        tui_raw = _mapping(raw.get("tui"), "tui")
+        vim_initial_mode = str(tui_raw.get("vim_initial_mode", "insert"))
+        if vim_initial_mode not in _VIM_INITIAL_MODES:
+            msg = (
+                f"harness.yaml tui.vim_initial_mode must be one of "
+                f"{sorted(_VIM_INITIAL_MODES)}, got {vim_initial_mode!r}"
+            )
+            raise ValueError(msg)
+        tui = TuiConfig(
+            vim_enabled=bool(tui_raw.get("vim_enabled", False)),
+            vim_initial_mode=vim_initial_mode,
+        )
+
         project_raw = _mapping(raw.get("project"), "project")
         project_id = str(project_raw.get("id") or "")
         if not project_id:
@@ -210,6 +233,7 @@ class HarnessConfig:
             runtime=runtime,
             observability=observability,
             retrieval=retrieval,
+            tui=tui,
             project_id=project_id,
         )
 

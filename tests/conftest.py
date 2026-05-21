@@ -8,6 +8,11 @@ from sqlmodel import SQLModel
 
 from harness_poc.core.db_engine import create_db_engine
 
+# Skip the Vespa auto-index bootstrap for any test that reaches AppState.
+# Reindexing the docs/ tree takes minutes and is unrelated to anything the
+# test suite verifies; integration tests opt back in explicitly.
+os.environ.setdefault("HARNESS_SKIP_AUTO_INDEX", "1")
+
 # Override via env var when pointing at a dedicated test DB.
 _DEFAULT_TEST_URL = "postgresql://deverino:deverino@localhost/deverino"
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", _DEFAULT_TEST_URL)

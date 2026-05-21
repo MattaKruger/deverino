@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from harness_poc.core.config import HarnessConfig, RetrievalConfig
+from harness_poc.core.config import HarnessConfig, RetrievalConfig, TuiConfig
 
 
 def _write_minimal_config(tmp_path: Path, extra: str = "") -> Path:
@@ -72,3 +72,35 @@ def test_retrieval_config_is_frozen() -> None:
     r = RetrievalConfig()
     with pytest.raises((AttributeError, TypeError)):
         r.enabled = False  # type: ignore[misc]
+
+
+def test_tui_config_defaults_when_section_absent(tmp_path: Path) -> None:
+    cfg = HarnessConfig.load(_write_minimal_config(tmp_path))
+    assert cfg.tui.vim_enabled is False
+    assert cfg.tui.vim_initial_mode == "insert"
+
+
+def test_tui_config_parsed_from_yaml(tmp_path: Path) -> None:
+    extra = textwrap.dedent("""
+        tui:
+          vim_enabled: true
+          vim_initial_mode: normal
+    """)
+    cfg = HarnessConfig.load(_write_minimal_config(tmp_path, extra))
+    assert cfg.tui.vim_enabled is True
+    assert cfg.tui.vim_initial_mode == "normal"
+
+
+def test_tui_config_rejects_invalid_initial_mode(tmp_path: Path) -> None:
+    extra = textwrap.dedent("""
+        tui:
+          vim_initial_mode: visual
+    """)
+    with pytest.raises(ValueError, match="vim_initial_mode"):
+        HarnessConfig.load(_write_minimal_config(tmp_path, extra))
+
+
+def test_tui_config_is_frozen() -> None:
+    t = TuiConfig()
+    with pytest.raises((AttributeError, TypeError)):
+        t.vim_enabled = True  # type: ignore[misc]

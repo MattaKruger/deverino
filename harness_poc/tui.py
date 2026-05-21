@@ -19,10 +19,20 @@ from textual.widgets import Markdown, OptionList, Static, TextArea
 
 from harness_poc.console import clear_tui_handlers, set_tui_handlers
 from harness_poc.repl_completion import completions_for_text
+from harness_poc.tui_vim import (
+    InputVimHandler,
+    VimMode,
+    VimPane,
+    VimState,
+    cycle_pane,
+    format_status,
+    normalize_key,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine
 
+    from textual import events
     from textual.timer import Timer
 
     from harness_poc.app_factory import AppState
@@ -138,6 +148,23 @@ def _skill_names(app_state: AppState) -> tuple[str, ...]:
     return tuple(sorted(names))
 
 
+class VimTextArea(TextArea):
+    """TextArea subclass that lets ``ChatApp`` intercept keys when Vim is on.
+
+    Textual's TextArea consumes printable keys before app-level ``on_key``
+    handlers see them; in normal/visual mode we need first crack at every
+    keystroke. The app exposes :meth:`ChatApp.handle_vim_text_area_key` and
+    this subclass forwards each key to it before the widget runs its own
+    handling.
+    """
+
+    async def _on_key(self, event: events.Key) -> None:
+        app = cast("ChatApp", self.app)
+        if app.handle_vim_text_area_key(event):
+            event.stop()
+            event.prevent_default()
+
+
 class ChatApp(App[None]):
     BINDINGS: ClassVar[list] = [
         Binding("super+c", "copy_smart", "Copy", priority=True, show=False),
@@ -160,6 +187,7 @@ class ChatApp(App[None]):
             priority=True,
             show=False,
         ),
+        Binding("f2", "toggle_vim", "Toggle Vim", priority=True, show=False),
     ]
 
     DEFAULT_CSS = """
@@ -188,9 +216,14 @@ class ChatApp(App[None]):
     }
     #footer {
         dock: bottom;
-        height: 10;
+        height: 11;
     }
     #spinner {
+        height: 1;
+        color: $text-muted;
+        padding: 0 1;
+    }
+    #vim-status {
         height: 1;
         color: $text-muted;
         padding: 0 1;
@@ -211,13 +244,22 @@ class ChatApp(App[None]):
         self._app_state = app_state
         self._spinner_timer: Timer | None = None
         self._materializer_task: asyncio.Task[None] | None = None
+        tui_cfg = app_state.config.tui
+        initial_mode = VimMode(tui_cfg.vim_initial_mode)
+        self._vim = VimState(
+            enabled=tui_cfg.vim_enabled,
+            mode=initial_mode if tui_cfg.vim_enabled else VimMode.INSERT,
+            initial_mode=initial_mode,
+        )
+        self._vim_input = InputVimHandler(self._vim)
 
     def compose(self) -> ComposeResult:
         yield Static("", id="header")
         yield VerticalScroll(id="chat")
         with Vertical(id="footer"):
             yield Static("", id="spinner")
-            yield TextArea(
+            yield Static("", id="vim-status")
+            yield VimTextArea(
                 "",
                 placeholder="> ",
                 id="input",
@@ -240,7 +282,9 @@ class ChatApp(App[None]):
                     cast("Coroutine[Any, Any, None]", maybe_coro)
                 )
         self._update_header()
-        self.query_one(TextArea).focus()
+        self._update_vim_status()
+        self.query_one("#chat", VerticalScroll).can_focus = True
+        self.query_one("#input", TextArea).focus()
 
     def on_unmount(self) -> None:
         if self._materializer_task is not None:
@@ -317,10 +361,57 @@ class ChatApp(App[None]):
     def action_submit_editor(self) -> None:
         self._submit_editor_text()
 
+    def action_toggle_vim(self) -> None:
+        self._vim.enabled = not self._vim.enabled
+        self._vim.pane = VimPane.INPUT
+        self._vim.mode = self._vim.initial_mode if self._vim.enabled else VimMode.INSERT
+        self._vim.reset()
+        self._hide_completion_menu()
+        self.query_one("#input", TextArea).focus()
+        self._update_vim_status()
+
+    def _update_vim_status(self) -> None:
+        self.query_one("#vim-status", Static).update(format_status(self._vim))
+
+    def handle_vim_text_area_key(self, event: events.Key) -> bool:
+        """Route a key event from VimTextArea through the Vim handler.
+
+        Returns True if the Vim layer consumed the key; the subclass then
+        stops the event so the underlying widget never sees it.
+        """
+        if not self._vim.enabled or self._completion_visible:
+            return False
+        if self._vim.pane != VimPane.INPUT:
+            return False
+        if event.key in {"tab", "shift+tab"}:
+            # Pane cycling is handled at the app level; let the binding fire.
+            return False
+        key = normalize_key(event.key)
+        editor = self.query_one("#input", TextArea)
+        handled = self._vim_input.handle(key, editor)
+        if handled:
+            self._update_vim_status()
+        return handled
+
+    def _cycle_vim_pane(self) -> None:
+        next_pane = cycle_pane(self._vim)
+        target_id = "#input" if next_pane == VimPane.INPUT else "#chat"
+        self.query_one(target_id).focus()
+        # Coming back to input from chat normal-mode resets pending state,
+        # but does not auto-enter insert — that requires explicit `i`/`a`/`A`.
+        self._vim.reset()
+        self._update_vim_status()
+
     def action_cycle_completion_forward(self) -> None:
+        if self._vim.enabled and not self._completion_visible:
+            self._cycle_vim_pane()
+            return
         self._cycle_completion(forward=True)
 
     def action_cycle_completion_backward(self) -> None:
+        if self._vim.enabled and not self._completion_visible:
+            self._cycle_vim_pane()
+            return
         self._cycle_completion(forward=False)
 
     def action_accept_completion_or_newline(self) -> None:

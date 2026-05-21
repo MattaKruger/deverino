@@ -37,6 +37,10 @@ observability:
   logfire: true   # set to true and export LOGFIRE_TOKEN to enable
   logfire_include_content: false
 
+tui:
+  vim_enabled: false        # Vim-style modal editing in the Textual TUI (F2 toggles at runtime)
+  vim_initial_mode: insert  # insert | normal — starting mode when Vim is enabled
+
 retrieval:
   enabled: true
   provider: vespa
