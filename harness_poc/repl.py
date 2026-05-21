@@ -7,10 +7,22 @@ import sqlite3
 from typing import TYPE_CHECKING, Any
 
 import yaml
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelMessagesTypeAdapter,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart,
+)
 
 from harness_poc.console import print_error, print_markdown, print_skill_table, print_text
-from harness_poc.core.events import AgentInputAdded, LLMActionEmitted, LLMTextEmitted
+from harness_poc.core.events import (
+    AgentInputAdded,
+    AgentTurnRecorded,
+    LLMActionEmitted,
+    LLMTextEmitted,
+)
 from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
 from harness_poc.core.message_history import (
     estimate_message_tokens,
@@ -244,17 +256,28 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
         )
         _track_tokens(accounting, app_state)
         _publish_llm_usage_event(app_state, accounting)
-        if response.messages:
-            app_state.pydantic_messages.extend(
-                sanitize_new_messages(
-                    response.messages,
-                    tool_result_max_chars=app_state.config.runtime.tool_result_max_chars,
-                )
+        new_messages = (
+            sanitize_new_messages(
+                response.messages,
+                tool_result_max_chars=app_state.config.runtime.tool_result_max_chars,
             )
-            app_state.pydantic_messages = _bounded_pydantic_messages(app_state)
-        else:
-            app_state.pydantic_messages.extend(fallback_messages)
-            app_state.pydantic_messages = _bounded_pydantic_messages(app_state)
+            if response.messages
+            else fallback_messages
+        )
+        app_state.pydantic_messages.extend(new_messages)
+        app_state.pydantic_messages = _bounded_pydantic_messages(app_state)
+        blob = ModelMessagesTypeAdapter.dump_python(new_messages, mode="json")
+        ordinal = app_state.database.append_session_messages(
+            app_state.session_id,
+            blob,
+        )
+        app_state.event_bus.publish(
+            AgentTurnRecorded(
+                session_id=app_state.session_id,
+                messages_blob=blob,
+                ordinal=ordinal,
+            )
+        )
         app_state.messages.append({"role": "assistant", "content": response.content})
         if response.content:
             app_state.event_bus.publish(

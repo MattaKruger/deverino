@@ -97,6 +97,11 @@ class LLMTextEmitted(BaseEvent):
     content: str
 
 
+class AgentTurnRecorded(BaseEvent):
+    messages_blob: list[dict[str, Any]] = Field(default_factory=list)
+    ordinal: int = 0
+
+
 class SubAgentDispatched(BaseEvent):
     sub_session_id: str
     persona: str
@@ -143,6 +148,7 @@ EVENT_REGISTRY: dict[str, type[BaseEvent]] = {
         StreamPaused,
         GoalEvaluated,
         LLMTextEmitted,
+        AgentTurnRecorded,
         SubAgentDispatched,
         SubAgentCompleted,
         PipelineStarted,

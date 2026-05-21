@@ -21,6 +21,7 @@ from harness_poc.core.models import (
     DbDocumentSource,
     DbProjectState,
     DbSession,
+    DbSessionMessage,
     DbSessionState,
     DbSharedMemory,
     DbStateEvent,
@@ -62,6 +63,56 @@ class BlackboardDatabase:
             )
             session.commit()
         return session_id
+
+    def append_session_messages(
+        self,
+        session_id: str,
+        messages_blob: list[dict[str, Any]],
+    ) -> int:
+        with Session(self._engine) as session:
+            next_ordinal = (
+                session.exec(
+                    select(DbSessionMessage.ordinal)
+                    .where(DbSessionMessage.session_id == session_id)
+                    .order_by(col(DbSessionMessage.ordinal).desc())
+                    .limit(1)
+                ).first()
+                or 0
+            ) + 1
+            session.add(
+                DbSessionMessage(
+                    session_id=session_id,
+                    ordinal=next_ordinal,
+                    messages_blob=messages_blob,
+                    created_at=self._utc_now(),
+                )
+            )
+            session.commit()
+            return next_ordinal
+
+    def load_session_messages(self, session_id: str) -> list[dict[str, Any]]:
+        with Session(self._engine) as session:
+            rows = session.exec(
+                select(DbSessionMessage)
+                .where(DbSessionMessage.session_id == session_id)
+                .order_by(col(DbSessionMessage.ordinal))
+            ).all()
+        blob: list[dict[str, Any]] = []
+        for row in rows:
+            blob.extend(row.messages_blob)
+        return blob
+
+    def get_last_session_id(self) -> str | None:
+        with Session(self._engine) as session:
+            return session.exec(
+                select(DbSession.session_id)
+                .order_by(col(DbSession.created_at).desc())
+                .limit(1)
+            ).first()
+
+    def session_exists(self, session_id: str) -> bool:
+        with Session(self._engine) as session:
+            return session.get(DbSession, session_id) is not None
 
     def write_memory(self, session_id: str, key: str, payload: str | dict[str, Any]) -> None:
         data_payload = json.dumps(payload, sort_keys=True) if isinstance(payload, dict) else payload

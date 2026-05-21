@@ -56,6 +56,7 @@ def test_handle_chat_input_publishes_chat_events() -> None:
     assert [event.event_type for event in events] == [
         "AgentInputAdded",
         "LLMActionEmitted",
+        "AgentTurnRecorded",
         "LLMTextEmitted",
     ]
     assert isinstance(events[0], AgentInputAdded)
@@ -72,8 +73,8 @@ def test_handle_chat_input_publishes_chat_events() -> None:
     assert events[1].new_tokens == expected_new_tokens
     assert events[1].billable_tokens == EXPECTED_TOTAL_TOKENS
     assert app_state.streaming.session_tokens == expected_new_tokens
-    assert isinstance(events[2], LLMTextEmitted)
-    assert events[2].content == "Pydantic response"
+    assert isinstance(events[3], LLMTextEmitted)
+    assert events[3].content == "Pydantic response"
 
 
 def test_handle_chat_input_prunes_history_before_runtime_call() -> None:
@@ -155,6 +156,17 @@ class _FakeRuntime:
         )
 
 
+class _FakeDatabase:
+    def __init__(self) -> None:
+        self.appended: list[tuple[str, list[dict[str, Any]]]] = []
+
+    def append_session_messages(
+        self, session_id: str, messages_blob: list[dict[str, Any]]
+    ) -> int:
+        self.appended.append((session_id, messages_blob))
+        return len(self.appended)
+
+
 class _FakeAppState:
     def __init__(self) -> None:
         self.session_id = "test-session"
@@ -163,6 +175,7 @@ class _FakeAppState:
         self.pydantic_runtime = _FakeRuntime()
         self.streaming = StreamingContext()
         self.event_bus = RecordingEventBus()
+        self.database = _FakeDatabase()
         self.config = SimpleNamespace(
             llm=SimpleNamespace(model="fake-model"),
             runtime=SimpleNamespace(

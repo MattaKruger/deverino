@@ -39,6 +39,7 @@ def test_event_registry_covers_all_concrete_types() -> None:
         "StreamPaused",
         "GoalEvaluated",
         "LLMTextEmitted",
+        "AgentTurnRecorded",
         "SubAgentDispatched",
         "SubAgentCompleted",
         "PipelineStarted",

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
@@ -193,7 +194,42 @@ def _permissive_for_tools() -> SkillPermissions:
     return SkillPermissions(blackboard="read_write", workspace="read_write")
 
 
-def build_app_state() -> AppState:
+def _ensure_history_consistent(messages: list[ModelMessage]) -> list[ModelMessage]:
+    """Repair history if the last turn ended mid-tool-call.
+
+    A process killed between a ModelResponse with ToolCallPart and the matching
+    ToolReturnPart leaves pydantic-ai's history invalid. Inject a synthetic
+    return so the next agent.run succeeds.
+    """
+    from pydantic_ai.messages import (  # noqa: PLC0415
+        ModelRequest,
+        ModelResponse,
+        ToolCallPart,
+        ToolReturnPart,
+    )
+
+    if not messages:
+        return messages
+    last = messages[-1]
+    if not isinstance(last, ModelResponse):
+        return messages
+    pending: list[ToolCallPart] = [p for p in last.parts if isinstance(p, ToolCallPart)]
+    if not pending:
+        return messages
+    repair = ModelRequest(
+        parts=[
+            ToolReturnPart(
+                tool_name=call.tool_name,
+                content="interrupted by process exit",
+                tool_call_id=call.tool_call_id,
+            )
+            for call in pending
+        ]
+    )
+    return [*messages, repair]
+
+
+def build_app_state(session_id: str | None = None) -> AppState:
     config = HarnessConfig.load()
     configure_logging(config.project_root)
 
@@ -203,7 +239,14 @@ def build_app_state() -> AppState:
     event_store = EventStore(engine)
 
     system_prompt = config.paths.soul.read_text(encoding="utf-8")
-    session_id = database.start_session("Interactive proof of concept session.")
+    resumed = session_id is not None
+    if resumed:
+        if not database.session_exists(session_id):  # type: ignore[arg-type]
+            msg = f"Session {session_id} not found"
+            raise ValueError(msg)
+    else:
+        session_id = database.start_session("Interactive proof of concept session.")
+    assert session_id is not None  # noqa: S101
     project_state = database.ensure_project_state()
     session_state = database.ensure_session_state(session_id)
     corpus_key = f"{config.project_id}:default"
@@ -280,6 +323,13 @@ def build_app_state() -> AppState:
     )
     skill_catalog = build_skill_catalog(knowledge_dirs)
 
+    restored_messages: list[ModelMessage] = []
+    if resumed:
+        blob = database.load_session_messages(session_id)
+        if blob:
+            restored_messages = ModelMessagesTypeAdapter.validate_python(blob)
+            restored_messages = _ensure_history_consistent(restored_messages)
+
     return AppState(
         session_id=session_id,
         database=database,
@@ -301,7 +351,7 @@ def build_app_state() -> AppState:
             blocked_skills=_TUI_BLOCKED_SKILLS,
             skill_catalog=skill_catalog,
         ),
-        pydantic_messages=[],
+        pydantic_messages=restored_messages,
         goal_decision_model=None,
         messages=messages,
         tools=tools,

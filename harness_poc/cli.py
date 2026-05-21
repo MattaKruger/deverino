@@ -14,6 +14,7 @@ from harness_poc.app_factory import STARTUP_ERRORS, AppState, build_app_state
 from harness_poc.console import console, print_error
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.dashboard import DashboardSnapshot, fetch_dashboard_snapshot, snapshot_to_dict
+from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.event_log_observer import (
     fetch_event_log_rows,
     fetch_latest_event_log_rows,
@@ -105,20 +106,56 @@ dashboard_app = typer.Typer(
 
 
 @app.callback(invoke_without_command=True)
-def main_callback(ctx: typer.Context) -> None:
+def main_callback(
+    ctx: typer.Context,
+    resume: Annotated[
+        str | None,
+        typer.Option("--resume", help="Resume session by id."),
+    ] = None,
+    resume_last: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option("--resume-last", help="Resume the most recent session."),
+    ] = False,
+) -> None:
     """Interactive LLM harness proof of concept."""
     if ctx.invoked_subcommand is not None:
         return
-    app_state = _new_app_state()
+    app_state = _new_app_state(session_id=_resolve_resume(resume, resume_last))
     run_repl(app_state)
     raise typer.Exit
 
 
 @app.command()
-def repl() -> None:
+def repl(
+    resume: Annotated[
+        str | None,
+        typer.Option("--resume", help="Resume session by id."),
+    ] = None,
+    resume_last: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option("--resume-last", help="Resume the most recent session."),
+    ] = False,
+) -> None:
     """Start the interactive REPL."""
-    app_state = _new_app_state()
+    app_state = _new_app_state(session_id=_resolve_resume(resume, resume_last))
     run_repl(app_state)
+
+
+def _resolve_resume(resume: str | None, resume_last: bool) -> str | None:  # noqa: FBT001
+    if resume:
+        return resume
+    if resume_last:
+        config = HarnessConfig.load()
+        from harness_poc.core.db_engine import create_db_engine  # noqa: PLC0415
+
+        db = BlackboardDatabase(create_db_engine(config.runtime.database_url))
+        db.create_tables()
+        last = db.get_last_session_id()
+        if last is None:
+            print_error("No prior sessions found.")
+            raise typer.Exit(code=1)
+        return last
+    return None
 
 
 @workflow_app.command("run")
@@ -710,9 +747,9 @@ def _index_documents(
         raise typer.Exit(1)
 
 
-def _new_app_state() -> AppState:
+def _new_app_state(session_id: str | None = None) -> AppState:
     try:
-        return build_app_state()
+        return build_app_state(session_id=session_id)
     except STARTUP_ERRORS as exc:
         logger.exception("Harness startup failed")
         print_error(f"Could not start harness: {exc}")

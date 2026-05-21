@@ -411,7 +411,7 @@ def test_goal_cli_executes_with_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """CLI should run the goal command without crashing (mock LLM)."""
     mock = _mock_response_factory([_evaluate_goal_response(True, "CLI done.")])
     state = _make_app_state(mock)
-    monkeypatch.setattr("harness_poc.cli.build_app_state", lambda: state)
+    monkeypatch.setattr("harness_poc.cli.build_app_state", lambda **_: state)
 
     result = runner.invoke(app, ["goal", "test objective", "--max-iterations", "1"])
     assert result.exit_code == 0

@@ -89,6 +89,22 @@ class DbSessionSnapshot(SQLModel, table=True):
     updated_at: str | None = Field(default=None)
 
 
+class DbSessionMessage(SQLModel, table=True):
+    __tablename__ = "session_messages"  # type: ignore[assignment]
+    __table_args__ = (
+        Index(
+            "idx_session_messages_session_ordinal",
+            "session_id",
+            "ordinal",
+        ),
+    )
+
+    session_id: str = Field(primary_key=True, foreign_key="sessions.session_id")
+    ordinal: int = Field(primary_key=True)
+    messages_blob: Any = Field(sa_column=Column(_StateJSON, nullable=False))
+    created_at: str
+
+
 class DbDocumentSource(SQLModel, table=True):
     __tablename__ = "document_sources"  # type: ignore[assignment]
 
