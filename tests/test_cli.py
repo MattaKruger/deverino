@@ -67,7 +67,16 @@ def test_documents_index_invokes_index_documents_skill(monkeypatch: pytest.Monke
 
     result = runner.invoke(
         app,
-        ["documents", "index", "docs/example.pdf", "--glob", "*.pdf", "--force"],
+        [
+            "documents",
+            "index",
+            "docs/example.pdf",
+            "--glob",
+            "*.pdf",
+            "--exclude-dir",
+            "docs/generated",
+            "--force",
+        ],
     )
 
     assert result.exit_code == 0
@@ -78,6 +87,7 @@ def test_documents_index_invokes_index_documents_skill(monkeypatch: pytest.Monke
             "arguments": {
                 "paths": ["docs/example.pdf"],
                 "glob": "*.pdf",
+                "exclude_dirs": ["docs/generated"],
                 "force": True,
             },
             "session_id": "test-session",

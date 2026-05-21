@@ -15,9 +15,10 @@ from tests.test_vespa_client import FakeVespaClient
 def _make_indexer(
     db: BlackboardDatabase,
     vespa: FakeVespaClient,
+    config: RetrievalConfig | None = None,
 ) -> DocumentIndexer:
     return DocumentIndexer(
-        config=RetrievalConfig(chunk_size_chars=100, chunk_overlap_chars=10),
+        config=config or RetrievalConfig(chunk_size_chars=100, chunk_overlap_chars=10),
         database=db,
         vespa_client=vespa,
     )
@@ -104,7 +105,7 @@ def test_index_pdf_file(
     assert result.skipped == 0
     assert result.failed == 0
     assert result.chunks_indexed >= 1
-    indexed_text = "\n".join(chunk.text for chunk in vespa._docs.values())  # noqa: SLF001
+    indexed_text = "\n".join(chunk.text for chunk in vespa._docs.values())
     assert "[Page 1]" in indexed_text
     assert "Second page about PDF retrieval." in indexed_text
 
@@ -143,6 +144,54 @@ def test_git_directory_is_ignored(db_engine: Engine, tmp_path: Path) -> None:
 
     result = indexer.index_paths(project_root=tmp_path, paths=["."])
     assert result.indexed == 0
+
+
+def test_configured_ignore_path_is_not_indexed(db_engine: Engine, tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    generated = docs / "generated"
+    generated.mkdir(parents=True)
+    (docs / "guide.md").write_text("Index this.", encoding="utf-8")
+    (generated / "output.md").write_text("Do not index this.", encoding="utf-8")
+
+    db = BlackboardDatabase(db_engine)
+    vespa = FakeVespaClient()
+    indexer = _make_indexer(
+        db,
+        vespa,
+        RetrievalConfig(
+            chunk_size_chars=100,
+            chunk_overlap_chars=10,
+            auto_index_ignore_paths=["docs/generated"],
+        ),
+    )
+
+    result = indexer.index_paths(project_root=tmp_path, paths=["docs"])
+
+    assert result.indexed == 1
+    assert db.get_document_source("docs-guide-md") is not None
+    assert db.get_document_source("docs-generated-output-md") is None
+
+
+def test_exclude_dirs_argument_is_not_indexed(db_engine: Engine, tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    generated = docs / "generated"
+    generated.mkdir(parents=True)
+    (docs / "guide.md").write_text("Index this.", encoding="utf-8")
+    (generated / "output.md").write_text("Do not index this.", encoding="utf-8")
+
+    db = BlackboardDatabase(db_engine)
+    vespa = FakeVespaClient()
+    indexer = _make_indexer(db, vespa)
+
+    result = indexer.index_paths(
+        project_root=tmp_path,
+        paths=["docs"],
+        exclude_dirs=["docs/generated"],
+    )
+
+    assert result.indexed == 1
+    assert db.get_document_source("docs-guide-md") is not None
+    assert db.get_document_source("docs-generated-output-md") is None
 
 
 def test_vespa_unavailable_marks_source_failed(db_engine: Engine, tmp_path: Path) -> None:

@@ -48,6 +48,7 @@ def test_retrieval_config_defaults_when_section_absent(tmp_path: Path) -> None:
     assert r.chunk_overlap_chars == 200
     assert r.max_feed_workers == 5
     assert r.query_timeout_seconds == 5
+    assert r.auto_index_ignore_paths == []
 
 
 def test_retrieval_config_parsed_from_yaml(tmp_path: Path) -> None:
@@ -57,6 +58,9 @@ def test_retrieval_config_parsed_from_yaml(tmp_path: Path) -> None:
           vespa_url: http://vespa.internal:8080
           default_hits: 12
           chunk_size_chars: 2000
+          auto_index_ignore_paths:
+            - docs/generated
+            - docs/acdl
     """)
     cfg = HarnessConfig.load(_write_minimal_config(tmp_path, extra))
     r = cfg.retrieval
@@ -64,6 +68,7 @@ def test_retrieval_config_parsed_from_yaml(tmp_path: Path) -> None:
     assert r.vespa_url == "http://vespa.internal:8080"
     assert r.default_hits == 12
     assert r.chunk_size_chars == 2000
+    assert r.auto_index_ignore_paths == ["docs/generated", "docs/acdl"]
     # unspecified fields keep defaults
     assert r.chunk_overlap_chars == 200
 

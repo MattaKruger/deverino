@@ -89,3 +89,17 @@ def test_index_documents_result_has_required_artifacts(db_engine: Engine, tmp_pa
     assert "chunks_indexed" in result.artifacts
     assert "failures" in result.artifacts
     assert result.artifacts["indexed"] >= 1
+
+
+def test_index_documents_rejects_invalid_exclude_dirs(
+    db_engine: Engine, tmp_path: Path
+) -> None:
+    cfg = _make_config(tmp_path, RetrievalConfig())
+    db = BlackboardDatabase(db_engine)
+    session_id = db.start_session("test")
+    ctx = _make_ctx(db, cfg, session_id)
+
+    result = execute(ctx, {"paths": ["README.md"], "exclude_dirs": "docs/generated"})
+
+    assert result.status == "failed"
+    assert "exclude_dirs" in result.content

@@ -29,6 +29,14 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 
     glob_pattern = str(arguments.get("glob") or "**/*")
     force = bool(arguments.get("force", False))
+    raw_exclude_dirs = arguments.get("exclude_dirs") or []
+    if not isinstance(raw_exclude_dirs, list):
+        return SkillResult(
+            status="failed",
+            content="exclude_dirs must be a list of directory paths.",
+            artifacts={},
+        )
+    exclude_dirs = [str(path) for path in raw_exclude_dirs]
 
     vespa_client = LiveVespaDocumentClient(ctx.config.retrieval)
     indexer = DocumentIndexer(
@@ -41,6 +49,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         project_root=ctx.project_root,
         paths=[str(path) for path in paths],
         glob_pattern=glob_pattern,
+        exclude_dirs=exclude_dirs,
         force=force,
     )
 

@@ -81,6 +81,7 @@ class DocumentIndexer:
         paths: list[str],
         glob_pattern: str = "**/*",
         *,
+        exclude_dirs: list[str] | None = None,
         force: bool = False,
     ) -> IndexResult:
         result = IndexResult()
@@ -119,7 +120,12 @@ class DocumentIndexer:
                 result.failures.append({"uri": uri, "error": str(exc)})
             return result
 
-        resolved_files = self._resolve_files(resolved_root, paths, glob_pattern)
+        resolved_files = self._resolve_files(
+            resolved_root,
+            paths,
+            glob_pattern,
+            exclude_dirs=exclude_dirs or [],
+        )
         total = len(resolved_files)
         if total == 0:
             logger.info("No files resolved for indexing")
@@ -329,7 +335,17 @@ class DocumentIndexer:
     # File resolution
     # ------------------------------------------------------------------
 
-    def _resolve_files(self, project_root: Path, paths: list[str], glob_pattern: str) -> list[Path]:
+    def _resolve_files(
+        self,
+        project_root: Path,
+        paths: list[str],
+        glob_pattern: str,
+        *,
+        exclude_dirs: list[str],
+    ) -> list[Path]:
+        ignore_prefixes = _resolve_ignore_prefixes(
+            project_root, [*self._config.auto_index_ignore_paths, *exclude_dirs]
+        )
         files: list[Path] = []
         for raw_path in paths:
             path = Path(raw_path)
@@ -345,15 +361,20 @@ class DocumentIndexer:
 
             if _in_ignored_dir(path, project_root):
                 continue
+            if _under_ignore_prefix(path, ignore_prefixes):
+                continue
             if path.is_file():
                 files.append(path)
             elif path.is_dir():
                 for child in path.rglob(glob_pattern):
                     resolved_child = child.resolve()
-                    if resolved_child.is_file() and not _in_ignored_dir(
-                        resolved_child, project_root
-                    ):
-                        files.append(resolved_child)
+                    if not resolved_child.is_file():
+                        continue
+                    if _in_ignored_dir(resolved_child, project_root):
+                        continue
+                    if _under_ignore_prefix(resolved_child, ignore_prefixes):
+                        continue
+                    files.append(resolved_child)
         return files
 
 
@@ -368,6 +389,29 @@ def _in_ignored_dir(path: Path, project_root: Path) -> bool:
     except ValueError:
         return False
     return any(part in IGNORED_DIR_NAMES for part in rel.parts)
+
+
+def _resolve_ignore_prefixes(project_root: Path, raw_paths: list[str]) -> list[Path]:
+    """Resolve user-supplied ignore paths (relative or absolute) against project_root."""
+    resolved: list[Path] = []
+    for raw in raw_paths:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = project_root / candidate
+        resolved.append(candidate.resolve())
+    return resolved
+
+
+def _under_ignore_prefix(path: Path, ignore_prefixes: list[Path]) -> bool:
+    for prefix in ignore_prefixes:
+        if path == prefix:
+            return True
+        try:
+            path.relative_to(prefix)
+        except ValueError:
+            continue
+        return True
+    return False
 
 
 def _is_secret_file(name: str) -> bool:

@@ -76,6 +76,7 @@ class RetrievalConfig:
     max_file_bytes: int = 5 * 1024 * 1024
     query_timeout_seconds: int = 5
     auto_index_paths: list[str] = field(default_factory=lambda: ["docs/"])
+    auto_index_ignore_paths: list[str] = field(default_factory=list)
 
 
 def _find_dotenv() -> Path | None:
@@ -201,6 +202,9 @@ class HarnessConfig:
             query_timeout_seconds=int(retrieval_raw.get("query_timeout_seconds", 5)),
             auto_index_paths=_parse_string_list(
                 retrieval_raw.get("auto_index_paths", ["docs/"])
+            ),
+            auto_index_ignore_paths=_parse_string_list(
+                retrieval_raw.get("auto_index_ignore_paths", [])
             ),
         )
 

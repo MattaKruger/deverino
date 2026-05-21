@@ -16,6 +16,12 @@ parameters:
       type: string
       description: Optional glob used when a path is a directory.
       default: "**/*"
+    exclude_dirs:
+      type: array
+      items:
+        type: string
+      description: Directories to skip while indexing, relative to the project root.
+      default: []
     force:
       type: boolean
       description: Reindex sources even when their content hash has not changed.

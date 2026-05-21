@@ -284,10 +284,25 @@ def documents_index(
             help="Reindex sources even when their content hash is unchanged.",
         ),
     ] = False,
+    exclude_dirs: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--exclude-dir",
+            help="Directory to skip while indexing. May be provided more than once.",
+        ),
+    ] = None,
 ) -> None:
     """Index project documents into Vespa retrieval."""
     app_state = _new_app_state()
-    _run_command(lambda: _index_documents(app_state, paths, glob_pattern, force=force))
+    _run_command(
+        lambda: _index_documents(
+            app_state,
+            paths,
+            glob_pattern,
+            exclude_dirs=exclude_dirs or [],
+            force=force,
+        )
+    )
 
 
 @app.command()
@@ -677,11 +692,17 @@ def _index_documents(
     paths: list[str],
     glob_pattern: str,
     *,
+    exclude_dirs: list[str],
     force: bool,
 ) -> None:
     result = app_state.skill_runner.execute_skill(
         tool_name="index_documents",
-        arguments={"paths": paths, "glob": glob_pattern, "force": force},
+        arguments={
+            "paths": paths,
+            "glob": glob_pattern,
+            "exclude_dirs": exclude_dirs,
+            "force": force,
+        },
         session_id=app_state.session_id,
     )
     console.print(result.content, markup=False)
