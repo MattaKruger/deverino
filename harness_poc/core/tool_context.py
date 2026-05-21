@@ -9,13 +9,16 @@ callbacks — those are SkillRunner concerns.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
     from harness_poc.core.config import RuntimeConfig
+
+from harness_poc.core.skill_context import CancellationToken
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,3 +35,8 @@ class ToolContext:
     project_root: Path
     database: BlackboardAccessProxy | None = None
     runtime_config: RuntimeConfig | None = None
+    cancellation: CancellationToken = field(default_factory=CancellationToken)
+
+    @property
+    def cancelled(self) -> bool:
+        return self.cancellation.cancelled

@@ -34,7 +34,7 @@ def register(
     name: str,
     description: str,
     parameters: dict[str, Any],
-    handler: Callable[..., dict[str, Any]],
+    handler: Callable[..., object],
     **extra: Any,  # noqa: ANN401
 ) -> None:
     """Register a built-in tool.

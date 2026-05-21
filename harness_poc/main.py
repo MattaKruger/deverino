@@ -4,38 +4,19 @@ import asyncio
 
 from harness_poc.app_factory import build_app_state
 from harness_poc.cli import app
-from harness_poc.core.processors.circuit_breaker import run_circuit_breaker
-from harness_poc.core.processors.llm_worker import run_llm_worker
-from harness_poc.core.processors.tool_worker import run_skill_worker
 
 
 async def run_async_main(session_id: str | None = None) -> None:
-    app_state = build_app_state()
-    effective_session_id = session_id or app_state.session_id
-
-    await asyncio.gather(
-        run_circuit_breaker(
-            app_state.event_bus,
-            effective_session_id,
-            max_retries=app_state.config.runtime.max_retries,
-            max_tokens=app_state.config.runtime.max_tokens,
-        ),
-        app_state.materializer_runner.run_forever()
-        if app_state.materializer_runner is not None
-        else asyncio.sleep(0),
-        run_llm_worker(
-            app_state.event_bus,
-            effective_session_id,
-            app_state.database,
-            app_state.config,
-            app_state.skill_runner,
-        ),
-        run_skill_worker(
-            app_state.event_bus,
-            effective_session_id,
-            app_state.skill_runner,
-        ),
+    app_state = build_app_state(session_id=session_id)
+    await app_state.long_lived.supervisor.start(app_state.runtime)
+    materializer_task = asyncio.create_task(
+        app_state.long_lived.materializer.run_forever(),
+        name="materializer",
     )
+    try:
+        await materializer_task
+    finally:
+        await app_state.long_lived.supervisor.stop()
 
 
 def main() -> None:

@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.skill_context import SkillResult
-from harness_poc.core.tool_context import ToolContext
 from harness_poc.system_tools.container_exec import container_exec
 from harness_poc.system_tools.container_spawn import container_spawn
+
+if TYPE_CHECKING:
+    from harness_poc.core.tool_context import ToolContext
 
 DEFAULT_TIMEOUT_SECONDS = 30
 MAX_TIMEOUT_SECONDS = 300
@@ -21,7 +23,7 @@ MAX_STDOUT_CHARS = 20_000
 MAX_STDERR_CHARS = 20_000
 
 
-def execute_python(
+def execute_python(  # noqa: PLR0913
     ctx: ToolContext,
     code: str = "",
     container: str = "",
@@ -55,6 +57,12 @@ def execute_python(
         if image:
             spawn_args["image"] = image
         spawn_result = container_spawn(ctx, **spawn_args)
+        if ctx.cancelled:
+            return SkillResult(
+                status="cancelled",
+                content=f"cancelled: {ctx.cancellation.reason}",
+                artifacts={"error": "cancelled", "reason": ctx.cancellation.reason},
+            )
         if spawn_result.status != "success":
             return SkillResult(
                 status=spawn_result.status,
@@ -77,6 +85,7 @@ def execute_python(
         container=container,
         workdir=workdir,
         timeout_seconds=timeout,
+        cancellation=ctx.cancellation,
     )
 
     artifacts = _merge_artifacts(

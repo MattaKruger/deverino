@@ -18,12 +18,16 @@ import importlib.util
 import inspect
 import json as _json
 import logging
-from typing import TYPE_CHECKING, Any
+import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import TYPE_CHECKING, Any, cast
 
+from harness_poc.core.skill_context import CancellationToken, SkillResult, SkillStatus
 from harness_poc.core.tool_context import ToolContext
 from harness_poc.core.tool_result import ToolResult
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
@@ -31,6 +35,8 @@ if TYPE_CHECKING:
     from harness_poc.core.skill_runner import SkillRunner
 
 logger = logging.getLogger(__name__)
+_CANCELLABLE_TOOL_NAMES = frozenset({"container_exec", "execute_python"})
+_CANCELLATION_POLL_S = 0.05
 
 
 class ToolRunner:
@@ -57,6 +63,7 @@ class ToolRunner:
         self._database: BlackboardAccessProxy | None = database
         self._runtime_config: RuntimeConfig | None = runtime_config
         self._discovered = False
+        self._active_tokens: dict[str, CancellationToken] = {}
 
     # ------------------------------------------------------------------
     # Discovery
@@ -123,12 +130,14 @@ class ToolRunner:
     # Execution
     # ------------------------------------------------------------------
 
-    def execute_tool(
+    def execute_tool(  # noqa: PLR0911
         self,
         tool_name: str,
         arguments: dict[str, Any],
         *,
         session_id: str = "",
+        call_id: str | None = None,
+        cancellation: CancellationToken | None = None,
     ) -> str:
         """Execute a tool and return its JSON-serialized result.
 
@@ -144,7 +153,10 @@ class ToolRunner:
         if info is None:
             return _json.dumps({"error": f"Unknown tool: {tool_name}"})
 
-        handler = info["handler"]
+        handler = cast("Callable[..., object]", info["handler"])
+        token = cancellation or CancellationToken()
+        if call_id is not None:
+            self._active_tokens[call_id] = token
 
         try:
             # Skill-backed tools (from project_skills/) route through SkillRunner
@@ -153,25 +165,34 @@ class ToolRunner:
                     tool_name=tool_name,
                     arguments=arguments,
                     session_id=session_id,
+                    call_id=call_id,
+                    cancellation=token,
                 )
                 return _json.dumps(result.to_dict(), ensure_ascii=False)
 
             # Built-in tools — inject ToolContext if the handler accepts it
+            kwargs = dict(arguments)
+            if _accepts_cancellation(handler):
+                kwargs["cancellation"] = token
             if _accepts_context(handler):
                 ctx = ToolContext(
                     session_id=session_id,
                     project_root=self._project_root,
                     database=self._database,
                     runtime_config=self._runtime_config,
+                    cancellation=token,
                 )
-                result = handler(ctx, **arguments)
+                result = self._execute_handler(tool_name, handler, token, ctx, **kwargs)
             else:
-                result = handler(**arguments)
+                result = self._execute_handler(tool_name, handler, token, **kwargs)
         except TypeError as e:
             return _json.dumps({"error": f"Invalid arguments for {tool_name}: {e}"})
         except Exception:
             logger.exception("Tool execution failed: %s", tool_name)
             return _json.dumps({"error": f"Tool {tool_name} raised an unexpected error."})
+        finally:
+            if call_id is not None:
+                self._active_tokens.pop(call_id, None)
 
         if isinstance(result, ToolResult):
             return _json.dumps(result.to_dict(), ensure_ascii=False)
@@ -181,6 +202,23 @@ class ToolRunner:
             return _json.dumps(result.to_dict(), ensure_ascii=False)
 
         return _json.dumps(result, ensure_ascii=False)
+
+    def cancel_call(self, call_id: str, reason: str) -> None:
+        token = self._active_tokens.get(call_id)
+        if token is not None:
+            token.cancel(reason)
+
+    def _execute_handler(
+        self,
+        tool_name: str,
+        handler: Callable[..., object],
+        token: CancellationToken,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Any:  # noqa: ANN401
+        if tool_name not in _CANCELLABLE_TOOL_NAMES:
+            return handler(*args, **kwargs)
+        return _execute_with_token(handler, token, *args, **kwargs)
 
     # ------------------------------------------------------------------
     # Introspection
@@ -280,10 +318,10 @@ def _make_skill_backed_stub(name: str) -> Any:  # noqa: ANN401
     return _stub
 
 
-def _accepts_context(handler: Any) -> bool:
+def _accepts_context(handler: object) -> bool:
     """Return True if ``handler`` accepts a ``ToolContext`` first argument."""
     try:
-        sig = inspect.signature(handler)
+        sig = inspect.signature(cast("Callable[..., object]", handler))
     except (ValueError, TypeError):
         return False
     params = list(sig.parameters.values())
@@ -297,3 +335,60 @@ def _accepts_context(handler: Any) -> bool:
     if isinstance(ann, str):
         return ann == "ToolContext"
     return getattr(ann, "__name__", "") == "ToolContext"
+
+
+def _accepts_cancellation(handler: object) -> bool:
+    try:
+        sig = inspect.signature(cast("Callable[..., object]", handler))
+    except (ValueError, TypeError):
+        return False
+    return "cancellation" in sig.parameters
+
+
+def _execute_with_token(
+    fn: Callable[..., object],
+    token: CancellationToken,
+    *args: Any,  # noqa: ANN401
+    **kwargs: Any,  # noqa: ANN401
+) -> SkillResult:
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tool-runner")
+    future = executor.submit(fn, *args, **kwargs)
+    try:
+        while not future.done():
+            if token.cancelled:
+                future.cancel()
+                executor.shutdown(wait=False, cancel_futures=True)
+                return SkillResult(
+                    status="cancelled",
+                    content=f"cancelled: {token.reason}",
+                    artifacts={},
+                )
+            time.sleep(_CANCELLATION_POLL_S)
+        result = future.result()
+        if isinstance(result, SkillResult):
+            return result
+        if isinstance(result, ToolResult):
+            return SkillResult(
+                status="success",
+                content=_json.dumps(result.to_dict(), ensure_ascii=False),
+                artifacts=result.to_dict(),
+            )
+        to_dict = getattr(result, "to_dict", None)
+        if callable(to_dict):
+            data = to_dict()
+            raw_status = data.get("status") or "success"
+            status: SkillStatus = (
+                cast("SkillStatus", raw_status)
+                if raw_status
+                in {"success", "failed", "blocked", "cancelled", "needs_orchestrator_action"}
+                else "success"
+            )
+            return SkillResult(
+                status=status,
+                content=str(data.get("content") or data),
+                artifacts=data.get("artifacts") if isinstance(data.get("artifacts"), dict) else {},
+            )
+        return SkillResult(status="success", content=_json.dumps(result, ensure_ascii=False))
+    finally:
+        if future.done():
+            executor.shutdown(wait=False)

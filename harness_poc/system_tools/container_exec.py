@@ -10,9 +10,10 @@ import json
 import logging
 import shutil
 import subprocess
+import time
 from typing import Any
 
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.skill_context import CancellationToken, SkillResult
 
 BACKENDS = ("podman", "docker")
 DEFAULT_TIMEOUT_SECONDS = 120
@@ -20,12 +21,13 @@ MAX_TIMEOUT_SECONDS = 300
 logger = logging.getLogger(__name__)
 
 
-def container_exec(
+def container_exec(  # noqa: PLR0911, PLR0913
     command: str = "",
     container: str = "",
     backend: str = "auto",
     workdir: str = "",
     timeout_seconds: int | None = None,
+    cancellation: CancellationToken | None = None,
 ) -> SkillResult:
     """Run a command inside an existing container."""
     command = (command or "").strip()
@@ -76,13 +78,57 @@ def container_exec(
     )
 
     try:
-        result = subprocess.run(  # noqa: S603
+        process = subprocess.Popen(  # noqa: S603
             exec_cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
-            check=False,
         )
+        start = time.monotonic()
+        while process.poll() is None:
+            if cancellation is not None and cancellation.cancelled:
+                process.terminate()
+                try:
+                    stdout, stderr = process.communicate(timeout=1)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                return SkillResult(
+                    status="cancelled",
+                    content=f"cancelled: {cancellation.reason}",
+                    artifacts={
+                        "backend": resolved_backend,
+                        "container": container,
+                        "command": command,
+                        "stdout": stdout.strip(),
+                        "stderr": stderr.strip(),
+                        "timeout_seconds": timeout,
+                    },
+                )
+            if time.monotonic() - start >= timeout:
+                process.kill()
+                stdout, stderr = process.communicate()
+                logger.error(
+                    "Container exec timed out",
+                    extra={
+                        "backend": resolved_backend,
+                        "container": container,
+                        "command": command,
+                    },
+                )
+                return SkillResult(
+                    status="failed",
+                    content=f"Command timed out after {timeout}s in container '{container}'.",
+                    artifacts={
+                        "backend": resolved_backend,
+                        "container": container,
+                        "timeout_seconds": timeout,
+                        "stdout": stdout.strip(),
+                        "stderr": stderr.strip(),
+                    },
+                )
+            time.sleep(0.05)
+        stdout, stderr = process.communicate()
     except subprocess.TimeoutExpired:
         logger.exception(
             "Container exec timed out",
@@ -123,12 +169,12 @@ def container_exec(
         "backend": resolved_backend,
         "container": container,
         "command": command,
-        "exit_code": result.returncode,
-        "stdout": result.stdout.strip(),
-        "stderr": result.stderr.strip(),
+        "exit_code": process.returncode,
+        "stdout": stdout.strip(),
+        "stderr": stderr.strip(),
         "timeout_seconds": timeout,
     }
-    status: str = "success" if result.returncode == 0 else "failed"
+    status: str = "success" if process.returncode == 0 else "failed"
 
     return SkillResult(
         status=status,  # type: ignore[arg-type]
@@ -192,7 +238,10 @@ _register(
             },
             "timeout_seconds": {
                 "type": "integer",
-                "description": f"Max execution time in seconds (default: {DEFAULT_TIMEOUT_SECONDS}, max: {MAX_TIMEOUT_SECONDS}).",
+                "description": (
+                    "Max execution time in seconds "
+                    f"(default: {DEFAULT_TIMEOUT_SECONDS}, max: {MAX_TIMEOUT_SECONDS})."
+                ),
             },
         },
         "required": ["command", "container"],

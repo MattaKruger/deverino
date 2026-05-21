@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from harness_poc.app_factory import Runtime
     from harness_poc.core.config import HarnessConfig
     from harness_poc.core.database import BlackboardDatabase
     from harness_poc.core.skill_runner import SkillRunner
@@ -28,6 +29,11 @@ class MaterializerRunner:
         self._session_id = session_id
         self._poll_interval = poll_interval
         self._no_change_count: dict[str, int] = {}
+
+    def swap_runtime(self, runtime: Runtime) -> None:
+        """Replace reloadable runtime references while preserving materializer state."""
+        self._skill_runner = runtime.skill_runner
+        self._config = runtime.config
 
     async def run_forever(self) -> None:
         while True:

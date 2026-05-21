@@ -61,6 +61,12 @@ class SkillCompleted(BaseEvent):
         return self
 
 
+class SkillCancelled(BaseEvent):
+    call_id: str
+    skill_name: str
+    reason: str
+
+
 class AgentInputAdded(BaseEvent):
     user_content: str
 
@@ -143,6 +149,7 @@ EVENT_REGISTRY: dict[str, type[BaseEvent]] = {
         SkillCalled,
         SkillRequested,
         SkillCompleted,
+        SkillCancelled,
         AgentInputAdded,
         LLMActionEmitted,
         StreamPaused,

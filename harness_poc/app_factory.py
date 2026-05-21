@@ -51,6 +51,7 @@ if TYPE_CHECKING:
 
     from harness_poc.core.llm_client import Message
     from harness_poc.core.materializer_runner import MaterializerRunner
+    from harness_poc.core.processor_supervisor import ProcessorSupervisor
 
 
 def _default_on_text(chunk: str) -> None:
@@ -110,8 +111,8 @@ class Runtime:
 
 @dataclass(slots=True)
 class LongLived:
-    materializer: MaterializerRunner | None
-    supervisor: object | None = None
+    materializer: MaterializerRunner
+    supervisor: ProcessorSupervisor
 
 
 @dataclass(slots=True)
@@ -181,7 +182,7 @@ class AppState:
         self.runtime.tools = value
 
     @property
-    def materializer_runner(self) -> MaterializerRunner | None:
+    def materializer_runner(self) -> MaterializerRunner:
         return self.long_lived.materializer
 
 
@@ -406,6 +407,7 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
 
 def build_long_lived(identity: Identity, runtime: Runtime) -> LongLived:
     from harness_poc.core.materializer_runner import MaterializerRunner  # noqa: PLC0415
+    from harness_poc.core.processor_supervisor import ProcessorSupervisor  # noqa: PLC0415
 
     materializer = MaterializerRunner(
         db=identity.database,
@@ -414,7 +416,10 @@ def build_long_lived(identity: Identity, runtime: Runtime) -> LongLived:
         session_id=identity.session_id,
         poll_interval=runtime.config.runtime.materializer_poll_interval,
     )
-    return LongLived(materializer=materializer)
+    return LongLived(
+        materializer=materializer,
+        supervisor=ProcessorSupervisor(identity),
+    )
 
 
 def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:

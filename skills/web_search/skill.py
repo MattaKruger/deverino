@@ -42,13 +42,17 @@ class LangSearchSettings(BaseSettings):
         return cls(_env_file=env_path)  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
 
 
-def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
-    del ctx  # not currently used
-
+def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noqa: PLR0911
     query = str(arguments.get("query") or "").strip()
     if not query:
         msg = "web_search requires a query string"
         raise ValueError(msg)
+    if ctx.cancelled:
+        return SkillResult(
+            status="cancelled",
+            content=f"cancelled: {ctx.cancellation.reason}",
+            artifacts={"query": query, "reason": ctx.cancellation.reason},
+        )
 
     count = _clamp_count(arguments.get("count", DEFAULT_COUNT))
     freshness = str(arguments.get("freshness", "noLimit"))
@@ -58,6 +62,12 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 
     if settings.api_key is None:
         return _mock_result(query, count)
+    if ctx.cancelled:
+        return SkillResult(
+            status="cancelled",
+            content=f"cancelled: {ctx.cancellation.reason}",
+            artifacts={"query": query, "reason": ctx.cancellation.reason},
+        )
 
     try:
         results = _search_langsearch(

@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 from harness_poc.core.permissions import SkillPermissions
-from harness_poc.core.skill_context import SkillContext
+from harness_poc.core.skill_context import CancellationToken, SkillContext
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ class SkillRunner:
             config.paths.system_skills,
             config.paths.project_skills,
         )
+        self._active_tokens: dict[str, CancellationToken] = {}
 
     def discover_skills(self) -> list[dict[str, Any]]:
         tools: list[dict[str, Any]] = []
@@ -122,15 +123,20 @@ class SkillRunner:
         )
         return result.content
 
-    def execute_skill(
+    def execute_skill(  # noqa: PLR0913
         self,
         tool_name: str,
         arguments: dict[str, Any],
         session_id: str,
         on_text: Callable[[str], None] | None = None,
         on_tool_event: Callable[[str], None] | None = None,
+        call_id: str | None = None,
+        cancellation: CancellationToken | None = None,
     ) -> SkillResult:
         resolved_tool_name = self._resolve_alias(tool_name)
+        token = cancellation or CancellationToken()
+        if call_id is not None:
+            self._active_tokens[call_id] = token
         logger.debug(
             "Executing skill",
             extra={
@@ -154,6 +160,7 @@ class SkillRunner:
                 permissions=skill_permissions,
                 stream_text=on_text,
                 on_tool_event=on_tool_event,
+                cancellation=token,
             )
             normalized_arguments = self._normalize_arguments(resolved_tool_name, arguments)
 
@@ -168,6 +175,9 @@ class SkillRunner:
                 },
             )
             raise
+        finally:
+            if call_id is not None:
+                self._active_tokens.pop(call_id, None)
 
         if result.status == "success":
             logger.debug(
@@ -191,6 +201,11 @@ class SkillRunner:
             )
 
         return result
+
+    def cancel_call(self, call_id: str, reason: str) -> None:
+        token = self._active_tokens.get(call_id)
+        if token is not None:
+            token.cancel(reason)
 
     def _find_skill_file(self, tool_name: str) -> Path:
         for skills_dir in self.skills_dirs:
@@ -281,7 +296,10 @@ class SkillRunner:
             msg = f"Skill {skill_file} must define string name and description"
             raise TypeError(msg)
         if skill_type not in ("tool", "skill", "knowledge"):
-            msg = f"Skill {skill_file} type must be 'tool', 'skill', or 'knowledge', got {skill_type!r}"
+            msg = (
+                f"Skill {skill_file} type must be 'tool', 'skill', or 'knowledge', "
+                f"got {skill_type!r}"
+            )
             raise TypeError(msg)
         if not isinstance(parameters, dict):
             msg = f"Skill {skill_file} parameters must be a mapping"

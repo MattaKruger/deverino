@@ -14,7 +14,21 @@ if TYPE_CHECKING:
     from harness_poc.core.database import BlackboardDatabase
 
 
-SkillStatus = Literal["success", "failed", "blocked", "needs_orchestrator_action"]
+SkillStatus = Literal["success", "failed", "blocked", "cancelled", "needs_orchestrator_action"]
+
+
+@dataclass(slots=True)
+class CancellationToken:
+    _cancelled: bool = False
+    reason: str = ""
+
+    def cancel(self, reason: str) -> None:
+        self._cancelled = True
+        self.reason = reason
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +70,11 @@ class SkillContext:
     permissions: SkillPermissions = field(default_factory=SkillPermissions)
     stream_text: Callable[[str], None] | None = None
     on_tool_event: Callable[[str], None] | None = None
+    cancellation: CancellationToken = field(default_factory=CancellationToken)
+
+    @property
+    def cancelled(self) -> bool:
+        return self.cancellation.cancelled
 
     @property
     def project_root(self) -> Path:

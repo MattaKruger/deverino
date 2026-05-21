@@ -94,6 +94,28 @@ class PydanticAgentRuntime:
             messages=result.new_messages(),
         )
 
+    def inject_synthetic_tool_return(
+        self,
+        messages: list[ModelMessage],
+        call_id: str,
+        tool_name: str,
+        content: str,
+    ) -> list[ModelMessage]:
+        from pydantic_ai.messages import ModelRequest, ToolReturnPart  # noqa: PLC0415
+
+        return [
+            *messages,
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name=tool_name,
+                        content=content,
+                        tool_call_id=call_id,
+                    )
+                ]
+            ),
+        ]
+
     def stream_text(
         self,
         prompt: str,
@@ -471,6 +493,7 @@ def _execute_builtin_tool(
             tool_name,
             arguments,
             session_id=ctx.deps.session_id,
+            call_id=ctx.tool_call_id,
         )
     except Exception:
         _emit_tool_progress(ctx, f"  {tool_name}: FAILED")
@@ -539,6 +562,7 @@ def execute_skill_as_tool(
             session_id=ctx.deps.session_id,
             on_text=ctx.deps.stream_text,
             on_tool_event=ctx.deps.on_tool_event,
+            call_id=ctx.tool_call_id,
         )
     except Exception:
         _emit_tool_progress(ctx, f"  {skill_name}: FAILED")
