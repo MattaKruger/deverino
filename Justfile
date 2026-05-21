@@ -24,6 +24,11 @@ dashboard-summary:
 dashboard port="8050":
     uv run harness-poc dashboard serve --port {{port}}
 
+# Start the local ACDL playground: just acdl-playground 8765
+# Then open http://127.0.0.1:8765/acdl-preview.html
+acdl-playground port="8765":
+    python3 -m http.server {{port}} --directory docs/acdl
+
 # Run a workflow: just workflow <name> "<objective>"
 workflow name objective:
     uv run harness-poc workflow run {{name}} "{{objective}}"
