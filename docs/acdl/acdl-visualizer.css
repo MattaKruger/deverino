@@ -1,0 +1,2003 @@
+/* ======================================================
+   ACDL PROMPT VISUALIZER - ACADEMIC PAPER STYLE
+   Clean, professional design for research publications
+   ====================================================== */
+
+:root {
+  /* Light, professional color palette */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --bg-tertiary: #f1f3f4;
+
+  --border-light: #e1e4e8;
+  --border-medium: #d0d7de;
+  --border-dark: #b0b8c1;
+
+  --text-primary: #1f2328;
+  --text-secondary: #57606a;
+  --text-muted: #8b949e;
+
+  /* Role colors - professional, muted tones */
+  --system-bg: #f0f7ff;
+  --system-border: #0969da;
+  --system-text: #0550ae;
+
+  --assistant-bg: #e6fafa;
+  --assistant-border: #1acad1;
+  --assistant-text: #0a9196;
+
+  --tool-bg: #ffebe6;
+  --tool-border: #f7660b;
+  --tool-text: #800d00;
+
+  --user-bg: #fff8e6;
+  --user-border: #e5990b;
+  --user-text: #805600;
+
+  --none-bg: #f5f5f5;
+  --none-border: #6e7781;
+  --none-text: #57606a;
+
+  /* Control flow colors - subtle blue-gray */
+  --control-bg: #f6f8fa;
+  --control-border: #6e7781;
+  --control-text: #57606a;
+  --control-header-bg: #eaeef2;
+
+  /* Accent colors for inline elements */
+  --accent-template: #9333ea;
+  --accent-template-bg: #faf5ff;
+  /* Functions - purple */
+  --accent-function: #9333ea;
+  --accent-function-bg: #faf5ff;
+  /* Context variables - teal */
+  --accent-context: #0da66b;
+  --accent-context-bg: #e0ffdd;
+  /* Variables (all indexes, iterables) - light blue */
+  --accent-variable: #0969da;
+  --accent-variable-bg: rgba(9, 105, 218, 0.12);
+
+  /* Legacy aliases for backwards compatibility */
+  --accent-index: var(--accent-variable);
+  --accent-index-bg: var(--accent-variable-bg);
+  --accent-other-index: var(--accent-variable);
+  --accent-other-index-bg: var(--accent-variable-bg);
+  --accent-expr: #c2410c;
+  --accent-expr-bg: rgba(251, 146, 60, 0.15);
+  --accent-expr-border: #ea580c;
+  --accent-comment: #6e7781;
+}
+
+/* ======================================================
+   GLOBAL STYLES
+   ====================================================== */
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 40px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+* {
+  box-sizing: border-box;
+  line-height: 1;
+}
+
+/* ======================================================
+   PROMPT CONTAINER
+   ====================================================== */
+
+.prompt-container {
+  display: inline-block;
+  min-width: 200px;
+  max-width: var(--prompt-width, 800px);
+  margin: 0 auto;
+  position: relative;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-medium);
+  overflow: hidden;
+}
+
+/* Warning when content is cropped */
+#overflow-warning {
+  display: none;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  color: #856404;
+  padding: 6px 10px;
+  margin: 12px 20px;
+  border-radius: 4px;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+#overflow-warning.visible {
+  display: block !important;
+}
+
+/* Divider between multiple prompts in the same file */
+.prompt-divider {
+  height: 12px;
+  margin: 8px 0;
+  border-bottom: 1px dashed var(--border-medium);
+}
+
+/* File-level comments (between prompts) */
+.file-comment {
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  font-style: italic;
+  margin: 6px 0;
+  padding-left: 10px;
+}
+
+/* ======================================================
+   PROMPT TITLE
+   ====================================================== */
+
+.prompt-title {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-medium);
+  border-radius: 3px;
+  padding: 3px 8px;
+  margin-bottom: 4px;
+  margin-left: -10px;
+  padding-left: 10px;
+}
+
+.prompt-title h1 {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+  white-space: nowrap;
+}
+
+/* Ensure time-index is visible in title */
+.prompt-title .time-index {
+  display: inline;
+  font-size: inherit;
+  color: var(--accent-variable);
+  font-weight: 700;
+}
+
+/* ======================================================
+   ROLE MESSAGES
+   ====================================================== */
+
+.role-message {
+  border: none;
+  border-left: 1px solid var(--border-medium);
+  border-radius: 0;
+  margin: 4px 0;
+  padding: 0;
+  position: relative;
+}
+
+.role-message.system {
+  border-left-color: var(--system-border);
+}
+
+.role-message.user {
+  border-left-color: var(--user-border);
+}
+
+.role-message.assistant {
+  border-left-color: var(--assistant-border);
+}
+
+.role-message.tool {
+  border-left-color: var(--tool-border);
+}
+
+/* Role header badge - compact badge that wraps text */
+.role-message-header {
+  display: block;
+  width: fit-content;
+  padding: 1px 4px;
+  margin: 0;
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  border-radius: 0 0 2px 0;
+  line-height: 1;
+}
+
+.role-message.system .role-message-header {
+  background: var(--system-border);
+  color: white;
+}
+
+.role-message.user .role-message-header {
+  background: var(--user-border);
+  color: white;
+}
+
+.role-message.assistant .role-message-header {
+  background: var(--assistant-border);
+  color: white;
+}
+
+.role-message.tool .role-message-header {
+  background: var(--tool-border);
+  color: white;
+}
+
+/* ======================================================
+   NONE/COMPLETION PROMPT MESSAGE
+   ====================================================== */
+
+.none-message {
+  border: 1px solid var(--none-border);
+  border-radius: 0;
+  margin: 4px 0;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+  border-left-width: 1px;
+}
+
+.none-message:hover {
+  border-color: var(--border-dark);
+}
+
+.none-message-header {
+  display: block;
+  width: fit-content;
+  padding: 1px 4px;
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  border-radius: 0 0 2px 0;
+  background: var(--none-border);
+  color: white;
+  line-height: 1;
+}
+
+.role-body-block {
+  padding: 0 6px;
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px 3px;
+  align-items: center;
+}
+
+/* Add small gap after role header (first body block) */
+.role-message-header + .role-body-block,
+.none-message-header + .role-body-block {
+  margin-top: 2px;
+}
+
+/* Add small vertical gap between consecutive body blocks */
+.role-body-block + .role-body-block {
+  margin-top: 1px;
+}
+
+.role-body-block > * {
+  margin: 0;
+}
+
+/* ======================================================
+   INLINE ELEMENTS - Templates, Functions, Variables
+   ====================================================== */
+
+.template-block {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  background: var(--accent-template-bg);
+  border: 1px solid var(--accent-template);
+  color: var(--accent-template);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  max-width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  gap: 2px;
+  margin: 0;
+}
+
+.template-block::before {
+  content: '◆';
+  font-size: 7px;
+  opacity: 0.7;
+  display: inline-flex;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.template-name-and-args {
+  display: inline;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.func-block {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  background: var(--accent-function-bg);
+  border: 1px solid var(--accent-function);
+  color: var(--accent-function);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  max-width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  margin: 0;
+}
+
+.func-name {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.func-args-wrapper {
+  display: inline;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.func-parens {
+  color: var(--accent-function);
+  opacity: 0.7;
+}
+
+.context-var {
+  display: inline-block;
+  vertical-align: middle;
+  background: var(--accent-context-bg);
+  border: 1px solid var(--accent-context);
+  color: var(--accent-context);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap !important;
+  word-break: keep-all;
+  overflow-wrap: normal;
+  overflow: hidden;
+  text-overflow: clip;
+  max-width: 100%;
+  margin: 0;
+}
+
+.context-var * {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+.context-var .segment {
+  display: inline;
+  color: var(--accent-context);
+}
+
+.context-var .segment.base {
+  font-weight: 600;
+}
+
+/* Time indices inside context vars need to behave as inline text, not flex containers.
+   Use !important to override rules that come later. */
+.context-var .time-index,
+.context-var .other-index {
+  display: inline !important;
+  vertical-align: baseline !important;
+  line-height: inherit;
+  align-items: unset;
+}
+
+/* Ensure children of time-index inside context-var are also inline */
+.context-var .time-index *,
+.context-var .other-index * {
+  display: inline !important;
+  vertical-align: baseline !important;
+}
+
+/* Environment variables (env.*) - teal styling */
+.context-var.context-var-env {
+  background: var(--accent-context-bg);
+  border-color: var(--accent-context);
+  color: var(--accent-context);
+}
+
+.context-var.context-var-env .segment {
+  color: var(--accent-context);
+}
+
+/* Indices - All variables use light blue, no background */
+.time-index {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  color: var(--accent-variable);
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  line-height: 1;
+  margin: 0;
+}
+
+/* @ symbol in time indices - wrapped for html2canvas compatibility */
+.at-symbol {
+  color: inherit;
+}
+
+/* Ensure time-index is styled correctly even when nested inside context-var */
+.context-var .time-index,
+.context-var .segment .time-index,
+.context-var-env .time-index,
+.context-var-env .segment .time-index,
+.expr-context-var .time-index {
+  color: var(--accent-variable);
+}
+
+.other-index {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  color: var(--accent-variable);
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  line-height: 1;
+  padding-right: 2px;
+  margin: 0;
+}
+
+/* Index content - numbers and identifiers inside indices */
+.index-number,
+.index-identifier {
+  color: var(--accent-variable);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Arithmetic operators inside indices - black/neutral */
+.arith-op {
+  color: var(--text-primary);
+  font-weight: 400;
+}
+
+/* Control flow keywords - bold and prominent */
+.keyword {
+  display: inline;
+  color: #000000;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  font-size: 9px;
+}
+
+/* Keywords inside control flow headers need more space after them */
+.loop-block-outside-role-header .keyword,
+.loop-block-inside-role-header .keyword,
+.conditional-block-outside-role-header .keyword,
+.conditional-block-inside-role-header .keyword,
+.conditional-section-header .keyword,
+.switch-block-outside-role-header .keyword,
+.switch-block-inside-role-header .keyword,
+.switch-case-header .keyword,
+.switch-default-header .keyword {
+  margin-right: 3px;
+}
+
+/* ======================================================
+   EXPRESSION TOKENS - Inside conditions, iterables, switches
+   ====================================================== */
+
+/* Base expression class - all expression tokens inherit from this */
+.expr,
+.expr-context-var,
+.expr-namespace,
+.expr-ident,
+.expr-number,
+.expr-keyword,
+.expr-symbol,
+.expr-logic-op,
+.expr-connective,
+.expr-arith-op,
+.expr-string {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  padding-right: 2px;
+}
+
+/* Time indices inside expressions need padding */
+.condition-expr .time-index,
+.loop-iterable .time-index,
+.switch-expr .time-index,
+.case-match .time-index {
+  padding-right: 2px;
+}
+
+/* Context vars in expressions (env.foo, sys.bar(x), etc.) - green with box */
+.expr-context-var {
+  display: inline-block;
+  vertical-align: middle;
+  background: var(--accent-context-bg);
+  border: 1px solid var(--accent-context);
+  color: var(--accent-context);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap !important;
+  word-break: keep-all;
+  overflow-wrap: normal;
+  overflow: hidden;
+  text-overflow: clip;
+  max-width: 100%;
+  margin: 0;
+}
+
+.expr-context-var * {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+/* Segments inside expr-context-var should not break */
+.expr-context-var .segment {
+  white-space: nowrap;
+}
+
+/* Bracket and paren content should stay together */
+.index-bracket,
+.paren-content {
+  white-space: nowrap;
+}
+
+/* Namespace keywords (env, sys, resp, prompt) - green like context vars */
+.expr-namespace {
+  color: var(--accent-context);
+  font-weight: 700;
+}
+
+/* Identifiers in expressions - light blue like all variables */
+.expr-ident {
+  color: var(--accent-variable);
+  font-weight: 600;
+}
+
+/* Numbers in expressions - light blue like all variables */
+.expr-number {
+  color: var(--accent-variable);
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* Logical keywords in expressions (and, or, in) - add spacing around them */
+.expr-keyword {
+  display: inline-block;
+  color: var(--text-primary);
+  font-weight: 600;
+  padding-left: 2px !important;
+  padding-right: 4px !important;
+  margin: 0;
+}
+
+/* Symbols like [ ] , */
+.expr-symbol {
+  color: var(--text-secondary);
+}
+
+/* Period/dot - no spacing, negative left margin cancels padding-right of previous element */
+.expr-dot {
+  color: var(--text-secondary);
+  padding: 0 !important;
+  margin-left: -2px !important;
+}
+
+/* Comparison operators (==, !=, <, >, <=, >=) - no extra spacing */
+.expr-logic-op {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-variant-ligatures: none;
+  padding-right: 2px;
+}
+
+/* Logical connectives (&&, ||, &, |) - add spacing around them */
+.expr-connective {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-variant-ligatures: none;
+  margin: 0 0.35em;
+}
+
+/* Arithmetic operators (+, -, *, /, %) */
+.expr-arith-op {
+  color: var(--text-primary);
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* String literals */
+.expr-string {
+  color: #a31515;
+}
+
+/* Control flow expressions - high visibility */
+.loop-var {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-variable);
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  margin: 0;
+}
+
+.loop-iterable,
+.condition-expr,
+.switch-expr,
+.case-match {
+  display: inline;
+  font-weight: 700;
+  line-height: 1;
+  font-size: 9px;
+}
+
+/* Range expressions */
+.range-expr {
+  display: inline;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.range-dots {
+  color: var(--text-secondary);
+  font-weight: 600;
+  padding-right: 3px;
+}
+
+.range-keyword {
+  display: inline-block;
+  vertical-align: middle;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  margin: 0 3px;
+}
+
+.range-start,
+.range-end {
+  display: inline;
+  white-space: nowrap;
+}
+
+.range-step {
+  display: inline;
+}
+
+.range-step-value {
+  display: inline;
+  white-space: nowrap;
+}
+
+/* Built-in math functions (min, max) - neutral styling */
+.builtin-func {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  color: var(--text-primary);
+}
+
+/* Comments */
+.comment,
+.inline-comment {
+  color: var(--accent-comment);
+  font-style: italic;
+  font-size: 7px;
+  margin-left: 2px;
+  white-space: normal;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 350px;
+}
+
+/* Wrapper for blocks with comments - keeps them together when wrapping */
+.block-with-comment {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: top;
+  max-width: 100%;
+  gap: 4px;
+}
+
+/* When comment wraps to multiple lines, align to top */
+.block-with-comment.comment-wrapped {
+  align-items: flex-start;
+}
+
+/* Prioritize main content (templates/functions) over comments */
+.block-with-comment > .template-block,
+.block-with-comment > .func-block,
+.block-with-comment > .context-var,
+.block-with-comment > .range-expr {
+  flex-shrink: 0;
+}
+
+.comment-block {
+  color: var(--accent-comment);
+  font-style: italic;
+  padding: 1px 0;
+  margin: 1px 0;
+  font-size: 7px;
+}
+
+/* Name definitions: Name $varname := expr */
+.name-def {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 0;
+  margin: 1px 0;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.name-var {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 9px;
+}
+
+.name-assign {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 9px;
+}
+
+/* Name references: $varname - pink text */
+.name-ref {
+  color: #ec4899;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+/* ======================================================
+   FRAGMENT DEFINITIONS AND INVOCATIONS
+   ====================================================== */
+
+/* Fragment type keywords (Frag) - black like Name keyword */
+.frag-keyword {
+  color: #000000;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
+/* Fragment type badge [SF] or [RF] - subtle gray pill */
+.frag-badge {
+  display: inline-block;
+  background: #e5e7eb;
+  color: #4b5563;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 8px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+
+/* Fragment definition container - similar to prompt-container */
+.frag-def-container {
+  display: inline-block;
+  min-width: 200px;
+  max-width: var(--prompt-width, 800px);
+  margin: 0 auto;
+  position: relative;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-medium);
+  overflow: hidden;
+}
+
+/* Fragment definition title - similar to prompt-title */
+.frag-def-title {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-medium);
+  border-radius: 3px;
+  padding: 3px 8px;
+  margin-bottom: 4px;
+  margin-left: -10px;
+  padding-left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.frag-def-title h1 {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  white-space: nowrap;
+}
+
+/* Ensure time-index is visible in fragment title */
+.frag-def-title .time-index {
+  display: inline;
+  font-size: inherit;
+  color: var(--accent-variable);
+  font-weight: 700;
+}
+
+/* Fragment invocation wrapper - contains keyword + purple bubble */
+.frag-invocation-wrapper {
+  display: inline;
+}
+
+/* Fragment invocation - the purple bubble (like func-block) */
+.frag-invocation {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  background: var(--accent-function-bg);
+  border: 1px solid var(--accent-function);
+  color: var(--accent-function);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  max-width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  margin: 0;
+}
+
+.frag-invocation .frag-name {
+  font-weight: 600;
+  color: var(--accent-function);
+}
+
+.frag-invocation .frag-args-wrapper {
+  display: inline;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* List comprehensions: [ element | var ∈ iterable ] */
+.list-comp-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.list-comprehension {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-primary);
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 10px;
+}
+
+.list-comp-separator {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-primary);
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  padding: 0 2px;
+}
+
+.list-comp-var {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-variable);
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  padding: 0 2px;
+}
+
+.list-comp-in {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  padding: 0 2px;
+}
+
+/* ======================================================
+   END BLOCK - Conditional early termination
+   ====================================================== */
+
+.end-block {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  padding-right: 6px;
+  margin: 2px 0;
+  margin-left: -10px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  width: calc(100% + 10px);
+  border-radius: 2px;
+}
+
+.end-dashed-line {
+  flex-grow: 1;
+  height: 1px;
+  background: repeating-linear-gradient(
+    to right,
+    #6e7781 0,
+    #6e7781 4px,
+    transparent 4px,
+    transparent 8px
+  );
+  min-width: 10px;
+  margin-left: 10px;
+}
+
+.end-text {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 9px;
+}
+
+.end-keyword {
+  color: #000000;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  font-size: 9px;
+}
+
+.end-block .keyword {
+  color: #000000;
+  font-weight: 800;
+  font-size: 9px;
+}
+
+.end-block .condition-expr {
+  font-weight: 600;
+}
+
+/* ======================================================
+   CONTROL FLOW BLOCKS
+   ====================================================== */
+
+.loop-block-outside-role,
+.loop-block-inside-role,
+.switch-block-outside-role,
+.switch-block-inside-role,
+.conditional-block-outside-role,
+.conditional-block-inside-role {
+  position: relative;
+  margin: 2px 0;
+  border-radius: 2px;
+  padding: 2px 6px 2px 8px;
+  border-left: 1px solid var(--control-border);
+}
+
+.conditional-section {
+  position: relative;
+  margin: 1px 0;
+  padding: 2px 5px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: 2px;
+}
+
+/* Style control flow blocks inside role blocks to match outside-role style (border-left only) */
+.conditional-block-inside-role .conditional-section,
+.switch-block-inside-role .switch-case,
+.switch-block-inside-role .switch-default {
+  background: transparent !important;
+  border: none !important;
+  border-left: 1px solid var(--control-border) !important;
+  border-radius: 0 !important;
+}
+
+/* Loop headers */
+.loop-block-outside-role-header,
+.loop-block-inside-role-header {
+  padding: 1px 4px;
+  margin: -2px -6px 2px -8px;
+  border-radius: 0 2px 0 0;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 7px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--control-text);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  background: var(--control-header-bg);
+}
+
+.loop-block-outside-role-header::before,
+.loop-block-inside-role-header::before {
+  content: '↻';
+  font-size: 8px;
+  color: var(--control-border);
+  display: flex;
+  align-items: center;
+}
+
+/* Conditional headers (outside role) */
+.conditional-block-outside-role-header {
+  padding: 1px 4px;
+  margin: -2px -6px 2px -8px;
+  border-radius: 0 2px 0 0;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 7px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--control-text);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--control-header-bg);
+}
+
+.conditional-block-outside-role-header::before {
+  content: '◇';
+  font-size: 7px;
+  color: var(--control-border);
+  display: flex;
+  align-items: center;
+}
+
+/* Conditional headers */
+.conditional-section-header,
+.conditional-block-inside-role-header {
+  padding: 1px 4px;
+  margin: -2px -6px 2px -8px;
+  border-radius: 0 2px 0 0;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 7px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--control-text);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--control-header-bg);
+}
+
+.conditional-section-header::before,
+.conditional-block-inside-role-header::before {
+  content: '◇';
+  font-size: 7px;
+  color: var(--control-border);
+  display: flex;
+  align-items: center;
+}
+
+/* Switch headers */
+.switch-block-outside-role-header,
+.switch-block-inside-role-header {
+  padding: 1px 4px;
+  margin: -2px -6px 2px -8px;
+  border-radius: 0 2px 0 0;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 7px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--control-text);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  background: var(--control-header-bg);
+}
+
+.switch-block-outside-role-header::before,
+.switch-block-inside-role-header::before {
+  content: '⎇';
+  font-size: 8px;
+  color: var(--control-border);
+  display: flex;
+  align-items: center;
+}
+
+.switch-case,
+.switch-default {
+  margin: 1px 0;
+  padding: 2px 5px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: 2px;
+}
+
+.switch-case-header,
+.switch-default-header {
+  padding: 1px 4px;
+  margin: -2px -5px 2px -5px;
+  border-radius: 2px 2px 0 0;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 7px;
+  font-weight: 600;
+  color: var(--control-text);
+  white-space: nowrap;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: var(--control-header-bg);
+}
+
+
+/* ======================================================
+   BLOCK CHILDREN
+   ====================================================== */
+
+.block-children {
+  padding: 0 0 0 6px;
+  margin: 1px 0;
+}
+
+.conditional-child,
+.role-condition-child,
+.switch-child,
+.role-switch-child,
+.loop-child,
+.role-loop-child {
+  margin: 1px 0;
+  padding: 0;
+}
+
+/* ======================================================
+   LABEL BLOCKS
+   ====================================================== */
+
+.label-block {
+  margin: 4px 0;
+  position: relative;
+}
+
+.label-start,
+.label-end {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 7px;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  padding: 0;
+}
+
+.label-block-body {
+  border-left: 1px solid var(--border-light);
+  margin-left: 3px;
+  padding-left: 6px;
+}
+
+/* ======================================================
+   MARK BLOCKS - Right-side bracket with number
+   ====================================================== */
+
+.mark-block {
+  display: flex;
+  align-items: stretch;
+  margin: 4px 0;
+}
+
+.mark-block-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mark-block-bracket {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.mark-bracket-line {
+  display: block;
+  width: 5px;
+  height: 100%;
+  border: 2px solid #000000;
+  border-left: none;
+  border-radius: 0 2px 2px 0;
+  flex-shrink: 0;
+}
+
+.mark-bracket-number {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: #000000;
+  margin-left: 2px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+
+/* ======================================================
+   COLLAPSIBLE BEHAVIOR
+   ====================================================== */
+
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.collapsible-header:hover {
+  opacity: 0.8;
+}
+
+.collapsed .block-children,
+.collapsed .label-block-body,
+.collapsed > .role-body-block {
+  display: none;
+}
+
+.collapsed .collapsible-header::after {
+  content: ' ▸';
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+/* ======================================================
+   UPLOAD ZONE
+   ====================================================== */
+
+#drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--border-medium);
+  border-radius: 8px;
+  padding: 40px;
+  margin: 40px auto;
+  max-width: 400px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-weight: 500;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+#drop-zone:hover,
+#drop-zone.hover {
+  background: var(--bg-tertiary);
+  border-color: var(--system-border);
+  color: var(--text-primary);
+}
+
+.upload-button {
+  display: inline-block;
+  padding: 10px 20px;
+  background: var(--system-border);
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 12px;
+  font-weight: 600;
+  font-size: 13px;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.upload-button:hover {
+  background: var(--system-text);
+}
+
+/* ======================================================
+   APP LAYOUT
+   ====================================================== */
+
+#app {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+#sidebar {
+  width: 400px;
+  background: var(--bg-secondary);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-light);
+}
+
+#acdl-editor {
+  width: 100%;
+  flex-grow: 1;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 12px;
+  padding: 12px;
+  margin: 12px 0;
+  border: 1px solid var(--border-medium);
+  border-radius: 6px;
+  resize: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+#acdl-editor:focus {
+  outline: none;
+  border-color: var(--system-border);
+  box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.15);
+}
+
+#render-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--system-border);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+#render-btn:hover {
+  background: var(--system-text);
+}
+
+/* ======================================================
+   SCROLLBAR STYLING
+   ====================================================== */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-dark);
+}
+
+/* ======================================================
+   ERROR MESSAGES
+   ====================================================== */
+
+.error-msg {
+  color: #cf222e;
+  background: #ffebe9;
+  padding: 12px 16px;
+  border: 1px solid #ff8182;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 12px;
+}
+
+/* ======================================================
+   TEXT BLOCKS
+   ====================================================== */
+
+.text-block {
+  margin: 0;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+/* ======================================================
+   NESTED ROLE MESSAGES IN CONTROL FLOW
+   ====================================================== */
+
+.loop-block-outside-role .role-message,
+.loop-block-inside-role .role-message,
+.conditional-block-outside-role .role-message,
+.conditional-block-inside-role .role-message,
+.switch-block-outside-role .role-message,
+.switch-block-inside-role .role-message,
+.conditional-section .role-message,
+.switch-case .role-message,
+.switch-default .role-message,
+.none-message {
+  margin: 4px 0;
+}
+
+    /* Layout overrides for the app shell */
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg-primary);
+    }
+
+    /* Top header bar */
+    header {
+      height: 60px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 16px;
+      box-sizing: border-box;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-divider {
+      color: var(--text-muted);
+      font-weight: 300;
+    }
+
+    #drop-zone {
+      flex: 1;
+      max-width: 400px;
+      height: 50px;
+      border: 1px dashed var(--border-medium);
+      border-radius: 8px;
+      padding: 8px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      gap: 2px;
+    }
+
+    #drop-zone:hover,
+    #drop-zone.hover {
+      background: rgba(59, 130, 246, 0.1);
+      border-color: var(--system-border);
+    }
+
+    .drop-text {
+      font-weight: 600;
+    }
+
+    .browse-btn {
+      font-size: 12px;
+      color: var(--system-border);
+      font-weight: 400;
+    }
+
+    .prompt-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .prompt-selector label {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .prompt-selector select {
+      padding: 6px 10px;
+      border: 1px solid var(--border-medium);
+      border-radius: 6px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    /* Main content area */
+    .main-container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Sidebar editor panel */
+    #sidebar {
+      width: 420px;
+      min-width: 200px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      gap: 12px;
+      box-sizing: border-box;
+      transition: width 0.3s ease, min-width 0.3s ease, padding 0.3s ease;
+    }
+
+    #sidebar.collapsed {
+      width: 0 !important;
+      min-width: 0 !important;
+      padding: 0 !important;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .panel-header h3 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .panel-toggle-btn {
+      background: transparent;
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 12px;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .panel-toggle-btn:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border-color: var(--border-medium);
+    }
+
+    #acdl-editor-container {
+      flex: 1;
+      width: 100%;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--bg-primary);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    #acdl-editor-container:focus-within {
+      border-color: var(--system-border);
+      box-shadow: 0 0 0 3px var(--system-glow);
+    }
+
+    #acdl-editor-container .cm-editor {
+      height: 100%;
+    }
+
+    #acdl-editor-container .cm-scroller {
+      overflow: auto;
+    }
+
+    #render-btn {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 6px rgba(16, 185, 129, 0.25);
+    }
+
+    #render-btn:hover {
+      background: linear-gradient(135deg, #059669 0%, #047857 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 12px rgba(16, 185, 129, 0.35);
+    }
+
+    /* Resizer between panels */
+    .resizer {
+      width: 6px;
+      background: var(--border-subtle);
+      cursor: col-resize;
+      flex-shrink: 0;
+      transition: background 0.2s ease;
+      position: relative;
+    }
+
+    .resizer:hover,
+    .resizer.dragging {
+      background: var(--system-border);
+    }
+
+    .resizer::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 2px;
+      height: 30px;
+      background: var(--text-muted);
+      border-radius: 1px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .resizer:hover::after,
+    .resizer.dragging::after {
+      opacity: 1;
+    }
+
+    /* Output visualization panel */
+    #output-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 200px;
+      overflow: hidden;
+      transition: min-width 0.3s ease;
+    }
+
+    #output-wrapper.collapsed {
+      min-width: 0 !important;
+      flex: 0 !important;
+      width: 0 !important;
+      overflow: hidden;
+    }
+
+    #output-wrapper.collapsed #output-header,
+    #output-wrapper.collapsed #output {
+      display: none;
+    }
+
+    #output-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    #output-header h3 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    #output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 40px;
+      background: var(--bg-primary);
+    }
+
+    /* Collapsed panel restore buttons */
+    .restore-btn {
+      position: fixed;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 8px;
+      font-size: 12px;
+      transition: all 0.2s ease;
+      display: none;
+      z-index: 100;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+    }
+
+    .restore-btn:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border-color: var(--system-border);
+    }
+
+    #restore-sidebar {
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      border-left: none;
+      border-radius: 0 4px 4px 0;
+    }
+
+    #restore-output {
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      border-right: none;
+      border-radius: 4px 0 0 4px;
+    }
+
+    #sidebar.collapsed ~ .resizer ~ #output-wrapper #restore-sidebar,
+    .main-container:has(#sidebar.collapsed) #restore-sidebar {
+      display: block;
+    }
+
+    body:has(#sidebar.collapsed) #restore-sidebar {
+      display: block;
+    }
+
+    body:has(#output-wrapper.collapsed) #restore-output {
+      display: block;
+    }
+
+    /* Info message styling */
+    .info-msg {
+      color: var(--text-secondary);
+      text-align: center;
+      padding: 60px 40px;
+      font-size: 15px;
+    }
+
+    /* Collapsible support */
+    .collapsed > .block-children,
+    .collapsed > .role-body-block,
+    .collapsed > .loop-child,
+    .collapsed > .role-loop-child,
+    .collapsed > .switch-child,
+    .collapsed > .role-switch-child,
+    .collapsed > .role-condition-child {
+      display: none !important;
+    }
+
+    /* Prevent text selection while dragging */
+    body.resizing {
+      user-select: none;
+      cursor: col-resize;
+    }
+
+    /* Export button and dropdown */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .export-dropdown {
+      position: relative;
+    }
+
+    .export-btn {
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .export-btn:hover {
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      transform: translateY(-1px);
+    }
+
+    .export-btn:disabled {
+      background: var(--bg-tertiary);
+      color: var(--text-muted);
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .export-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .export-menu {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 4px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 4px;
+      min-width: 140px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+      display: none;
+    }
+
+    .export-menu.show {
+      display: block;
+    }
+
+    .export-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 12px;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: var(--text-primary);
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .export-menu-item:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .export-menu-item svg {
+      width: 16px;
+      height: 16px;
+      color: var(--text-secondary);
+    }
+
+    /* Export loading state */
+    .export-btn.loading {
+      pointer-events: none;
+      opacity: 0.7;
+    }
+
+    .export-btn.loading::after {
+      content: '';
+      width: 12px;
+      height: 12px;
+      border: 2px solid transparent;
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 4px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Width control slider */
+    .width-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-right: 12px;
+      padding-right: 12px;
+      border-right: 1px solid var(--border-subtle);
+    }
+
+    .width-control label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .width-control input[type="range"] {
+      width: 180px;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: var(--border-medium);
+      border-radius: 2px;
+      cursor: pointer;
+    }
+
+    .width-btn {
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--border-medium);
+      border-radius: 4px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      line-height: 1;
+    }
+
+    .width-btn:hover {
+      background: var(--bg-tertiary);
+      border-color: var(--system-border);
+    }
+
+    .width-btn:active {
+      transform: scale(0.95);
+    }
+
+    .width-control input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      background: var(--system-border);
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+
+    .width-control input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+    }
+
+    .width-control input[type="range"]::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      background: var(--system-border);
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .width-control input[type="number"] {
+      width: 55px;
+      padding: 4px 6px;
+      border: 1px solid var(--border-medium);
+      border-radius: 4px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-size: 12px;
+      text-align: center;
+      -moz-appearance: textfield;
+    }
+
+    .width-control input[type="number"]::-webkit-outer-spin-button,
+    .width-control input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .width-control .width-unit {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+

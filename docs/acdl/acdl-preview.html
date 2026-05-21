@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deverino ACDL Preview</title>
+  <link rel="stylesheet" href="acdl-visualizer.css">
+  <style>
+    body {
+      margin: 0;
+      background: #f6f8fa;
+      color: #1f2328;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .preview-shell {
+      display: grid;
+      grid-template-columns: minmax(320px, 38vw) 1fr;
+      min-height: 100vh;
+    }
+
+    .source-panel {
+      border-right: 1px solid #d0d7de;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .panel-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid #d0d7de;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-header h1 {
+      font-size: 16px;
+      line-height: 1.2;
+      margin: 0;
+    }
+
+    .panel-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button {
+      border: 1px solid #0969da;
+      background: #0969da;
+      color: #fff;
+      border-radius: 6px;
+      padding: 7px 10px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #fff;
+      color: #0969da;
+    }
+
+    #source-path {
+      padding: 8px 16px;
+      border-bottom: 1px solid #d0d7de;
+      color: #57606a;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    #acdl-source {
+      flex: 1;
+      min-height: 0;
+      resize: none;
+      border: 0;
+      padding: 16px;
+      font: 13px/1.45 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: #1f2328;
+      background: #fff;
+      outline: none;
+      tab-size: 2;
+    }
+
+    .output-panel {
+      min-width: 0;
+      overflow: auto;
+      padding: 24px;
+    }
+
+    #output {
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+
+    .status {
+      padding: 12px 16px;
+      border-top: 1px solid #d0d7de;
+      font-size: 13px;
+      color: #57606a;
+      background: #f6f8fa;
+    }
+
+    .error-msg {
+      border: 1px solid #cf222e;
+      border-radius: 6px;
+      background: #fff5f5;
+      color: #82071e;
+      padding: 12px;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 900px) {
+      .preview-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .source-panel {
+        border-right: 0;
+        border-bottom: 1px solid #d0d7de;
+        min-height: 48vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="preview-shell">
+    <section class="source-panel">
+      <div class="panel-header">
+        <h1>Deverino ACDL Preview</h1>
+        <div class="panel-actions">
+          <button class="secondary" id="reload-btn" type="button">Reload</button>
+          <button id="render-btn" type="button">Render</button>
+        </div>
+      </div>
+      <div id="source-path"></div>
+      <textarea id="acdl-source" spellcheck="false"></textarea>
+      <div class="status" id="status">Loading...</div>
+    </section>
+
+    <section class="output-panel">
+      <div id="output"></div>
+    </section>
+  </main>
+
+  <script src="acdl-renderer.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const sourceFile = params.get("src") || "deverino_react_renderable.acdl";
+    const sourcePath = document.getElementById("source-path");
+    const sourceText = document.getElementById("acdl-source");
+    const output = document.getElementById("output");
+    const status = document.getElementById("status");
+
+    sourcePath.textContent = sourceFile;
+
+    function setStatus(message) {
+      status.textContent = message;
+    }
+
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function enableCollapsibleBlocks() {
+      const headers = output.querySelectorAll(
+        ".role-message-header, " +
+        ".loop-block-outside-role-header, .loop-block-inside-role-header, " +
+        ".switch-block-outside-role-header, .switch-block-inside-role-header, " +
+        ".conditional-section-header"
+      );
+      headers.forEach((header) => {
+        const container = header.parentElement;
+        if (!container) return;
+        header.classList.add("collapsible-header");
+        header.addEventListener("click", () => container.classList.toggle("collapsed"));
+      });
+    }
+
+    function render() {
+      try {
+        const parser = new ACDL.Parser(sourceText.value);
+        const ast = parser.parseFile();
+        output.innerHTML = ACDL.renderPrompts(ast);
+        enableCollapsibleBlocks();
+        setStatus(`Rendered ${ast.length} top-level ACDL blocks.`);
+      } catch (error) {
+        output.innerHTML = `<div class="error-msg">${escapeHtml(error.message || String(error))}</div>`;
+        setStatus("Render failed.");
+      }
+    }
+
+    async function loadSource() {
+      try {
+        const response = await fetch(sourceFile);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} while loading ${sourceFile}`);
+        }
+        sourceText.value = await response.text();
+        setStatus("Loaded source.");
+        render();
+      } catch (error) {
+        sourceText.value = "";
+        output.innerHTML = `<div class="error-msg">${escapeHtml(
+          `${error.message || error}\n\nServe this directory over HTTP, for example:\npython3 -m http.server 8765 --directory docs/acdl`
+        )}</div>`;
+        setStatus("Load failed.");
+      }
+    }
+
+    document.getElementById("render-btn").addEventListener("click", render);
+    document.getElementById("reload-btn").addEventListener("click", loadSource);
+    sourceText.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        render();
+      }
+    });
+
+    loadSource();
+  </script>
+</body>
+</html>

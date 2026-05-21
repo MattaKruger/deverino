@@ -1,0 +1,140 @@
+// Parser-compatible ACDL rendering companion for ../../deverino_react.acdl.
+// This keeps the visualization-focused structure while omitting local annotations
+// that the current official ACDL parser does not accept.
+
+StrFrag SoulCharter: {
+    sys.soul_charter
+}
+
+StrFrag StateBlock: {
+    PROJECT_STATE_HEADER
+    sys.project_state
+    SESSION_STATE_HEADER
+    sys.session_state
+}
+
+StrFrag ContextMapBlock: {
+    CONTEXT_MAP_HEADER
+    sys.context_map
+}
+
+StrFrag SkillCatalogBlock: {
+    sys.available_skills
+}
+
+StrFrag ToolPolicyBlock: {
+    TOOL_RESULT_POLICY
+    TOOL_RETRY_POLICY
+    TOOL_BUDGET_POLICY
+}
+
+StrFrag TruncationPolicy: {
+    CHAT_HISTORY_MAX_TOKENS
+    CHAT_HISTORY_RECENT_TURNS
+    DROP_OLDEST_HISTORY
+}
+
+StrFrag GoalHeader: {
+    GOAL_OBJECTIVE_HEADER
+    env.goal_objective
+    GOAL_BUDGET_HEADER
+    env.max_iterations
+    env.max_tokens
+    env.max_seconds
+}
+
+RolesFrag ConversationTurn[@t]: {
+    If env.user_input[@t] != none {
+        U: env.user_input[@t]
+    }
+
+    If resp.tool_calls[@t] != none {
+        A: {
+            resp.reasoning[@t]
+            ForEach(call: resp.tool_calls[@t]) {
+                ACTION_RECORD(call)
+            }
+        }
+    }
+
+    If resp.answer[@t] != none {
+        A: resp.answer[@t]
+    }
+
+    If resp.observations[@t] != none {
+        ForEach(obs: resp.observations[@t]) {
+            U: OBSERVATION_RECORD(obs)
+        }
+    }
+}
+
+RolesFrag EventMappedTurn[event]: {
+    Switch event.type {
+        Case SkillCalled: {
+            A: ACTION_EVENT(event)
+        }
+        Case SkillCompleted: {
+            U: OBSERVATION_EVENT(event)
+        }
+        Case LLMTextEmitted: {
+            U: LLM_TEXT_EVENT(event)
+        }
+        Case GoalEvaluated: {
+            U: GOAL_EVALUATED_EVENT(event)
+        }
+    }
+}
+
+DeverinoChatLoop[@T]: {
+    Mark 1 {
+        S: {
+            Frag SoulCharter
+            Frag StateBlock
+            If sys.context_map != none {
+                Frag ContextMapBlock
+            }
+            Frag SkillCatalogBlock
+            Frag ToolPolicyBlock
+            Frag TruncationPolicy
+        }
+    }
+
+    Mark 2 {
+        If @T > 1 {
+            ForEach(@t: range(max(1, @T - 6), @T)) {
+                Frag ConversationTurn[@t]
+            }
+        }
+    }
+
+    Mark 3 {
+        U: env.user_input[@T]
+    }
+}
+
+DeverinoGoalLoop[@T, max_iterations]: {
+    Mark 1 {
+        S: {
+            Frag SoulCharter
+            Frag StateBlock
+            If sys.context_map != none {
+                Frag ContextMapBlock
+            }
+            Frag SkillCatalogBlock
+            Frag GoalHeader
+            AUTONOMOUS_LOOP_POLICY
+        }
+    }
+
+    Mark 2 {
+        If sys.event_history != none {
+            ForEach(event: sys.event_history) {
+                Frag EventMappedTurn[event]
+            }
+        }
+    }
+
+    Mark 3 {
+        U: GOAL_ITERATION_PROMPT(env.goal_objective, sys.iteration)
+    }
+}
