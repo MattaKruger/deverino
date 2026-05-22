@@ -50,8 +50,11 @@ test-unit:
     uv run pytest tests/unit/ tests/agent/
 
 # Run agent tests only (mock LLM, in-memory DB)
+# -v: verbose test names — see which test runs
+# -s: no capture — see skill execution output in real time
+# --tb=short: concise tracebacks on failure
 test-agent:
-    uv run pytest tests/agent/
+    uv run pytest tests/agent/ -v -s --tb=short
 
 # Run integration tests (needs Postgres + Vespa)
 test-integration: test-db-up
