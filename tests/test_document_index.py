@@ -166,6 +166,42 @@ def test_index_pdf_conversion_error_returns_failed(
     assert any("PDF conversion failed" in f["error"] for f in result.failures)
 
 
+def test_skip_unchanged_pdf(
+    db_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = tmp_path / "guide.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+
+    source_id = make_source_id("guide.pdf")
+    fake_chunks = [
+        DocumentChunk(
+            source_id=source_id,
+            uri="guide.pdf",
+            title="Guide",
+            chunk_id=make_chunk_id(source_id, 0),
+            chunk_index=0,
+            text="Stable content.",
+            kind="source",
+            content_hash=compute_content_hash("Stable content."),
+            updated_at=1_000_000,
+        )
+    ]
+    mock_convert = MagicMock(return_value=fake_chunks)
+    monkeypatch.setattr(document_index, "convert_pdf_to_chunks", mock_convert)
+
+    db = BlackboardDatabase(db_engine)
+    vespa = FakeVespaClient()
+    indexer = _make_indexer(db, vespa)
+
+    first = indexer.index_paths(project_root=tmp_path, paths=["guide.pdf"])
+    assert first.indexed == 1
+
+    second = indexer.index_paths(project_root=tmp_path, paths=["guide.pdf"])
+    assert second.skipped == 1
+    assert second.indexed == 0
+    assert mock_convert.call_count == 2  # converter still called; skip happens after hash check
+
+
 def test_unsupported_file_type_is_skipped(db_engine: Engine, tmp_path: Path) -> None:
     image = tmp_path / "binary.png"
     image.write_bytes(b"not a supported document")

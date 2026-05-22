@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path  # noqa: TC003
 
@@ -9,6 +10,8 @@ from harness_poc.core.retrieval import (
     make_chunk_id,
     make_source_id,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def convert_pdf_to_chunks(
@@ -62,5 +65,5 @@ def _extract_chunk_title(chunk: object) -> str:
         if headings:
             return headings[-1]
     except AttributeError:
-        pass
+        logger.debug("chunk.meta.headings not available; falling back to file title")
     return ""
