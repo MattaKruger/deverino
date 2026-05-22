@@ -4,23 +4,25 @@
 
 from __future__ import annotations
 
-import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from pydantic_ai.messages import ModelResponse, TextPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
 from typer.testing import CliRunner
 
 from harness_poc.app_factory import AppState, build_app_state
 from harness_poc.cli import app
 from harness_poc.core.events import AgentStarted, LLMTextEmitted, SkillCompleted
 from harness_poc.core.goal_runner import GoalRunner, count_tokens
-from harness_poc.core.llm_client import LLMResponse, Message
+from tests.helpers import (
+    _mock_goal_model,
+    evaluate_goal_response,
+    text_response,
+    tool_call_response,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     import pytest
+
+    from harness_poc.core.llm_client import LLMResponse
 
 runner = CliRunner()
 
@@ -29,98 +31,14 @@ runner = CliRunner()
 # ---------------------------------------------------------------------------
 
 
-def _mock_response_factory(
-    responses: list[LLMResponse],
-) -> Callable[[list[Message], list[dict[str, Any]] | None], LLMResponse]:
-    """Return a callable that returns responses in sequence, then repeats the last."""
-
-    def _respond(_messages: list[Message], _tools: list[dict[str, Any]] | None) -> LLMResponse:
-        nonlocal responses
-        if not responses:
-            return LLMResponse(kind="text", content="No responses left.")
-        response = responses.pop(0)
-        # Keep the last response for any subsequent calls
-        if not responses:
-            responses.append(response)
-        return response
-
-    return _respond
-
-
-def _evaluate_goal_response(
-    is_complete: bool,
-    reasoning: str = "",
-    final_answer: str = "",
-) -> LLMResponse:
-    arguments: dict[str, Any] = {
-        "is_complete": is_complete,
-        "reasoning": reasoning,
-    }
-    if final_answer:
-        arguments["final_answer"] = final_answer
-    return LLMResponse(
-        kind="tool_call",
-        content="",
-        tool_call={
-            "name": "evaluate_goal",
-            "arguments": arguments,
-        },
-    )
-
-
-def _tool_call_response(name: str, arguments: dict[str, Any]) -> LLMResponse:
-    return LLMResponse(
-        kind="tool_call",
-        content="",
-        tool_call={"name": name, "arguments": arguments},
-    )
-
-
 def _make_app_state(
-    mock: (Callable[[list[Message], list[dict[str, Any]] | None], LLMResponse] | None) = None,
+    mock_responses: list[LLMResponse] | None = None,
 ) -> AppState:
     """Build an AppState with an in-memory database and optional mock LLM."""
     state = build_app_state()
-    if mock is not None:
-        state.goal_decision_model = _mock_goal_model(mock)
+    if mock_responses is not None:
+        state.goal_decision_model = _mock_goal_model(mock_responses)
     return state
-
-
-def _mock_goal_model(
-    mock: Callable[[list[Message], list[dict[str, Any]] | None], LLMResponse],
-) -> FunctionModel:
-    def _respond(
-        _messages: list[Any],
-        _info: AgentInfo,
-    ) -> ModelResponse:
-        response = mock([], None)
-        action = _response_to_goal_action(response)
-
-        return ModelResponse(parts=[TextPart(json.dumps(action))])
-
-    return FunctionModel(_respond)
-
-
-def _response_to_goal_action(response: LLMResponse) -> dict[str, Any]:
-    if response.kind == "text":
-        return {
-            "tool_name": "_llm_text",
-            "arguments": {},
-            "content": response.content,
-        }
-
-    if response.tool_call is None:
-        return {
-            "tool_name": "_llm_text",
-            "arguments": {},
-            "content": response.content,
-        }
-
-    return {
-        "tool_name": response.tool_call["name"],
-        "arguments": response.tool_call["arguments"],
-        "content": response.content,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -166,8 +84,7 @@ def test_review_work_skill_executes() -> None:
 
 
 def test_completes_on_evaluate_goal_true() -> None:
-    mock = _mock_response_factory([_evaluate_goal_response(True, "Task finished successfully.")])
-    state = _make_app_state(mock)
+    state = _make_app_state([evaluate_goal_response(True, "Task finished successfully.")])
     runner = GoalRunner(max_iterations=10)
 
     result = runner.run("Test goal", state)
@@ -177,16 +94,13 @@ def test_completes_on_evaluate_goal_true() -> None:
 
 
 def test_completed_generation_goal_prefers_final_answer() -> None:
-    mock = _mock_response_factory(
-        [
-            _evaluate_goal_response(
-                True,
-                "The commit message has been generated.",
-                "feat: migrate goal runner to pydantic-ai",
-            )
-        ]
-    )
-    state = _make_app_state(mock)
+    state = _make_app_state([
+        evaluate_goal_response(
+            True,
+            "The commit message has been generated.",
+            "feat: migrate goal runner to pydantic-ai",
+        )
+    ])
     runner = GoalRunner(max_iterations=10)
 
     result = runner.run("generate a commit message", state)
@@ -196,16 +110,13 @@ def test_completed_generation_goal_prefers_final_answer() -> None:
 
 
 def test_completed_generation_goal_uses_latest_artifact_for_meta_reasoning() -> None:
-    mock = _mock_response_factory(
-        [
-            _tool_call_response("read_memory", {"memory_key": "commit_message"}),
-            _evaluate_goal_response(
-                True,
-                "The delegate_task skill returned a comprehensive commit message.",
-            ),
-        ]
-    )
-    state = _make_app_state(mock)
+    state = _make_app_state([
+        tool_call_response("read_memory", {"memory_key": "commit_message"}),
+        evaluate_goal_response(
+            True,
+            "The delegate_task skill returned a comprehensive commit message.",
+        ),
+    ])
     state.database.write_memory(
         state.session_id,
         "commit_message",
@@ -220,13 +131,10 @@ def test_completed_generation_goal_uses_latest_artifact_for_meta_reasoning() -> 
 
 
 def test_continues_on_evaluate_goal_false() -> None:
-    mock = _mock_response_factory(
-        [
-            _evaluate_goal_response(False, "Need more work."),
-            _evaluate_goal_response(True, "Now done."),
-        ]
-    )
-    state = _make_app_state(mock)
+    state = _make_app_state([
+        evaluate_goal_response(False, "Need more work."),
+        evaluate_goal_response(True, "Now done."),
+    ])
     runner = GoalRunner(max_iterations=10)
 
     result = runner.run("Test goal", state)
@@ -236,13 +144,10 @@ def test_continues_on_evaluate_goal_false() -> None:
 
 def test_text_response_without_tool_call() -> None:
     """Text responses should be recorded as LLMTextEmitted and loop continues."""
-    mock = _mock_response_factory(
-        [
-            LLMResponse(kind="text", content="Let me think about this..."),
-            _evaluate_goal_response(True, "I thought about it."),
-        ]
-    )
-    state = _make_app_state(mock)
+    state = _make_app_state([
+        text_response("Let me think about this..."),
+        evaluate_goal_response(True, "I thought about it."),
+    ])
     runner = GoalRunner(max_iterations=10)
 
     result = runner.run("Test goal", state)
@@ -255,8 +160,7 @@ def test_text_response_without_tool_call() -> None:
 
 def test_iteration_budget_exhausted() -> None:
     """Loop should stop when max_iterations is reached."""
-    mock = _mock_response_factory([_evaluate_goal_response(False, "Still working...")])
-    state = _make_app_state(mock)
+    state = _make_app_state([evaluate_goal_response(False, "Still working...")])
     runner = GoalRunner(max_iterations=3)
 
     result = runner.run("Test goal", state)
@@ -266,8 +170,7 @@ def test_iteration_budget_exhausted() -> None:
 
 def test_token_budget_exhausted() -> None:
     """Loop should stop when token budget is exceeded."""
-    mock = _mock_response_factory([_evaluate_goal_response(False, "Working...")])
-    state = _make_app_state(mock)
+    state = _make_app_state([evaluate_goal_response(False, "Working...")])
     # Set a very low token budget — the system prompt alone is >200 tokens
     runner = GoalRunner(max_iterations=50, max_tokens=100)
 
@@ -278,13 +181,10 @@ def test_token_budget_exhausted() -> None:
 
 def test_goal_token_budget_uses_context_delta(monkeypatch: pytest.MonkeyPatch) -> None:
     """Repeated unchanged context should not be charged as new tokens each iteration."""
-    mock = _mock_response_factory(
-        [
-            _evaluate_goal_response(False, "Still working..."),
-            _evaluate_goal_response(True, "Done."),
-        ]
-    )
-    state = _make_app_state(mock)
+    state = _make_app_state([
+        evaluate_goal_response(False, "Still working..."),
+        evaluate_goal_response(True, "Done."),
+    ])
     monkeypatch.setattr("harness_poc.core.goal_runner.count_tokens", lambda _messages: 100)
     runner = GoalRunner(max_iterations=10, max_tokens=150)
 
@@ -298,15 +198,12 @@ def test_goal_token_budget_uses_context_delta(monkeypatch: pytest.MonkeyPatch) -
 def test_stuck_detection_blocks_repeated_failed_action() -> None:
     """Semantic stuck detection blocks actions that previously failed (not successful ones)."""
     # First attempt: nonexistent_skill fails
-    mock = _mock_response_factory(
-        [
-            _tool_call_response("nonexistent_skill", {}),
-            _tool_call_response("nonexistent_skill", {}),
-            _tool_call_response("nonexistent_skill", {}),
-            _tool_call_response("nonexistent_skill", {}),
-        ]
-    )
-    state = _make_app_state(mock)
+    state = _make_app_state([
+        tool_call_response("nonexistent_skill", {}),
+        tool_call_response("nonexistent_skill", {}),
+        tool_call_response("nonexistent_skill", {}),
+        tool_call_response("nonexistent_skill", {}),
+    ])
     runner = GoalRunner(max_iterations=10, stuck_threshold=3)
 
     result = runner.run("Test goal", state)
@@ -331,13 +228,10 @@ def test_stuck_detection_blocks_repeated_failed_action() -> None:
 
 def test_skill_execution_error_handled() -> None:
     """Skill errors should be recorded as SkillCompleted(error) and loop continues."""
-    mock = _mock_response_factory(
-        [
-            _tool_call_response("nonexistent_skill", {}),
-            _evaluate_goal_response(True, "Handled error."),
-        ]
-    )
-    state = _make_app_state(mock)
+    state = _make_app_state([
+        tool_call_response("nonexistent_skill", {}),
+        evaluate_goal_response(True, "Handled error."),
+    ])
     runner = GoalRunner(max_iterations=10)
 
     result = runner.run("Test goal", state)
@@ -349,13 +243,10 @@ def test_skill_execution_error_handled() -> None:
 
 def test_context_window_builds_from_events() -> None:
     """Verify that the context window is populated from bus events."""
-    mock = _mock_response_factory(
-        [
-            _tool_call_response("read_memory", {"memory_key": "test"}),
-            _evaluate_goal_response(True, "Done."),
-        ]
-    )
-    state = _make_app_state(mock)
+    state = _make_app_state([
+        tool_call_response("read_memory", {"memory_key": "test"}),
+        evaluate_goal_response(True, "Done."),
+    ])
     runner = GoalRunner(max_iterations=10, context_window=5)
 
     result = runner.run("Test", state)
@@ -367,8 +258,7 @@ def test_context_window_builds_from_events() -> None:
 
 
 def test_goal_runner_streams_progress() -> None:
-    mock = _mock_response_factory([_evaluate_goal_response(True, "Done.")])
-    state = _make_app_state(mock)
+    state = _make_app_state([evaluate_goal_response(True, "Done.")])
     runner = GoalRunner(max_iterations=10)
     chunks: list[str] = []
 
@@ -409,8 +299,7 @@ def test_goal_cli_command_help() -> None:
 
 def test_goal_cli_executes_with_mock(monkeypatch: pytest.MonkeyPatch) -> None:
     """CLI should run the goal command without crashing (mock LLM)."""
-    mock = _mock_response_factory([_evaluate_goal_response(True, "CLI done.")])
-    state = _make_app_state(mock)
+    state = _make_app_state([evaluate_goal_response(True, "CLI done.")])
     monkeypatch.setattr("harness_poc.cli.build_app_state", lambda **_: state)
 
     result = runner.invoke(app, ["goal", "test objective", "--max-iterations", "1"])

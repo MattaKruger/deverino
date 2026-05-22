@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from pydantic_ai.messages import ModelResponse, TextPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy import create_engine as sa_create_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
@@ -22,100 +19,16 @@ from harness_poc.app_factory import (
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
-from harness_poc.core.llm_client import LLMResponse
 from harness_poc.core.skill_runner import SkillRunner
-from tests.helpers import RecordingEventBus, TraceAssertions
+from tests.helpers import (
+    RecordingEventBus,
+    TraceAssertions,
+    _mock_goal_model,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from harness_poc.core.events import BaseEvent, SkillCalled, SkillCompleted
-    from harness_poc.core.llm_client import Message
-
-
-# ---------------------------------------------------------------------------
-# Mock LLM helpers
-# ---------------------------------------------------------------------------
-
-
-def _mock_response_factory(
-    responses: list[LLMResponse],
-) -> Callable[[list[Message], list[dict[str, Any]] | None], LLMResponse]:
-    """Return a callable that returns responses in sequence, then repeats the last."""
-
-    def _respond(_messages: list[Message], _tools: list[dict[str, Any]] | None) -> LLMResponse:
-        nonlocal responses
-        if not responses:
-            return LLMResponse(kind="text", content="No responses left.")
-        response = responses.pop(0)
-        # Keep the last response for any subsequent calls
-        if not responses:
-            responses.append(response)
-        return response
-
-    return _respond
-
-
-def _response_to_goal_action(response: LLMResponse) -> dict[str, Any]:
-    """Convert an LLMResponse to a GoalAction-compatible dict."""
-    if response.kind == "text":
-        return {"tool_name": "_llm_text", "arguments": {}, "content": response.content}
-
-    if response.tool_call is None:
-        return {"tool_name": "_llm_text", "arguments": {}, "content": response.content}
-
-    return {
-        "tool_name": response.tool_call["name"],
-        "arguments": response.tool_call.get("arguments", {}),
-        "content": response.content,
-    }
-
-
-def _mock_goal_model(responses: list[LLMResponse]) -> FunctionModel:
-    """Build a FunctionModel that consumes mock_responses in sequence."""
-    respond = _mock_response_factory(responses)
-
-    def _model_fn(_messages: list[Any], _info: AgentInfo) -> ModelResponse:
-        response = respond([], None)
-        action = _response_to_goal_action(response)
-        return ModelResponse(parts=[TextPart(json.dumps(action))])
-
-    return FunctionModel(_model_fn)
-
-
-# ---------------------------------------------------------------------------
-# Response factory shorthands (re-exported by conftest for test ergonomics)
-# ---------------------------------------------------------------------------
-
-
-def tool_call_response(name: str, arguments: dict[str, Any]) -> LLMResponse:
-    """Shorthand for a tool-call mock response."""
-    return LLMResponse(
-        kind="tool_call",
-        content="",
-        tool_call={"name": name, "arguments": arguments},
-    )
-
-
-def evaluate_goal_response(
-    is_complete: bool,
-    reasoning: str = "",
-    final_answer: str = "",
-) -> LLMResponse:
-    """Shorthand for an evaluate_goal mock response."""
-    args: dict[str, Any] = {"is_complete": is_complete, "reasoning": reasoning}
-    if final_answer:
-        args["final_answer"] = final_answer
-    return LLMResponse(
-        kind="tool_call",
-        content="",
-        tool_call={"name": "evaluate_goal", "arguments": args},
-    )
-
-
-def text_response(content: str) -> LLMResponse:
-    """Shorthand for a plain-text mock response (no tool call)."""
-    return LLMResponse(kind="text", content=content)
+    from harness_poc.core.llm_client import LLMResponse
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +41,8 @@ class SessionHarness:
     """Controlled test surface for mock-LLM GoalRunner sessions.
 
     Usage:
+        from tests.helpers import tool_call_response, evaluate_goal_response
+
         harness = SessionHarness.build([
             tool_call_response("read_memory", {"memory_key": "test"}),
             evaluate_goal_response(True, "Done.", "Final answer."),
@@ -140,6 +55,7 @@ class SessionHarness:
     state: AppState
     runner: GoalRunner
     result: GoalRunResult | None = None
+    _trace_cache: TraceAssertions | None = None
 
     # ------------------------------------------------------------------
     # Construction
@@ -250,10 +166,15 @@ class SessionHarness:
 
     @property
     def _trace(self) -> TraceAssertions:
-        """TraceAssertions over the full event trace for this session."""
-        return TraceAssertions(
-            self.state.event_bus.get_all_events(self.state.session_id)  # type: ignore[union-attr]
-        )
+        """TraceAssertions over the full event trace for this session.
+
+        Built once on first access and cached — events don't change after run().
+        """
+        if self._trace_cache is None:
+            self._trace_cache = TraceAssertions(
+                self.state.event_bus.get_all_events(self.state.session_id)  # type: ignore[union-attr]
+            )
+        return self._trace_cache
 
     def assert_skill_called(self, name: str) -> None:
         self._trace.assert_skill_called(name)
