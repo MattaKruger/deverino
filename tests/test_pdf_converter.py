@@ -33,8 +33,14 @@ def _fake_docling(chunks_data: list[tuple[str, list[str]]]) -> dict:
 
     return {
         "docling": MagicMock(),
-        "docling.document_converter": MagicMock(DocumentConverter=fake_document_converter),
+        "docling.document_converter": MagicMock(
+            DocumentConverter=fake_document_converter,
+            PdfFormatOption=MagicMock(),
+        ),
         "docling.chunking": MagicMock(HybridChunker=fake_hybrid_chunker),
+        "docling.datamodel": MagicMock(),
+        "docling.datamodel.base_models": MagicMock(),
+        "docling.datamodel.pipeline_options": MagicMock(),
     }
 
 

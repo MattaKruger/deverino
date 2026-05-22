@@ -23,9 +23,19 @@ def convert_pdf_to_chunks(
 ) -> list[DocumentChunk]:
     """Convert a PDF to DocumentChunks using docling's HybridChunker."""
     from docling.chunking import HybridChunker  # noqa: PLC0415
-    from docling.document_converter import DocumentConverter  # noqa: PLC0415
+    from docling.datamodel.base_models import InputFormat  # noqa: PLC0415
+    from docling.datamodel.pipeline_options import (  # noqa: PLC0415
+        AcceleratorDevice,
+        AcceleratorOptions,
+        PdfPipelineOptions,
+    )
+    from docling.document_converter import DocumentConverter, PdfFormatOption  # noqa: PLC0415
 
-    converter = DocumentConverter()
+    pipeline_options = PdfPipelineOptions()
+    pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
+    converter = DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+    )
     result = converter.convert(file_path)
     doc = result.document
 
