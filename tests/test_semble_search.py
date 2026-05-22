@@ -98,19 +98,19 @@ def test_semble_search_find_related_rejects_invalid_line(db_engine: Engine) -> N
 
 def test_semble_search_respects_top_k() -> None:
     """Top-k is validated as an int between 1-50."""
-    assert semble_skill._parse_top_k(EXPECTED_DEFAULT_TOP_K) == EXPECTED_DEFAULT_TOP_K  # noqa: SLF001
-    assert semble_skill._parse_top_k("abc") == EXPECTED_DEFAULT_TOP_K  # noqa: SLF001
-    assert semble_skill._parse_top_k(0) == MIN_TOP_K  # noqa: SLF001
-    assert semble_skill._parse_top_k(OVERSIZED_TOP_K) == EXPECTED_MAX_TOP_K  # noqa: SLF001
+    assert semble_skill._parse_top_k(EXPECTED_DEFAULT_TOP_K) == EXPECTED_DEFAULT_TOP_K
+    assert semble_skill._parse_top_k("abc") == EXPECTED_DEFAULT_TOP_K
+    assert semble_skill._parse_top_k(0) == MIN_TOP_K
+    assert semble_skill._parse_top_k(OVERSIZED_TOP_K) == EXPECTED_MAX_TOP_K
 
 
 def test_semble_search_mode_validation() -> None:
     """Search mode defaults to hybrid for invalid values."""
-    assert semble_skill._parse_mode("hybrid") == "hybrid"  # noqa: SLF001
-    assert semble_skill._parse_mode("semantic") == "semantic"  # noqa: SLF001
-    assert semble_skill._parse_mode("bm25") == "bm25"  # noqa: SLF001
-    assert semble_skill._parse_mode("invalid") == "hybrid"  # noqa: SLF001
-    assert semble_skill._parse_mode(None) == "hybrid"  # noqa: SLF001
+    assert semble_skill._parse_mode("hybrid") == "hybrid"
+    assert semble_skill._parse_mode("semantic") == "semantic"
+    assert semble_skill._parse_mode("bm25") == "bm25"
+    assert semble_skill._parse_mode("invalid") == "hybrid"
+    assert semble_skill._parse_mode(None) == "hybrid"
 
 
 def test_semble_search_emits_subprocess_progress(
@@ -138,7 +138,7 @@ def test_semble_search_emits_subprocess_progress(
 
     monkeypatch.setattr(semble_skill.subprocess, "Popen", lambda *_, **__: FakeProcess())
 
-    result = semble_skill._run_semble(  # noqa: SLF001
+    result = semble_skill._run_semble(
         ctx, ["semble", "search"], query="find runtime"
     )
 
@@ -175,7 +175,7 @@ def test_semble_search_caps_large_output(
 
     monkeypatch.setattr(semble_skill.subprocess, "Popen", lambda *_, **__: FakeProcess())
 
-    result = semble_skill._run_semble(  # noqa: SLF001
+    result = semble_skill._run_semble(
         ctx, ["semble", "search"], query="find runtime"
     )
 
@@ -221,7 +221,7 @@ def test_semble_search_times_out_with_progress(
     monkeypatch.setattr(semble_skill.time, "sleep", lambda _: None)
     monkeypatch.setattr(semble_skill.subprocess, "Popen", lambda *_, **__: fake_process)
 
-    result = semble_skill._run_semble(  # noqa: SLF001
+    result = semble_skill._run_semble(
         ctx, ["semble", "search"], query="find runtime"
     )
 

@@ -74,7 +74,9 @@ def test_execute_python_spawns_container_and_executes_encoded_code(
         backend: str = "auto",
         workdir: str = "",
         timeout_seconds: int | None = None,
+        cancellation: object | None = None,
     ) -> SkillResult:
+        del backend, workdir, cancellation
         calls["exec"] = {
             "command": command,
             "container": container,
@@ -138,8 +140,9 @@ def test_execute_python_uses_existing_container_without_spawning(
         backend: str = "auto",
         workdir: str = "",
         timeout_seconds: int | None = None,
+        cancellation: object | None = None,
     ) -> SkillResult:
-        del command, backend, workdir, timeout_seconds
+        del command, backend, workdir, timeout_seconds, cancellation
         return SkillResult(
             status="success",
             content="exec",
@@ -189,8 +192,9 @@ def test_execute_python_caps_model_visible_stdout(
         backend: str = "auto",
         workdir: str = "",
         timeout_seconds: int | None = None,
+        cancellation: object | None = None,
     ) -> SkillResult:
-        del command, backend, workdir, timeout_seconds
+        del command, backend, workdir, timeout_seconds, cancellation
         return SkillResult(
             status="success",
             content="exec",

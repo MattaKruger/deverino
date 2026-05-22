@@ -30,6 +30,12 @@ def _fake_docling(chunks_data: list[tuple[str, list[str]]]) -> dict:
     fake_converter_instance = MagicMock()
     fake_converter_instance.convert.return_value = fake_result
     fake_document_converter = MagicMock(return_value=fake_converter_instance)
+    fake_default_tokenizer = MagicMock()
+    fake_default_tokenizer.tokenizer = MagicMock()
+    fake_huggingface_tokenizer = MagicMock()
+    fake_huggingface_tokenizer.side_effect = lambda **kwargs: MagicMock(
+        max_tokens=kwargs["max_tokens"]
+    )
 
     return {
         "docling": MagicMock(),
@@ -41,6 +47,16 @@ def _fake_docling(chunks_data: list[tuple[str, list[str]]]) -> dict:
         "docling.datamodel": MagicMock(),
         "docling.datamodel.base_models": MagicMock(),
         "docling.datamodel.pipeline_options": MagicMock(),
+        "docling_core": MagicMock(),
+        "docling_core.transforms": MagicMock(),
+        "docling_core.transforms.chunker": MagicMock(),
+        "docling_core.transforms.chunker.hybrid_chunker": MagicMock(
+            get_default_tokenizer=MagicMock(return_value=fake_default_tokenizer),
+        ),
+        "docling_core.transforms.chunker.tokenizer": MagicMock(),
+        "docling_core.transforms.chunker.tokenizer.huggingface": MagicMock(
+            HuggingFaceTokenizer=fake_huggingface_tokenizer,
+        ),
     }
 
 
@@ -112,7 +128,7 @@ def test_content_hash_matches_chunk_text(tmp_path: Path) -> None:
     assert chunks[0].content_hash == expected
 
 
-def test_hybridchunker_receives_max_tokens(tmp_path: Path) -> None:
+def test_hybridchunker_receives_tokenizer_with_max_tokens(tmp_path: Path) -> None:
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-fake")
 
@@ -121,4 +137,6 @@ def test_hybridchunker_receives_max_tokens(tmp_path: Path) -> None:
     with patch.dict(sys.modules, mods):
         convert_pdf_to_chunks(pdf, "paper.pdf", "Paper", "doc", 1024)
 
-    fake_hybrid_chunker.assert_called_once_with(max_tokens=1024)
+    fake_hybrid_chunker.assert_called_once()
+    tokenizer = fake_hybrid_chunker.call_args.kwargs["tokenizer"]
+    assert tokenizer.max_tokens == 1024

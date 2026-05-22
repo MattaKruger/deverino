@@ -33,6 +33,10 @@ def _make_app_state(tui: TuiConfig | None = None) -> AppState:
     return cast("AppState", state)
 
 
+def _chat_app(app: object) -> ChatApp:
+    return cast("ChatApp", app)
+
+
 async def test_chat_app_composes() -> None:
     app = ChatApp(_make_app_state())
     async with app.run_test() as pilot:
@@ -98,66 +102,72 @@ def test_tui_keeps_markdown_for_block_content() -> None:
 async def test_vim_disabled_by_default() -> None:
     app = ChatApp(_make_app_state())
     async with app.run_test() as pilot:
-        assert pilot.app._vim.enabled is False
+        chat_app = _chat_app(pilot.app)
+        assert chat_app._vim.enabled is False
 
 
 async def test_vim_toggle_enables_and_resets_state() -> None:
     app = ChatApp(_make_app_state())
     async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
         await pilot.press("f2")
-        assert pilot.app._vim.enabled is True
-        assert pilot.app._vim.mode.value == "insert"
-        assert pilot.app._vim.pane.value == "input"
+        assert chat_app._vim.enabled is True
+        assert chat_app._vim.mode.value == "insert"
+        assert chat_app._vim.pane.value == "input"
         # Toggle off again resets to disabled-default.
         await pilot.press("f2")
-        assert pilot.app._vim.enabled is False
-        assert pilot.app._vim.mode.value == "insert"
+        assert chat_app._vim.enabled is False
+        assert chat_app._vim.mode.value == "insert"
 
 
 async def test_vim_initial_mode_normal_from_config() -> None:
     app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="normal")))
     async with app.run_test() as pilot:
-        assert pilot.app._vim.enabled is True
-        assert pilot.app._vim.mode.value == "normal"
+        chat_app = _chat_app(pilot.app)
+        assert chat_app._vim.enabled is True
+        assert chat_app._vim.mode.value == "normal"
 
 
 async def test_vim_tab_cycles_panes_when_completion_hidden() -> None:
     app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
     async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
         await pilot.press("tab")
-        assert pilot.app._vim.pane.value == "chat"
+        assert chat_app._vim.pane.value == "chat"
         await pilot.press("tab")
-        assert pilot.app._vim.pane.value == "input"
+        assert chat_app._vim.pane.value == "input"
 
 
 async def test_vim_visible_completion_menu_takes_priority_over_pane_cycling() -> None:
     """Per spec, while the completion menu is visible tab/shift+tab cycle options."""
     app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
     async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
         # Open the menu via the same path tests use today: type a /command,
         # then force-open by calling the refresh helper directly. With Vim on,
         # tab alone cycles panes, so we open the menu programmatically to
         # exercise the precedence rule.
         await pilot.press("/", "s", "k", "i", "l", "l")
-        pilot.app._refresh_completion_menu(force=True)
+        chat_app._refresh_completion_menu(force=True)
         await pilot.pause()
         menu = pilot.app.query_one("#completion-menu", OptionList)
         assert menu.display is True
-        starting_pane = pilot.app._vim.pane
+        starting_pane = chat_app._vim.pane
         await pilot.press("tab")
         # Menu still visible, pane unchanged.
         assert menu.display is True
-        assert pilot.app._vim.pane == starting_pane
+        assert chat_app._vim.pane == starting_pane
 
 
 async def test_vim_normal_mode_escape_then_motion_does_not_insert_text() -> None:
     app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
     async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
         editor = pilot.app.query_one("#input", TextArea)
         await pilot.press("h", "i")
         assert editor.text == "hi"
         await pilot.press("escape")
-        assert pilot.app._vim.mode.value == "normal"
+        assert chat_app._vim.mode.value == "normal"
         await pilot.press("j", "k", "h", "l")
         # None of these should have been typed into the buffer.
         assert editor.text == "hi"
@@ -166,9 +176,10 @@ async def test_vim_normal_mode_escape_then_motion_does_not_insert_text() -> None
 async def test_vim_normal_mode_i_returns_to_insert() -> None:
     app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="normal")))
     async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
         editor = pilot.app.query_one("#input", TextArea)
         await pilot.press("i")
-        assert pilot.app._vim.mode.value == "insert"
+        assert chat_app._vim.mode.value == "insert"
         await pilot.press("a")
         assert editor.text == "a"
 
@@ -176,27 +187,29 @@ async def test_vim_normal_mode_i_returns_to_insert() -> None:
 async def test_vim_visual_mode_y_copies_selection_and_returns_normal() -> None:
     app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
     async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
         editor = pilot.app.query_one("#input", TextArea)
         await pilot.press("h", "e", "l", "l", "o")
         await pilot.press("escape")  # → normal
         await pilot.press("0")  # cursor to line start
         await pilot.press("v")
-        assert pilot.app._vim.mode.value == "visual"
+        assert chat_app._vim.mode.value == "visual"
         await pilot.press("l", "l", "l")  # extend 3 right
         assert editor.selected_text != ""
         await pilot.press("y")
-        assert pilot.app._vim.mode.value == "normal"
+        assert chat_app._vim.mode.value == "normal"
 
 
 async def test_vim_visual_mode_d_deletes_selection() -> None:
     app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
     async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
         editor = pilot.app.query_one("#input", TextArea)
         await pilot.press("a", "b", "c", "d", "e")
         await pilot.press("escape", "0", "v", "l", "l", "d")
         # "ab" should be deleted, leaving "cde".
         assert editor.text == "cde"
-        assert pilot.app._vim.mode.value == "normal"
+        assert chat_app._vim.mode.value == "normal"
 
 
 async def test_vim_count_prefix_repeats_motion_in_textarea() -> None:
@@ -214,8 +227,9 @@ async def test_vim_count_prefix_repeats_motion_in_textarea() -> None:
 async def test_vim_chat_pane_j_scrolls_does_not_type_into_editor() -> None:
     app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
     async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
         await pilot.press("tab")  # focus → chat
-        assert pilot.app._vim.pane.value == "chat"
+        assert chat_app._vim.pane.value == "chat"
         editor = pilot.app.query_one("#input", TextArea)
         before = editor.text
         await pilot.press("j", "j", "k")
@@ -226,11 +240,12 @@ async def test_vim_chat_pane_j_scrolls_does_not_type_into_editor() -> None:
 async def test_vim_chat_i_returns_focus_to_input_in_insert() -> None:
     app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
     async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
         await pilot.press("tab")
-        assert pilot.app._vim.pane.value == "chat"
+        assert chat_app._vim.pane.value == "chat"
         await pilot.press("i")
-        assert pilot.app._vim.pane.value == "input"
-        assert pilot.app._vim.mode.value == "insert"
+        assert chat_app._vim.pane.value == "input"
+        assert chat_app._vim.mode.value == "insert"
         editor = pilot.app.query_one("#input", TextArea)
         await pilot.press("x")
         assert editor.text == "x"

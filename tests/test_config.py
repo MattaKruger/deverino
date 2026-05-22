@@ -75,8 +75,9 @@ def test_retrieval_config_parsed_from_yaml(tmp_path: Path) -> None:
 
 def test_retrieval_config_is_frozen() -> None:
     r = RetrievalConfig()
+    field_name = "enabled"
     with pytest.raises((AttributeError, TypeError)):
-        r.enabled = False  # type: ignore[misc]
+        setattr(r, field_name, False)
 
 
 def test_tui_config_defaults_when_section_absent(tmp_path: Path) -> None:
@@ -107,5 +108,6 @@ def test_tui_config_rejects_invalid_initial_mode(tmp_path: Path) -> None:
 
 def test_tui_config_is_frozen() -> None:
     t = TuiConfig()
+    field_name = "vim_enabled"
     with pytest.raises((AttributeError, TypeError)):
-        t.vim_enabled = True  # type: ignore[misc]
+        setattr(t, field_name, True)

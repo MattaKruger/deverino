@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import logging
 import re
 import threading
@@ -12,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from harness_poc.core.models import DbDocumentChunk, DbDocumentSource
 from harness_poc.core.pdf_converter import convert_pdf_to_chunks
-from harness_poc.core.retrieval import compute_content_hash, make_document_chunks, make_source_id
+from harness_poc.core.retrieval import make_document_chunks, make_source_id
 
 logger = logging.getLogger(__name__)
 
@@ -218,18 +219,43 @@ class DocumentIndexer:
 
         title = file_path.stem.replace("-", " ").replace("_", " ").title()
 
+        try:
+            if file_path.stat().st_size > self._config.max_file_bytes:
+                return _FileResult(
+                    uri=uri,
+                    status="failed",
+                    failed=1,
+                    failure={
+                        "uri": uri,
+                        "error": f"file exceeds {self._config.max_file_bytes} bytes",
+                    },
+                )
+            content_hash = _compute_file_hash(file_path)
+        except OSError as exc:
+            return _FileResult(
+                uri=uri,
+                status="failed",
+                failed=1,
+                failure={"uri": uri, "error": str(exc)},
+            )
+
+        existing = self._db.get_document_source(source_id)
+        if existing is not None and existing.content_hash == content_hash and not force:
+            self._db.upsert_document_source(
+                _make_db_source(
+                    source_id=source_id,
+                    uri=uri,
+                    content_hash=content_hash,
+                    status="skipped",
+                    chunk_count=existing.chunk_count,
+                    title=existing.title,
+                    indexed_at=existing.indexed_at,
+                )
+            )
+            return _FileResult(uri=uri, status="skipped", skipped=1)
+
         if file_path.suffix.lower() == ".pdf":
             try:
-                if file_path.stat().st_size > self._config.max_file_bytes:
-                    return _FileResult(
-                        uri=uri,
-                        status="failed",
-                        failed=1,
-                        failure={
-                            "uri": uri,
-                            "error": f"file exceeds {self._config.max_file_bytes} bytes",
-                        },
-                    )
                 chunks = convert_pdf_to_chunks(
                     file_path=file_path,
                     uri=uri,
@@ -251,33 +277,8 @@ class DocumentIndexer:
                     failed=1,
                     failure={"uri": uri, "error": "no content extracted"},
                 )
-            content_hash = compute_content_hash("".join(c.text for c in chunks))
-            existing = self._db.get_document_source(source_id)
-            if existing is not None and existing.content_hash == content_hash and not force:
-                self._db.upsert_document_source(
-                    _make_db_source(
-                        source_id=source_id,
-                        uri=uri,
-                        content_hash=content_hash,
-                        status="skipped",
-                        chunk_count=existing.chunk_count,
-                        title=existing.title,
-                        indexed_at=existing.indexed_at,
-                    )
-                )
-                return _FileResult(uri=uri, status="skipped", skipped=1)
         else:
             try:
-                if file_path.stat().st_size > self._config.max_file_bytes:
-                    return _FileResult(
-                        uri=uri,
-                        status="failed",
-                        failed=1,
-                        failure={
-                            "uri": uri,
-                            "error": f"file exceeds {self._config.max_file_bytes} bytes",
-                        },
-                    )
                 text = _sanitize_text(_read_document_text(file_path))
             except (OSError, UnicodeError) as exc:
                 return _FileResult(
@@ -286,21 +287,6 @@ class DocumentIndexer:
                     failed=1,
                     failure={"uri": uri, "error": str(exc)},
                 )
-            content_hash = compute_content_hash(text)
-            existing = self._db.get_document_source(source_id)
-            if existing is not None and existing.content_hash == content_hash and not force:
-                self._db.upsert_document_source(
-                    _make_db_source(
-                        source_id=source_id,
-                        uri=uri,
-                        content_hash=content_hash,
-                        status="skipped",
-                        chunk_count=existing.chunk_count,
-                        title=existing.title,
-                        indexed_at=existing.indexed_at,
-                    )
-                )
-                return _FileResult(uri=uri, status="skipped", skipped=1)
             chunks = make_document_chunks(
                 text=text,
                 uri=uri,
@@ -465,6 +451,10 @@ def _is_secret_file(name: str) -> bool:
 
 def _read_document_text(file_path: Path) -> str:
     return file_path.read_text(encoding="utf-8", errors="replace")
+
+
+def _compute_file_hash(file_path: Path) -> str:
+    return hashlib.sha256(file_path.read_bytes()).hexdigest()
 
 
 def _sanitize_text(text: str) -> str:

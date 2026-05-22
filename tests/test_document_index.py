@@ -199,7 +199,7 @@ def test_skip_unchanged_pdf(
     second = indexer.index_paths(project_root=tmp_path, paths=["guide.pdf"])
     assert second.skipped == 1
     assert second.indexed == 0
-    assert mock_convert.call_count == 2  # converter still called; skip happens after hash check
+    assert mock_convert.call_count == 1
 
 
 def test_unsupported_file_type_is_skipped(db_engine: Engine, tmp_path: Path) -> None:

@@ -35,8 +35,12 @@ def test_session_messages_round_trip(tmp_path: Path) -> None:
     restored_blob = db.load_session_messages(session_id)
     restored = ModelMessagesTypeAdapter.validate_python(restored_blob)
     assert len(restored) == 4
-    assert restored[0].parts[0].content == "hello"
-    assert restored[3].parts[0].content == "ok"
+    first_part = restored[0].parts[0]
+    last_part = restored[3].parts[0]
+    assert isinstance(first_part, UserPromptPart)
+    assert isinstance(last_part, TextPart)
+    assert first_part.content == "hello"
+    assert last_part.content == "ok"
 
 
 def test_get_last_session_id(tmp_path: Path) -> None:

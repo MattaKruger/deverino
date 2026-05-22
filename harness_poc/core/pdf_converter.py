@@ -30,6 +30,12 @@ def convert_pdf_to_chunks(
         PdfPipelineOptions,
     )
     from docling.document_converter import DocumentConverter, PdfFormatOption  # noqa: PLC0415
+    from docling_core.transforms.chunker.hybrid_chunker import (  # noqa: PLC0415
+        get_default_tokenizer,
+    )
+    from docling_core.transforms.chunker.tokenizer.huggingface import (  # noqa: PLC0415
+        HuggingFaceTokenizer,
+    )
 
     pipeline_options = PdfPipelineOptions()
     pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
@@ -39,7 +45,9 @@ def convert_pdf_to_chunks(
     result = converter.convert(file_path)
     doc = result.document
 
-    chunker = HybridChunker(max_tokens=max_tokens)
+    default_tokenizer = get_default_tokenizer()
+    tokenizer = HuggingFaceTokenizer(tokenizer=default_tokenizer.tokenizer, max_tokens=max_tokens)
+    chunker = HybridChunker(tokenizer=tokenizer)
     source_id = make_source_id(uri)
     now_ms = int(time.time() * 1000)
     chunks: list[DocumentChunk] = []
@@ -70,10 +78,9 @@ def convert_pdf_to_chunks(
 
 def _extract_chunk_title(chunk: object) -> str:
     """Return the most specific heading from chunk metadata, or empty string."""
-    try:
-        headings = chunk.meta.headings  # type: ignore[union-attr]
-        if headings:
-            return headings[-1]
-    except AttributeError:
-        logger.debug("chunk.meta.headings not available; falling back to file title")
+    meta = getattr(chunk, "meta", None)
+    headings = getattr(meta, "headings", None)
+    if isinstance(headings, list) and headings:
+        return str(headings[-1])
+    logger.debug("chunk.meta.headings not available; falling back to file title")
     return ""

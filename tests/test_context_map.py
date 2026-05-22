@@ -239,7 +239,7 @@ def test_apply_edits_add_delete_replace_operations() -> None:
         }
     }
 
-    result, applied_count = materializer._apply_edits(  # noqa: SLF001
+    result, applied_count = materializer._apply_edits(
         current,
         [
             {
@@ -275,7 +275,7 @@ def test_apply_edits_add_delete_replace_operations() -> None:
 def test_apply_edits_add_assigns_entry_id() -> None:
     materializer = _materializer_module()
 
-    result, applied_count = materializer._apply_edits(  # noqa: SLF001
+    result, applied_count = materializer._apply_edits(
         {},
         [
             {
@@ -300,7 +300,7 @@ def test_apply_edits_replace_retains_entry_id() -> None:
         }
     }
 
-    result, applied_count = materializer._apply_edits(  # noqa: SLF001
+    result, applied_count = materializer._apply_edits(
         current,
         [
             {
@@ -320,7 +320,7 @@ def test_apply_edits_replace_retains_entry_id() -> None:
 def test_ensure_entry_ids_handles_old_format_entries() -> None:
     materializer = _materializer_module()
 
-    result = materializer._ensure_entry_ids(  # noqa: SLF001
+    result = materializer._ensure_entry_ids(
         {"context_understanding": {"old": {"content": "old", "priority_score": 0.6}}}
     )
 
@@ -330,7 +330,7 @@ def test_ensure_entry_ids_handles_old_format_entries() -> None:
 def test_apply_edits_reports_no_change_for_missing_delete() -> None:
     materializer = _materializer_module()
 
-    _result, applied_count = materializer._apply_edits(  # noqa: SLF001
+    _result, applied_count = materializer._apply_edits(
         {},
         [{"op": "DELETE", "section": "context_understanding", "entry_key": "missing"}],
     )
@@ -347,7 +347,7 @@ def test_enforce_budget_evicts_lowest_priority_entries() -> None:
         }
     }
 
-    result, evictions = materializer._enforce_budget(map_data, token_budget=80)  # noqa: SLF001
+    result, evictions = materializer._enforce_budget(map_data, token_budget=80)
 
     assert "low" not in result["parsing_schema"]
     assert evictions[0]["entry_key"] == "low"
@@ -366,7 +366,7 @@ def test_enforce_budget_returns_evictions() -> None:
         }
     }
 
-    _result, evictions = materializer._enforce_budget(map_data, token_budget=20)  # noqa: SLF001
+    _result, evictions = materializer._enforce_budget(map_data, token_budget=20)
 
     assert evictions == [
         {
@@ -391,7 +391,7 @@ def test_detect_promotions_detects_upward_moves() -> None:
         }
     }
 
-    promotions = materializer._detect_promotions(old, new)  # noqa: SLF001
+    promotions = materializer._detect_promotions(old, new)
 
     assert promotions == [
         {
@@ -540,7 +540,7 @@ def test_materializer_skips_frozen_corpus(
         FrozenDatetime,
     )
 
-    asyncio.run(runner._poll_once())  # noqa: SLF001
+    asyncio.run(runner._poll_once())
 
     assert calls == []
 
@@ -557,17 +557,17 @@ def test_materializer_freezes_after_three_no_change_cycles(tmp_path: Path) -> No
         session_id=session_id,
     )
 
-    asyncio.run(runner._materialize("deverino:codebase"))  # noqa: SLF001
+    asyncio.run(runner._materialize("deverino:codebase"))
     assert db.is_map_frozen("deverino:codebase") is False
-    asyncio.run(runner._materialize("deverino:codebase"))  # noqa: SLF001
+    asyncio.run(runner._materialize("deverino:codebase"))
     assert db.is_map_frozen("deverino:codebase") is False
-    asyncio.run(runner._materialize("deverino:codebase"))  # noqa: SLF001
+    asyncio.run(runner._materialize("deverino:codebase"))
     assert db.is_map_frozen("deverino:codebase") is True
 
 
 def test_parse_json_strips_markdown_fences() -> None:
     materializer = _materializer_module()
 
-    result = materializer._parse_json('```json\n{"edits": []}\n```')  # noqa: SLF001
+    result = materializer._parse_json('```json\n{"edits": []}\n```')
 
     assert result == {"edits": []}

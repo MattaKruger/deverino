@@ -69,6 +69,22 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "TC002", "TC003", "PLR2004", "SLF001", "FBT001", "FBT002"]
+"harness_poc/core/skill_catalog.py" = ["PLW0603", "TC003"]
+"harness_poc/core/skill_preprocessing.py" = ["S105", "S603", "S607", "TC003"]
+"harness_poc/system_tools/container_destroy.py" = ["ERA001", "TC001"]
+"harness_poc/system_tools/container_spawn.py" = ["TC001"]
+"harness_poc/system_tools/knowledge_tools.py" = [
+    "E402",
+    "PERF401",
+    "PLC0415",
+    "PLR0911",
+    "PLW0603",
+]
+"skills/observe/skill.py" = ["PLR0911", "PLR2004"]
+"skills/spec_writer/skill.py" = ["TC001", "TC003"]
+"tests/test_container_skills.py" = ["PLC0415"]
+"tests/test_execute_python.py" = ["ARG001", "PLC0415", "PLR0913", "TC001"]
+"tests/test_knowledge_tools.py" = ["ARG002", "N817", "PLC0415"]
 
 [tool.ruff.format]
 quote-style = "double"

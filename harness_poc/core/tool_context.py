@@ -10,15 +10,24 @@ callbacks — those are SkillRunner concerns.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
     from harness_poc.core.config import RuntimeConfig
 
 from harness_poc.core.skill_context import CancellationToken
+
+
+class ToolDatabase(Protocol):
+    """Database methods used by built-in tools."""
+
+    def read_memory(self, session_id: str, key: str) -> dict[str, Any] | str | None: ...
+
+    def list_memory_keys(self, session_id: str) -> list[str]: ...
+
+    def write_memory(self, session_id: str, key: str, payload: str | dict[str, Any]) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +42,7 @@ class ToolContext:
 
     session_id: str
     project_root: Path
-    database: BlackboardAccessProxy | None = None
+    database: ToolDatabase | None = None
     runtime_config: RuntimeConfig | None = None
     cancellation: CancellationToken = field(default_factory=CancellationToken)
 
