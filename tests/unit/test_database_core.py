@@ -5,12 +5,10 @@ memory read/write, and key listing — using an in-memory SQLite engine.
 No Postgres required.
 """
 
-# ruff: noqa: ANN201, FBT003
 
 from sqlalchemy import Engine
 
 from harness_poc.core.database import BlackboardDatabase
-
 
 # ---------------------------------------------------------------------------
 # Session lifecycle
@@ -46,7 +44,7 @@ def test_get_last_session_id(in_memory_engine: Engine) -> None:
     _utc_now() truncates to seconds, so we sleep to ensure distinct
     created_at values.
     """
-    import time
+    import time  # noqa: PLC0415
 
     db = BlackboardDatabase(in_memory_engine)
     db.start_session("First")
@@ -87,8 +85,8 @@ def test_write_and_read_memory_dict(in_memory_engine: Engine) -> None:
     result = db.read_memory(sid, "result")
 
     assert result == payload
-    assert result["count"] == 42
-    assert result["nested"]["key"] == "value"
+    assert result["count"] == 42  # ty:ignore[invalid-argument-type, not-subscriptable]
+    assert result["nested"]["key"] == "value"  # ty:ignore[invalid-argument-type, not-subscriptable]
 
 
 def test_read_memory_returns_none_for_unknown_key(in_memory_engine: Engine) -> None:

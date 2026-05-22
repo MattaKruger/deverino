@@ -29,6 +29,6 @@ def test_summarise_blackboard_database(
     rubric.assert_hard_gates(result, events=live_session.events)
     score = rubric.judge(result.content, config=live_session.state.config.llm)
     assert score is not None, "Rubric must define LLM Judge section for benchmarks"
-    assert score >= rubric.judge_threshold, (
+    assert score >= rubric.judge_threshold, (  # ty:ignore[unsupported-operator]
         f"Judge score {score} below threshold {rubric.judge_threshold}"
     )

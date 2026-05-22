@@ -39,7 +39,6 @@ from tests.helpers import (
     tool_call_response,
 )
 
-
 # ---------------------------------------------------------------------------
 # Two-skill chain: real skill → evaluate
 # ---------------------------------------------------------------------------
@@ -82,8 +81,7 @@ def test_reads_memory_then_evaluates():
 
 
 def test_mocked_search_then_reads_memory_then_evaluates():
-    """Model calls search_documents (mocked), sees the result, calls
-    read_memory (real), then evaluates complete.
+    """Model calls search_documents (mocked), calls read_memory (real), then evaluates complete.
 
     Demonstrates: skill_overrides proxy returning a mock SkillResult
     without touching Vespa, the mock result flowing through the context
@@ -185,12 +183,12 @@ def test_context_window_trims_old_skill_output():
     limits get_recent_events and completes without errors under
     constrained context.
     """
-    ITEM_COUNT = 12
+    item_count = 12
 
     harness = SessionHarness.build(
         [
             tool_call_response("read_memory", {"memory_key": f"item_{i}"})
-            for i in range(ITEM_COUNT)
+            for i in range(item_count)
         ]
         + [
             evaluate_goal_response(
@@ -204,7 +202,7 @@ def test_context_window_trims_old_skill_output():
     )
 
     # Pre-seed all memory keys so read_memory succeeds.
-    for i in range(ITEM_COUNT):
+    for i in range(item_count):
         harness.state.database.write_memory(
             harness.state.session_id,
             f"item_{i}",

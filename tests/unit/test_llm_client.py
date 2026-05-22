@@ -4,14 +4,13 @@ LLMResponse, Message, ToolCall, and Usage are the fundamental types
 that every LLM interaction flows through.
 """
 
-# ruff: noqa: ANN201, FBT003
+# ruff: noqa: ANN201
 
 from dataclasses import FrozenInstanceError
 
 import pytest
 
 from harness_poc.core.llm_client import LLMResponse, Message, ToolCall, Usage
-
 
 # ---------------------------------------------------------------------------
 # LLMResponse — construction and immutability
@@ -49,7 +48,7 @@ def test_response_with_usage():
     }
     r = LLMResponse(kind="text", content="ok", usage=usage)
     assert r.usage == usage
-    assert r.usage["total_tokens"] == 150
+    assert r.usage["total_tokens"] == 150  # ty:ignore[not-subscriptable]
 
 
 def test_response_with_cache_usage():
@@ -62,15 +61,15 @@ def test_response_with_cache_usage():
         "cache_miss_tokens": 50,
     }
     r = LLMResponse(kind="text", content="cached response", usage=usage)
-    assert r.usage["cache_hit_tokens"] == 150
-    assert r.usage["cache_miss_tokens"] == 50
+    assert r.usage["cache_hit_tokens"] == 150  # ty:ignore[not-subscriptable]
+    assert r.usage["cache_miss_tokens"] == 50  # ty:ignore[not-subscriptable]
 
 
 def test_llm_response_is_immutable():
     """LLMResponse is frozen — fields cannot be reassigned."""
     r = LLMResponse(kind="text", content="original")
     with pytest.raises(FrozenInstanceError):
-        r.content = "modified"
+        r.content = "modified"  # ty:ignore[invalid-assignment]
 
 
 def test_llm_response_equality():

@@ -4,7 +4,7 @@ Every event in the system flows through these types. Tests validate
 auto-population, backward-compatibility fields, and registry integrity.
 """
 
-# ruff: noqa: ANN201, FBT003
+# ruff: noqa: ANN201
 
 from harness_poc.core.events import (
     EVENT_REGISTRY,
@@ -27,7 +27,6 @@ from harness_poc.core.events import (
     SubAgentCompleted,
     SubAgentDispatched,
 )
-
 
 # ---------------------------------------------------------------------------
 # BaseEvent — auto-population
@@ -219,7 +218,12 @@ def test_each_event_type_can_be_constructed_with_minimal_args():
         PipelineNodeCompleted(
             session_id="s1", node_id="n1", status="completed", output_preview="ok"
         ),
-        PipelineCompleted(session_id="s1", pipeline_name="test", status="completed", duration_s=1.5),
+        PipelineCompleted(
+            session_id="s1",
+            pipeline_name="test",
+            status="completed",
+            duration_s=1.5,
+        ),
     ]
     assert len(events) == len(EVENT_REGISTRY), (
         f"Constructed {len(events)} events, registry has {len(EVENT_REGISTRY)}"

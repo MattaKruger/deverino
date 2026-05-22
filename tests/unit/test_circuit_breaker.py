@@ -5,7 +5,6 @@ failures and LLMActionEmitted events for token budget — emitting
 StreamPaused when thresholds are breached.
 """
 
-# ruff: noqa: ANN201, FBT003
 
 import asyncio
 
@@ -16,7 +15,6 @@ from harness_poc.core.event_bus import EventBus
 from harness_poc.core.event_store import EventStore
 from harness_poc.core.events import LLMActionEmitted, SkillCompleted, StreamPaused
 from harness_poc.core.processors.circuit_breaker import run_circuit_breaker
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

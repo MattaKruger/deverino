@@ -19,7 +19,6 @@ from harness_poc.app_factory import (
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
-from harness_poc.core.skill_context import SkillResult
 from harness_poc.core.skill_runner import SkillRunner
 from tests.helpers import (
     RecordingEventBus,
@@ -32,6 +31,7 @@ if TYPE_CHECKING:
 
     from harness_poc.core.events import BaseEvent, SkillCalled, SkillCompleted
     from harness_poc.core.llm_client import LLMResponse
+    from harness_poc.core.skill_context import SkillResult
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +55,7 @@ class _SkillOverrideProxy:
         tool_name: str,
         arguments: dict[str, Any],
         session_id: str,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401
     ) -> SkillResult:
         if tool_name in self._overrides:
             return self._overrides[tool_name]
@@ -66,7 +66,7 @@ class _SkillOverrideProxy:
             **kwargs,
         )
 
-    def __getattr__(self, name: str) -> Any:
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
         return getattr(self._real, name)
 
 
@@ -169,25 +169,25 @@ class SessionHarness:
         identity = Identity(
             session_id=session_id,
             database=database,
-            event_bus=event_bus,  # type: ignore[arg-type] — RecordingEventBus is compatible at runtime
-            event_store=None,  # type: ignore[arg-type] — not used by RecordingEventBus
+            event_bus=event_bus,  # type: ignore[arg-type] — RecordingEventBus is compatible at runtime  # ty:ignore[invalid-argument-type]
+            event_store=None,  # type: ignore[arg-type] — not used by RecordingEventBus  # ty:ignore[invalid-argument-type]
             config_project_root=config.project_root,
             config_project_id=config.project_id,
         )
         runtime = Runtime(
             config=config,
-            skill_runner=skill_runner,
-            tool_runner=None,  # type: ignore[arg-type] — not used by GoalRunner
-            skill_scaffolder=None,  # type: ignore[arg-type]
-            workflow_runner=None,  # type: ignore[arg-type]
-            pipeline_runner=None,  # type: ignore[arg-type]
-            pydantic_runtime=None,  # type: ignore[arg-type]
+            skill_runner=skill_runner,  # ty:ignore[invalid-argument-type]
+            tool_runner=None,  # type: ignore[arg-type] — not used by GoalRunner  # ty:ignore[invalid-argument-type]
+            skill_scaffolder=None,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            workflow_runner=None,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            pipeline_runner=None,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            pydantic_runtime=None,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             tools=tools,
             skill_catalog="",
         )
         long_lived = LongLived(
-            materializer=None,  # type: ignore[arg-type]
-            supervisor=None,  # type: ignore[arg-type]
+            materializer=None,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            supervisor=None,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
         )
         state = AppState(
             identity=identity,
@@ -222,7 +222,7 @@ class SessionHarness:
         """
         if self._trace_cache is None:
             self._trace_cache = TraceAssertions(
-                self.state.event_bus.get_all_events(self.state.session_id)  # type: ignore[union-attr]
+                self.state.event_bus.get_all_events(self.state.session_id)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
             )
         return self._trace_cache
 

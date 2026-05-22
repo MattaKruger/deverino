@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     from harness_poc.core.goal_runner import GoalRunResult
     from harness_poc.core.llm_client import Message
+    from harness_poc.core.skill_context import SkillResult
 
 E = TypeVar("E", bound=BaseEvent)
 
@@ -139,8 +140,8 @@ def text_response(content: str) -> LLMResponse:
 def skill_result(
     status: str = "success",
     content: str = "",
-    **artifacts: Any,
-) -> "SkillResult":
+    **artifacts: Any,  # noqa: ANN401
+) -> SkillResult:
     """Shorthand for a mock skill result — used with SessionHarness skill_overrides.
 
     Usage:
@@ -159,7 +160,7 @@ def skill_result(
     """
     from harness_poc.core.skill_context import SkillResult  # noqa: PLC0415
 
-    return SkillResult(status=status, content=content, artifacts=dict(artifacts))
+    return SkillResult(status=status, content=content, artifacts=dict(artifacts))  # ty:ignore[invalid-argument-type]
 
 
 # ---------------------------------------------------------------------------

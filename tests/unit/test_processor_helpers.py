@@ -5,12 +5,11 @@ processors. Testing them in isolation catches parsing bugs without
 needing the full async event loop.
 """
 
-# ruff: noqa: ANN201, FBT003
+# ruff: noqa: ANN201
 
 from harness_poc.core.events import AgentInputAdded, SkillCalled, SkillCompleted, SkillRequested
 from harness_poc.core.processors.llm_worker import _parse_skill_request, _prompt_from_event
 from harness_poc.core.processors.tool_worker import _cancel_reason, _skill_request_parts
-
 
 # ---------------------------------------------------------------------------
 # _prompt_from_event — LLM worker
