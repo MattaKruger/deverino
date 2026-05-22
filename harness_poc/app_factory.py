@@ -204,6 +204,11 @@ def bootstrap_document_index(config: HarnessConfig, database: BlackboardDatabase
     if paths is None:
         return
 
+    changed_paths = _changed_auto_index_paths(config, database, paths)
+    if not changed_paths:
+        logger.info("Skipping auto-index: indexed documents are unchanged")
+        return
+
     try:
         executor = ThreadPoolExecutor(max_workers=1)
         try:
@@ -218,7 +223,22 @@ def bootstrap_document_index(config: HarnessConfig, database: BlackboardDatabase
         logger.info("Skipping auto-index: Vespa not reachable")
         return
 
-    _run_auto_index(config, database, paths)
+    _run_auto_index(config, database, changed_paths)
+
+
+def _changed_auto_index_paths(
+    config: HarnessConfig, database: BlackboardDatabase, paths: list[str]
+) -> list[str]:
+    """Return only auto-index paths whose file hashes are stale or missing."""
+    indexer = DocumentIndexer(
+        config=config.retrieval,
+        database=database,
+        vespa_client=LiveVespaDocumentClient(config.retrieval),
+    )
+    return indexer.changed_indexable_uris(
+        project_root=config.project_root,
+        paths=paths,
+    )
 
 
 def _resolve_auto_index_paths(config: HarnessConfig) -> list[str] | None:
@@ -319,8 +339,14 @@ def _resolve_or_create_session(database: BlackboardDatabase, session_id: str | N
     return database.start_session("Interactive proof of concept session.")
 
 
-def build_identity(config: HarnessConfig, session_id: str | None) -> Identity:
-    engine = create_db_engine(config.runtime.database_url)
+def build_identity(
+    config: HarnessConfig,
+    session_id: str | None,
+    *,
+    database_url: str | None = None,
+) -> Identity:
+    effective_url = database_url or config.runtime.database_url
+    engine = create_db_engine(effective_url)
     database = BlackboardDatabase(engine)
     database.create_tables()
     event_store = EventStore(engine)
@@ -475,10 +501,14 @@ def _build_app_state_with(
     )
 
 
-def build_app_state(session_id: str | None = None) -> AppState:
+def build_app_state(
+    session_id: str | None = None,
+    *,
+    database_url: str | None = None,
+) -> AppState:
     config = HarnessConfig.load()
     configure_logging(config.project_root)
-    identity = build_identity(config, session_id)
+    identity = build_identity(config, session_id, database_url=database_url)
     runtime = build_runtime_layer(identity, config)
     long_lived = build_long_lived(identity, runtime)
 
