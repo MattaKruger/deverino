@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import Engine
@@ -100,9 +101,8 @@ def test_index_pdf_file(
         )
     ]
 
-    monkeypatch.setattr(
-        document_index, "convert_pdf_to_chunks", lambda **_kw: fake_chunks
-    )
+    mock_convert = MagicMock(return_value=fake_chunks)
+    monkeypatch.setattr(document_index, "convert_pdf_to_chunks", mock_convert)
 
     db = BlackboardDatabase(db_engine)
     vespa = FakeVespaClient()
@@ -116,6 +116,13 @@ def test_index_pdf_file(
     assert result.chunks_indexed == 1
     fed_text = "\n".join(chunk.text for chunk in vespa._docs.values())
     assert "Vespa document indexing" in fed_text
+    mock_convert.assert_called_once_with(
+        file_path=pdf,
+        uri="guide.pdf",
+        title="Guide",
+        kind="source",
+        max_tokens=100,
+    )
 
 
 def test_index_blank_pdf_returns_failed(
