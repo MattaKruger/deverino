@@ -9,6 +9,12 @@ from harness_poc.core import document_index
 from harness_poc.core.config import RetrievalConfig
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.document_index import DocumentIndexer
+from harness_poc.core.retrieval import (
+    DocumentChunk,
+    compute_content_hash,
+    make_chunk_id,
+    make_source_id,
+)
 from tests.test_vespa_client import FakeVespaClient
 
 
@@ -79,21 +85,24 @@ def test_index_pdf_file(
     pdf = tmp_path / "guide.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
-    class FakePage:
-        def __init__(self, text: str) -> None:
-            self._text = text
+    source_id = make_source_id("guide.pdf")
+    fake_chunks = [
+        DocumentChunk(
+            source_id=source_id,
+            uri="guide.pdf",
+            title="Introduction",
+            chunk_id=make_chunk_id(source_id, 0),
+            chunk_index=0,
+            text="Content about Vespa document indexing.",
+            kind="source",
+            content_hash=compute_content_hash("Content about Vespa document indexing."),
+            updated_at=1_000_000,
+        )
+    ]
 
-        def extract_text(self) -> str:
-            return self._text
-
-    class FakePdfReader:
-        def __init__(self, _stream: object) -> None:
-            self.pages = [
-                FakePage("First page about Vespa document indexing."),
-                FakePage("Second page about PDF retrieval."),
-            ]
-
-    monkeypatch.setattr(document_index, "PdfReader", FakePdfReader)
+    monkeypatch.setattr(
+        document_index, "convert_pdf_to_chunks", lambda **_kw: fake_chunks
+    )
 
     db = BlackboardDatabase(db_engine)
     vespa = FakeVespaClient()
@@ -104,10 +113,50 @@ def test_index_pdf_file(
     assert result.indexed == 1
     assert result.skipped == 0
     assert result.failed == 0
-    assert result.chunks_indexed >= 1
-    indexed_text = "\n".join(chunk.text for chunk in vespa._docs.values())
-    assert "[Page 1]" in indexed_text
-    assert "Second page about PDF retrieval." in indexed_text
+    assert result.chunks_indexed == 1
+    fed_text = "\n".join(chunk.text for chunk in vespa._docs.values())
+    assert "Vespa document indexing" in fed_text
+
+
+def test_index_blank_pdf_returns_failed(
+    db_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = tmp_path / "blank.pdf"
+    pdf.write_bytes(b"%PDF-1.4 blank")
+
+    monkeypatch.setattr(document_index, "convert_pdf_to_chunks", lambda **_kw: [])
+
+    db = BlackboardDatabase(db_engine)
+    vespa = FakeVespaClient()
+    indexer = _make_indexer(db, vespa)
+
+    result = indexer.index_paths(project_root=tmp_path, paths=["blank.pdf"])
+
+    assert result.failed == 1
+    assert result.indexed == 0
+    assert any("no content extracted" in f["error"] for f in result.failures)
+
+
+def test_index_pdf_conversion_error_returns_failed(
+    db_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = tmp_path / "corrupt.pdf"
+    pdf.write_bytes(b"not a pdf")
+
+    def _raise(**_kw: object) -> list[DocumentChunk]:
+        msg = "PDF conversion failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(document_index, "convert_pdf_to_chunks", _raise)
+
+    db = BlackboardDatabase(db_engine)
+    vespa = FakeVespaClient()
+    indexer = _make_indexer(db, vespa)
+
+    result = indexer.index_paths(project_root=tmp_path, paths=["corrupt.pdf"])
+
+    assert result.failed == 1
+    assert any("PDF conversion failed" in f["error"] for f in result.failures)
 
 
 def test_unsupported_file_type_is_skipped(db_engine: Engine, tmp_path: Path) -> None:
