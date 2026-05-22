@@ -64,6 +64,51 @@ def test_skip_unchanged_source(db_engine: Engine, tmp_path: Path) -> None:
     assert second.indexed == 0
 
 
+def test_has_indexable_changes_returns_false_for_unchanged_sources(
+    db_engine: Engine, tmp_path: Path
+) -> None:
+    doc = tmp_path / "doc.md"
+    doc.write_text("Same content.", encoding="utf-8")
+
+    db = BlackboardDatabase(db_engine)
+    vespa = FakeVespaClient()
+    indexer = _make_indexer(db, vespa)
+
+    assert indexer.has_indexable_changes(project_root=tmp_path, paths=["doc.md"])
+
+    first = indexer.index_paths(project_root=tmp_path, paths=["doc.md"])
+    assert first.indexed == 1
+
+    assert not indexer.has_indexable_changes(project_root=tmp_path, paths=["doc.md"])
+
+
+def test_has_indexable_changes_retries_failed_sources(
+    db_engine: Engine, tmp_path: Path
+) -> None:
+    doc = tmp_path / "doc.md"
+    doc.write_text("Same content.", encoding="utf-8")
+
+    db = BlackboardDatabase(db_engine)
+    vespa = FakeVespaClient()
+    indexer = _make_indexer(db, vespa)
+
+    source_id = make_source_id("doc.md")
+    content_hash = document_index._compute_file_hash(doc)
+    db.upsert_document_source(
+        document_index._make_db_source(
+            source_id=source_id,
+            uri="doc.md",
+            content_hash=content_hash,
+            status="failed",
+            chunk_count=0,
+            title="Doc",
+            error="previous failure",
+        )
+    )
+
+    assert indexer.has_indexable_changes(project_root=tmp_path, paths=["doc.md"])
+
+
 def test_force_reindex_skips_hash_check(db_engine: Engine, tmp_path: Path) -> None:
     doc = tmp_path / "doc.md"
     doc.write_text("Same content.", encoding="utf-8")

@@ -136,6 +136,32 @@ def text_response(content: str) -> LLMResponse:
     return LLMResponse(kind="text", content=content)
 
 
+def skill_result(
+    status: str = "success",
+    content: str = "",
+    **artifacts: Any,
+) -> "SkillResult":
+    """Shorthand for a mock skill result — used with SessionHarness skill_overrides.
+
+    Usage:
+        from tests.helpers import skill_result
+
+        harness = SessionHarness.build(
+            [...],
+            skill_overrides={
+                "search_documents": skill_result(
+                    status="success",
+                    content="Found 3 documents.",
+                    hit_count=3,
+                ),
+            },
+        )
+    """
+    from harness_poc.core.skill_context import SkillResult  # noqa: PLC0415
+
+    return SkillResult(status=status, content=content, artifacts=dict(artifacts))
+
+
 # ---------------------------------------------------------------------------
 # TraceAssertions
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@
 
 ## Context
 
-The existing test suite (441 tests, ~9k lines) was written by multiple agents across providers with no shared architecture. The result is blurred unit/integration boundaries, `build_app_state()` overused in "unit" tests, `RecordingEventBus` underused, no test markers, and no benchmark layer.
+The existing test suite (441 tests, ~9k lines) was written by multiple agents across providers with no shared architecture. The result is blurred unit/integration boundaries, `AppState` construction scattered across 7 test files that should be pure-unit tests, `RecordingEventBus` not applied consistently across all integration-boundary tests, no test markers, and no benchmark layer.
 
 Deverino is meta-programming: it is a harness that reasons about and orchestrates other programs. This makes the testing problem qualitatively different from standard application testing. A test framework for an agentic harness must be able to:
 
@@ -29,16 +29,16 @@ tests/
   agent/          # Full GoalRunner sessions. Mock LLM. Event trace assertions.
   bench/          # Real LLM. Rubric-scored. CI-gated separately.
   conftest.py     # Shared fixtures: db_engine, tmp_path only
-  helpers.py      # RecordingEventBus + TraceAssertions
+  helpers.py      # RecordingEventBus (existing) + TraceAssertions (to be added)
 ```
 
 ### What belongs where
 
-| Layer | Fixture cost | LLM | DB | Use for |
-|-------|-------------|-----|----|---------|
-| `unit/` | Zero | No | In-memory only | Pure functions, data models, skill logic, event types, routing |
-| `agent/` | Low | Mock (FunctionModel) | In-memory | Loop behaviour, skill sequencing, context window, stuck detection |
-| `bench/` | High | Real | Real (Postgres) | Model quality scoring, regression between model versions |
+| Layer    | Fixture cost | LLM                  | DB              | Use for                                                           |
+| -------- | ------------ | -------------------- | --------------- | ----------------------------------------------------------------- |
+| `unit/`  | Zero         | No                   | In-memory only  | Pure functions, data models, skill logic, event types, routing    |
+| `agent/` | Low          | Mock (FunctionModel) | In-memory       | Loop behaviour, skill sequencing, context window, stuck detection |
+| `bench/` | High         | Real                 | Real (Postgres) | Model quality scoring, regression between model versions          |
 
 ---
 
@@ -56,6 +56,7 @@ def test_bad_handler_does_not_stop_other_handlers():
 ```
 
 **Coverage targets:**
+
 - `core/events.py` — all event types, `EVENT_REGISTRY`
 - `core/event_bus.py` — publish, subscribe, bad handler isolation
 - `core/event_store.py` — persist and retrieve events
@@ -80,10 +81,15 @@ The centrepiece of the new framework. `SessionHarness` is the single controlled 
 @dataclass
 class SessionHarness:
     state: AppState           # RecordingEventBus + in-memory DB
-    runner: GoalRunner
+    runner: GoalRunner        # constructed with max_iterations at build time
     result: GoalRunResult | None = None
 
-    def run(self, goal: str, *, max_iterations: int = 10) -> GoalRunResult:
+    @classmethod
+    def build(cls, mock_responses: list[LLMResponse], *, max_iterations: int = 10) -> SessionHarness:
+        """Construct a harness with a FunctionModel-backed GoalRunner."""
+        ...
+
+    def run(self, goal: str) -> GoalRunResult:
         self.result = self.runner.run(goal, self.state)
         return self.result
 
@@ -123,7 +129,7 @@ class SessionHarness:
 
 @pytest.fixture
 def session(mock_responses: list[LLMResponse]) -> SessionHarness:
-    return SessionHarness.build(mock_responses)
+    return SessionHarness.build(mock_responses, max_iterations=10)
 ```
 
 ### Example test
@@ -158,9 +164,11 @@ tests/bench/rubrics/
 # Rubric: summarise-blackboard-database
 
 ## Goal
+
 Summarise what BlackboardDatabase does and how it is structured.
 
 ## Hard assertions (deterministic, no token cost)
+
 - must_contain: "session"
 - must_contain: "SQLite"
 - must_contain: "state_proposals"
@@ -168,18 +176,20 @@ Summarise what BlackboardDatabase does and how it is structured.
 - min_words: 50
 
 ## Skill sequence (ordered)
+
 - read_memory
 - evaluate_goal
 
 ## LLM judge (soft score)
+
 threshold: 0.7
 model: claude-haiku-4-5-20251001
 prompt: |
-  Score the following answer 0.0–1.0 on whether it accurately
-  describes the BlackboardDatabase's purpose, its key tables,
-  and its relationship to session state management.
-  
-  Answer: {answer}
+Score the following answer 0.0–1.0 on whether it accurately
+describes the BlackboardDatabase's purpose, its key tables,
+and its relationship to session state management.
+
+Answer: {answer}
 ```
 
 ### Scoring pipeline
@@ -222,6 +232,7 @@ The existing 441 tests are frozen in place. No migration pass upfront.
 **Rule:** New features are TDD'd into the new structure from day one. Old tests are deleted when you touch that area and rewrite the test properly. This avoids a migration project that blocks feature work.
 
 **Order of operations:**
+
 1. Build `tests/agent/harness.py` — the `SessionHarness` fixture
 2. Write 3–5 agent tests to validate the API design
 3. Build `tests/bench/` scaffolding — rubric loader, hard assertion runner, LLM judge
@@ -258,12 +269,12 @@ def pytest_collection_modifyitems(config, items):
 
 ## What Gets Deleted (on contact)
 
-| File | Replacement |
-|------|-------------|
-| `tests/smoke_test_skills.py` | `tests/unit/skills/test_*.py` run by pytest |
-| AppState setup in ~29 test files | `SessionHarness` fixture in `agent/` |
-| `tests/test_vespa_integration.py` | Marked `@pytest.mark.integration`, stays but gated |
-| Duplicate loop behaviour tests across files | Single `tests/agent/test_goal_loop.py` |
+| File                                        | Replacement                                        |
+| ------------------------------------------- | -------------------------------------------------- |
+| `tests/smoke_test_skills.py`                | `tests/unit/skills/test_*.py` run by pytest        |
+| `AppState` construction in 7 test files     | `SessionHarness` fixture in `agent/`               |
+| `tests/test_vespa_integration.py`           | Replace env-var `skipif` with `@pytest.mark.integration`; gated via `-m integration` in CI |
+| Duplicate loop behaviour tests across files | Single `tests/agent/test_goal_loop.py`             |
 
 ---
 

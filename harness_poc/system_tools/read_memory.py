@@ -1,4 +1,4 @@
-"""read_memory — retrieve data from the shared SQLite blackboard.
+"""read_memory — retrieve data from the shared blackboard.
 
 Migrated from ``system_skills/read_memory/skill.py`` (Phase 4).
 """
@@ -6,9 +6,12 @@ Migrated from ``system_skills/read_memory/skill.py`` (Phase 4).
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from harness_poc.core.skill_context import SkillResult
-from harness_poc.core.tool_context import ToolContext
+
+if TYPE_CHECKING:
+    from harness_poc.core.tool_context import ToolContext
 
 
 def read_memory(
@@ -59,7 +62,7 @@ from harness_poc.system_tools import register as _register  # noqa: E402
 
 _register(
     name="read_memory",
-    description=("Retrieves data stored in the shared SQLite blackboard for the current session."),
+    description=("Retrieves data stored in the shared blackboard for the current session."),
     parameters={
         "type": "object",
         "properties": {

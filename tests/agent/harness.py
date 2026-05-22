@@ -19,6 +19,7 @@ from harness_poc.app_factory import (
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
+from harness_poc.core.skill_context import SkillResult
 from harness_poc.core.skill_runner import SkillRunner
 from tests.helpers import (
     RecordingEventBus,
@@ -27,8 +28,46 @@ from tests.helpers import (
 )
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from harness_poc.core.events import BaseEvent, SkillCalled, SkillCompleted
     from harness_poc.core.llm_client import LLMResponse
+
+
+# ---------------------------------------------------------------------------
+# SkillOverrideProxy — intercepts specific skill names with mock results
+# ---------------------------------------------------------------------------
+
+
+class _SkillOverrideProxy:
+    """Wraps SkillRunner, returning mock results for overridden skill names.
+
+    All other attributes (discover_skills, cancel_call, etc.) delegate
+    to the real runner. Only execute_skill is intercepted.
+    """
+
+    def __init__(self, real: SkillRunner, overrides: dict[str, SkillResult]) -> None:
+        self._real = real
+        self._overrides = overrides
+
+    def execute_skill(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        session_id: str,
+        **kwargs: Any,
+    ) -> SkillResult:
+        if tool_name in self._overrides:
+            return self._overrides[tool_name]
+        return self._real.execute_skill(
+            tool_name=tool_name,
+            arguments=arguments,
+            session_id=session_id,
+            **kwargs,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real, name)
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +105,7 @@ class SessionHarness:
         cls,
         mock_responses: list[LLMResponse],
         *,
+        skill_overrides: dict[str, SkillResult] | None = None,
         max_iterations: int = 10,
         stuck_threshold: int = 3,
         context_window: int = 20,
@@ -76,6 +116,11 @@ class SessionHarness:
             mock_responses: Sequence of LLMResponse objects the mock
                 model will return, in order. The last response repeats
                 when exhausted.
+            skill_overrides: Optional mapping of skill_name → SkillResult.
+                When the mock LLM calls an overridden skill, the proxy
+                returns the mock result instead of executing the real
+                skill. Use for skills that need external services
+                (search_documents, web_search, semble_search).
             max_iterations: GoalRunner iteration limit.
             stuck_threshold: Semantic stuck detection sensitivity.
             context_window: Number of recent events in LLM context.
@@ -100,8 +145,13 @@ class SessionHarness:
         config = HarnessConfig.load()
 
         # 4. SkillRunner — discovers skills from project + system skill dirs
-        skill_runner = SkillRunner(database=database, config=config)
-        tools = skill_runner.discover_skills()
+        real_runner = SkillRunner(database=database, config=config)
+        skill_runner = (
+            _SkillOverrideProxy(real_runner, skill_overrides)
+            if skill_overrides
+            else real_runner
+        )
+        tools = real_runner.discover_skills()
 
         # 5. Mock LLM model
         mock_model = _mock_goal_model(mock_responses)

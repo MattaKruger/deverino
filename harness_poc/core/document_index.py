@@ -74,6 +74,70 @@ class DocumentIndexer:
     # Public API
     # ------------------------------------------------------------------
 
+    def changed_indexable_uris(
+        self,
+        project_root: Path,
+        paths: list[str],
+        glob_pattern: str = "**/*",
+        *,
+        exclude_dirs: list[str] | None = None,
+    ) -> list[str]:
+        """Return resolved URIs for indexable files that need feeding to Vespa."""
+        resolved_root = project_root.resolve()
+        resolved_files = self._resolve_files(
+            resolved_root,
+            paths,
+            glob_pattern,
+            exclude_dirs=exclude_dirs or [],
+        )
+
+        changed_uris: list[str] = []
+        for file_path in resolved_files:
+            try:
+                uri = str(file_path.relative_to(resolved_root))
+            except ValueError:
+                changed_uris.append(str(file_path))
+                continue
+
+            if not _is_indexable_file(file_path):
+                continue
+
+            try:
+                content_hash = _compute_file_hash(file_path)
+            except OSError:
+                changed_uris.append(uri)
+                continue
+
+            existing = self._db.get_document_source(make_source_id(uri))
+            if existing is None:
+                changed_uris.append(uri)
+                continue
+            if existing.content_hash != content_hash:
+                changed_uris.append(uri)
+                continue
+            if existing.status not in {"indexed", "skipped"}:
+                changed_uris.append(uri)
+
+        return changed_uris
+
+    def has_indexable_changes(
+        self,
+        project_root: Path,
+        paths: list[str],
+        glob_pattern: str = "**/*",
+        *,
+        exclude_dirs: list[str] | None = None,
+    ) -> bool:
+        """Return True when any resolved indexable file needs feeding to Vespa."""
+        return bool(
+            self.changed_indexable_uris(
+                project_root=project_root,
+                paths=paths,
+                glob_pattern=glob_pattern,
+                exclude_dirs=exclude_dirs,
+            )
+        )
+
     def index_paths(
         self,
         project_root: Path,
@@ -201,7 +265,7 @@ class DocumentIndexer:
     # Per-file indexing (thread-safe — only touches its own file's data)
     # ------------------------------------------------------------------
 
-    def _index_one_isolated(  # noqa: PLR0911, PLR0912
+    def _index_one_isolated(  # noqa: PLR0911
         self,
         file_path: Path,
         uri: str,
@@ -211,10 +275,7 @@ class DocumentIndexer:
         """Index a single file and return its outcome without mutating shared state."""
         source_id = make_source_id(uri)
 
-        if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
-            return _FileResult(uri=uri, status="skipped", skipped=1)
-
-        if _is_secret_file(file_path.name):
+        if not _is_indexable_file(file_path):
             return _FileResult(uri=uri, status="skipped", skipped=1)
 
         title = file_path.stem.replace("-", " ").replace("_", " ").title()
@@ -240,13 +301,18 @@ class DocumentIndexer:
             )
 
         existing = self._db.get_document_source(source_id)
-        if existing is not None and existing.content_hash == content_hash and not force:
+        if (
+            existing is not None
+            and existing.content_hash == content_hash
+            and existing.status in {"indexed", "skipped"}
+            and not force
+        ):
             self._db.upsert_document_source(
                 _make_db_source(
                     source_id=source_id,
                     uri=uri,
                     content_hash=content_hash,
-                    status="skipped",
+                    status="indexed",
                     chunk_count=existing.chunk_count,
                     title=existing.title,
                     indexed_at=existing.indexed_at,
@@ -447,6 +513,12 @@ def _under_ignore_prefix(path: Path, ignore_prefixes: list[Path]) -> bool:
 
 def _is_secret_file(name: str) -> bool:
     return any(fnmatch.fnmatch(name, pattern) for pattern in IGNORED_FILE_GLOBS)
+
+
+def _is_indexable_file(file_path: Path) -> bool:
+    return file_path.suffix.lower() in SUPPORTED_EXTENSIONS and not _is_secret_file(
+        file_path.name
+    )
 
 
 def _read_document_text(file_path: Path) -> str:

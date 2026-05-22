@@ -66,7 +66,7 @@ project:
 
 llm:
   provider: deepseek # deepseek | openai | anthropic
-  model: deepseek-v4-flash
+  model: deepseek-v4-pro
 
 runtime:
   database_url: postgresql://deverino:deverino@localhost/deverino
@@ -121,7 +121,7 @@ text with page markers before chunking.
 Index a PDF:
 
 ```bash
-uv run harness-poc documents index docs/example.pdf
+uv run harness-poc documents index docs/papers/2605.20173.pdf
 ```
 
 Index a directory of PDFs:
@@ -133,7 +133,7 @@ uv run harness-poc documents index docs --glob "*.pdf"
 Force reindexing even when content hashes have not changed:
 
 ```bash
-uv run harness-poc documents index docs/example.pdf --force
+uv run harness-poc documents index docs/papers/2605.20173.pdf --force
 ```
 
 Skip generated or non-prose directories while indexing:
@@ -234,7 +234,7 @@ uv run harness-poc goal "Summarize the event-sourced architecture" --max-iterati
 uv run harness-poc goal "Summarize retrieval" --max-tokens 8000 --max-seconds 60
 
 # Documents
-uv run harness-poc documents index docs/example.pdf
+uv run harness-poc documents index docs/papers/2605.20173.pdf
 uv run harness-poc documents index docs --glob "*.md" --force
 uv run harness-poc documents index docs --exclude-dir docs/acdl
 
@@ -257,6 +257,10 @@ uv run harness-poc events --session-id <id> --follow --type LLMActionEmitted
 uv run harness-poc workflow run research_task "What is the ReAct pattern?"
 uv run harness-poc pipeline list
 uv run harness-poc pipeline run research_and_write --input topic="black holes"
+
+# Dashboards
+uv run harness-poc dashboard summary
+uv run harness-poc dashboard serve
 ```
 
 ## TUI Commands
@@ -278,6 +282,7 @@ Useful slash commands:
 /skill <name> {"key":"value"}
 /state show [project|session|all]
 /state consolidate [preview|propose|approve]
+/copy
 /help
 /exit
 ```
@@ -360,7 +365,7 @@ Deverino separates four kinds of callable/project knowledge:
 - **Knowledge skills** are markdown instruction documents with `type: knowledge`;
   they are loaded on demand as context, not executed.
 
-Common built-in tools and project tools:
+Selected built-in tools and project tools:
 
 | Name                                                     | Purpose                                            |
 | -------------------------------------------------------- | -------------------------------------------------- |
@@ -370,13 +375,15 @@ Common built-in tools and project tools:
 | `read_memory`                                            | Read blackboard memory                             |
 | `web_search`                                             | LangSearch-backed web search                       |
 | `semble_search`                                          | Semantic code search                               |
+| `skills_list`, `skill_view`, `skill_manage`              | Discover and manage knowledge skills               |
 | `append_event`                                           | Append typed context-map events                    |
+| `observe`                                                | Record structural observations for the context map |
 | `context-map-materializer`                               | Materialize context-map events into a prompt cache |
 | `index_documents`                                        | Feed project documents into Vespa                  |
 | `search_documents`                                       | Search indexed Vespa chunks                        |
 | `review_work`                                            | Review the current working tree                    |
 
-Common agent skills:
+Selected agent and knowledge skills:
 
 | Name                | Purpose                                            |
 | ------------------- | -------------------------------------------------- |
@@ -386,6 +393,9 @@ Common agent skills:
 | `summarize_memory`  | Summarize a blackboard memory key                  |
 | `reflect_on_result` | Judge whether a result satisfies an objective      |
 | `spec_writer`       | Gather requirements and draft implementation specs |
+| `paper-claim-verification` | Verify design-doc paper citations against indexed papers |
+| `developer-pedagogy` | Project knowledge about developer preferences and constraints |
+| `deverino-react-acdl` | ACDL description of the Deverino ReAct loop       |
 
 ## Workflows And Pipelines
 
@@ -456,8 +466,12 @@ Live Vespa integration tests are opt-in:
 VESPA_INTEGRATION=1 uv run pytest tests/test_vespa_integration.py -v
 ```
 
-Recent full-suite baseline during the context-map implementation:
-`326 passed, 5 skipped`.
+Current local test status from the README audit on 2026-05-22:
+`422 passed, 5 skipped, 7 failed`.
+
+Known failing areas in that audit were event registry coverage for
+`SkillCancelled`, `execute_python` result shape assertions, and PydanticAI tool
+adapter tests expecting fake run contexts to expose `tool_call_id`.
 
 ## Creating Skills
 
