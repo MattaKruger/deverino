@@ -69,6 +69,7 @@ def test_empty_text_chunks_are_skipped(tmp_path: Path) -> None:
 
     assert len(chunks) == 1
     assert chunks[0].text == "Real content."
+    assert chunks[0].chunk_index == 0  # contiguous from 0, not 1
 
 
 def test_heading_fallback_uses_provided_title(tmp_path: Path) -> None:
@@ -109,25 +110,8 @@ def test_hybridchunker_receives_max_tokens(tmp_path: Path) -> None:
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-fake")
 
-    fake_chunk = MagicMock()
-    fake_chunk.text = "Some text."
-    fake_chunk.meta.headings = []
-    fake_chunker_instance = MagicMock()
-    fake_chunker_instance.chunk.return_value = [fake_chunk]
-    fake_hybrid_chunker = MagicMock(return_value=fake_chunker_instance)
-
-    fake_doc = MagicMock()
-    fake_result = MagicMock()
-    fake_result.document = fake_doc
-    fake_converter_instance = MagicMock()
-    fake_converter_instance.convert.return_value = fake_result
-    fake_document_converter = MagicMock(return_value=fake_converter_instance)
-
-    mods = {
-        "docling": MagicMock(),
-        "docling.document_converter": MagicMock(DocumentConverter=fake_document_converter),
-        "docling.chunking": MagicMock(HybridChunker=fake_hybrid_chunker),
-    }
+    mods = _fake_docling([("Some text.", [])])
+    fake_hybrid_chunker = mods["docling.chunking"].HybridChunker
     with patch.dict(sys.modules, mods):
         convert_pdf_to_chunks(pdf, "paper.pdf", "Paper", "doc", 1024)
 

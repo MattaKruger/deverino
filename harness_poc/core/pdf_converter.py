@@ -31,9 +31,10 @@ def convert_pdf_to_chunks(
     now_ms = int(time.time() * 1000)
     chunks: list[DocumentChunk] = []
 
-    for i, chunk in enumerate(chunker.chunk(doc)):
+    out_index = 0
+    for chunk in chunker.chunk(doc):
         chunk_title = _extract_chunk_title(chunk) or title
-        text = chunk.text
+        text = chunk.text or ""
         if not text.strip():
             continue
         chunks.append(
@@ -41,14 +42,15 @@ def convert_pdf_to_chunks(
                 source_id=source_id,
                 uri=uri,
                 title=chunk_title,
-                chunk_id=make_chunk_id(source_id, i),
-                chunk_index=i,
+                chunk_id=make_chunk_id(source_id, out_index),
+                chunk_index=out_index,
                 text=text,
                 kind=kind,
                 content_hash=compute_content_hash(text),
                 updated_at=now_ms,
             )
         )
+        out_index += 1
 
     return chunks
 
