@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from harness_poc.core.config import LLMConfig
     from harness_poc.core.goal_runner import GoalRunResult
     from tests.agent.harness import SessionHarness
 
@@ -143,18 +144,27 @@ class Rubric:
         if self.skill_sequence and harness is not None:
             harness.assert_skill_order(*self.skill_sequence)
 
-    def judge(self, answer: str) -> float | None:  # noqa: ARG002
+    def judge(self, answer: str, *, config: LLMConfig) -> float | None:
         """Run the LLM judge. Returns None if no judge is configured.
 
         The judge model scores the answer 0.0-1.0 against the rubric's
-        quality prompt. This is a placeholder - Phase 7 implements the
-        actual LLM call.
+        quality prompt. Requires a real LLM — no mock support.
+
+        Args:
+            answer: The agent's output to evaluate.
+            config: Harness LLM config for provider/api-key resolution.
+
         """
         if self.judge_prompt is None or self.judge_model is None:
             return None
-        # Phase 7: actual LLM call
-        msg = "LLM judge not yet implemented (Phase 7)"
-        raise NotImplementedError(msg)
+        from tests.bench.llm_judge import llm_judge  # noqa: PLC0415
+
+        return llm_judge(
+            self.judge_prompt,
+            answer,
+            model_id=self.judge_model,
+            config=config,
+        )
 
 
 # ---------------------------------------------------------------------------

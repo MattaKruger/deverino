@@ -35,6 +35,10 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "integration: Requires Postgres and Vespa",
+    "benchmark: Real-LLM quality benchmark (skipped by default, use --run-benchmarks)",
+]
 
 [project.scripts]
 harness-poc = "harness_poc.main:main"

@@ -33,13 +33,37 @@ acdl-playground port="8765":
 workflow name objective:
     uv run harness-poc workflow run {{name}} "{{objective}}"
 
+# Start the dedicated test database
+test-db-up:
+    docker compose up -d postgres_test
+
+# Stop the dedicated test database
+test-db-down:
+    docker compose stop postgres_test
+
 # Run full test suite
-test:
-    uv run pytest
+test: test-db-up
+    TEST_DATABASE_URL=postgresql://deverino_test:deverino_test@localhost:5433/deverino_test uv run pytest
+
+# Run unit tests only (no DB, no LLM)
+test-unit:
+    uv run pytest tests/unit/ tests/agent/
+
+# Run agent tests only (mock LLM, in-memory DB)
+test-agent:
+    uv run pytest tests/agent/
+
+# Run integration tests (needs Postgres + Vespa)
+test-integration: test-db-up
+    TEST_DATABASE_URL=postgresql://deverino_test:deverino_test@localhost:5433/deverino_test uv run pytest tests/ -m integration
+
+# Run benchmarks (needs real LLM + Postgres)
+test-bench model="claude-haiku-4-5-20251001": test-db-up
+    BENCHMARK_MODEL={{model}} TEST_DATABASE_URL=postgresql://deverino_test:deverino_test@localhost:5433/deverino_test uv run pytest tests/bench/ --run-benchmarks
 
 # Run a single test file: just test-file tests/test_goal_runner.py
-test-file file:
-    uv run pytest {{file}}
+test-file file: test-db-up
+    TEST_DATABASE_URL=postgresql://deverino_test:deverino_test@localhost:5433/deverino_test uv run pytest {{file}}
 
 # Lint with ruff
 lint:
