@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
 from harness_poc.app_factory import AppState, build_app_state
 from harness_poc.core.config import LLMConfig
+from harness_poc.core.events import (
+    BaseEvent,
+    GoalEvaluated,
+    LLMTextEmitted,
+    SkillCalled,
+    SkillCompleted,
+)
 from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
 from harness_poc.core.pydantic_runtime import build_model
 from tests.bench.rubric_loader import Rubric
@@ -29,13 +36,43 @@ RUBRICS_DIR = Path(__file__).parent / "rubrics"
 
 @dataclass
 class _LiveSession:
-    """Thin wrapper so benchmark tests call run() like SessionHarness."""
+    """Thin wrapper so benchmark tests call run() like SessionHarness.
+
+    After run(), captures the event trace from the EventBus so
+    rubrics can validate skill_sequence via TraceAssertions.
+    """
 
     state: AppState
+    _events: list[BaseEvent] = field(default_factory=list, init=False)
 
     def run(self, goal: str) -> GoalRunResult:
         runner = GoalRunner(max_iterations=30, max_tokens=20_000)
-        return runner.run(goal, self.state)
+        result = runner.run(goal, self.state)
+
+        # Capture event trace for process validation (skill_sequence, etc.).
+        # EventBus.get_recent_events queries the real EventStore (Postgres)
+        # and returns BaseEvent objects compatible with TraceAssertions.
+        self._events = self.state.event_bus.get_recent_events(
+            self.state.session_id,
+            limit=10_000,
+            event_types=[SkillCalled, SkillCompleted, GoalEvaluated, LLMTextEmitted],
+        )
+        return result
+
+    @property
+    def events(self) -> list[BaseEvent]:
+        """Event trace captured during the last run().
+
+        Returns BaseEvent objects suitable for TraceAssertions.
+        Empty list if run() hasn't been called yet.
+        """
+        return self._events
+
+    def assert_skill_order(self, *names: str) -> None:
+        """Validate the order of skill calls from the event trace."""
+        from tests.helpers import TraceAssertions  # noqa: PLC0415
+
+        TraceAssertions(self._events).assert_skill_order(*names)
 
 
 # ---------------------------------------------------------------------------

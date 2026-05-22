@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from harness_poc.core.config import LLMConfig
+    from harness_poc.core.events import BaseEvent
     from harness_poc.core.goal_runner import GoalRunResult
-    from tests.agent.harness import SessionHarness
 
 
 # ---------------------------------------------------------------------------
@@ -100,15 +100,16 @@ class Rubric:
     def assert_hard_gates(
         self,
         result: GoalRunResult,
-        harness: SessionHarness | None = None,
+        events: list[BaseEvent] | None = None,
     ) -> None:
         """Run all hard (deterministic, free) assertions against a session result.
 
         Args:
             result: The GoalRunResult from a completed session.
-            harness: Optional SessionHarness for skill_sequence validation.
-                When None, skill_sequence is skipped (benchmarks may not
-                have event traces).
+            events: Optional event trace for skill_sequence validation.
+                When None, skill_sequence is skipped. Pass
+                live_session.events (benchmarks) or harness.all_events
+                (agent tests) to enable process validation.
 
         """
         content_lower = result.content.lower()
@@ -141,8 +142,10 @@ class Rubric:
                 )
                 raise AssertionError(msg)
 
-        if self.skill_sequence and harness is not None:
-            harness.assert_skill_order(*self.skill_sequence)
+        if self.skill_sequence and events is not None:
+            from tests.helpers import TraceAssertions  # noqa: PLC0415
+
+            TraceAssertions(events).assert_skill_order(*self.skill_sequence)
 
     def judge(self, answer: str, *, config: LLMConfig) -> float | None:
         """Run the LLM judge. Returns None if no judge is configured.

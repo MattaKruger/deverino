@@ -26,7 +26,7 @@ def test_summarise_blackboard_database(
     LLM judge (token cost) only fires if hard gates pass.
     """
     result = live_session.run(rubric.goal)
-    rubric.assert_hard_gates(result)
+    rubric.assert_hard_gates(result, events=live_session.events)
     score = rubric.judge(result.content, config=live_session.state.config.llm)
     assert score is not None, "Rubric must define LLM Judge section for benchmarks"
     assert score >= rubric.judge_threshold, (

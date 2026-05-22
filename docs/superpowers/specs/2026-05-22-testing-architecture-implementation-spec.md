@@ -583,12 +583,12 @@ class Rubric:
     def from_markdown(cls, path: Path) -> Rubric:
         """Parse a rubric .md file."""
 
-    def assert_hard_gates(self, result: GoalRunResult, harness: SessionHarness | None = None) -> None:
+    def assert_hard_gates(self, result: GoalRunResult, events: list[BaseEvent] | None = None) -> None:
         """Run all hard assertions.
 
         - must_contain / must_not_contain: check result.content
         - min_words: split result.content and count
-        - skill_sequence: requires harness for event trace; skipped if harness is None
+        - skill_sequence: requires events list; skipped if events is None
         """
 
     def judge(self, answer: str) -> float | None:
@@ -622,7 +622,7 @@ def test_summarise_project_state_matches_rubric():
         _evaluate_goal_response(True, "Done.", "Project state includes SQLite sessions..."),
     ])
     harness.run(rubric.goal)
-    rubric.assert_hard_gates(harness.result, harness)
+    rubric.assert_hard_gates(harness.result, events=harness.all_events)
 ```
 
 **Pattern B: Live session + rubric (benchmarks)**
@@ -631,7 +631,7 @@ def test_summarise_project_state_matches_rubric():
 @pytest.mark.benchmark
 def test_summarise_project_state_benchmark(live_session, rubric):
     result = live_session.run(rubric.goal)
-    rubric.assert_hard_gates(result)
+    rubric.assert_hard_gates(result, events=live_session.events)
     score = rubric.judge(result.content)
     assert score >= rubric.judge_threshold
 ```
@@ -652,7 +652,7 @@ Summarise what BlackboardDatabase does and how it is structured.
 - must_contain: "state_proposals"
 - must_not_contain: "I don't know"
 - min_words: 50
-- skill_sequence: [read_memory, evaluate_goal]
+- skill_sequence: [read_memory]
 
 ## LLM Judge
 
@@ -915,7 +915,7 @@ Each phase can be validated independently:
 | `session` fixture | No auto-build fixture; tests call `SessionHarness.build()` inline | Mock sequence is the test's essence |
 | TraceAssertions location | `tests/helpers.py`; composed by `SessionHarness` | Reusable; harness owns delegation |
 | Rubric validation | Rubric applies to any session result (mock or live) | Same spec validates both agent tests and benchmarks |
-| Rubric hard gate: skill_sequence | Requires `SessionHarness` event trace; skipped when only `GoalRunResult` available | Mock sessions have traces; benchmarks may not |
+| Rubric hard gate: skill_sequence | Requires event trace (`list[BaseEvent]`); skipped when events is None | Mock sessions and benchmarks both expose traces |
 | LLM judge model | Configurable per rubric; default cheap (haiku) | Keeps benchmark costs predictable |
 
 ---
