@@ -108,7 +108,7 @@ def append_session_messages(
         session.commit()
         return next_ordinal
 
-def load_session_messages(self, session_id: str) -> list[dict[str, Any]]:
+def load_session_messflashages(self, session_id: str) -> list[dict[str, Any]]:
     with Session(self._engine) as session:
         rows = session.exec(
             select(DbSessionMessage)

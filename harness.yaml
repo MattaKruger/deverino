@@ -5,7 +5,7 @@ project:
 
 llm:
   provider: deepseek
-  model: deepseek-v4-flash
+  model: deepseek-v4-pro
 
 paths:
   # Engine Paths
