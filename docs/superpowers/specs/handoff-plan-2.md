@@ -2,23 +2,35 @@
 
 **Date:** 2026-05-22
 **Parent:** [handoff-tests.md](./handoff-tests.md)
-**Status:** Harness extension delivered. 2 validation tests written. 5+ tests ready for another agent.
+**Status:** All 7 chain tests delivered. Harness extension + 2 validation + 5 scenario tests passing.
 
 ---
 
-## What was delivered this session
+## What was delivered this session (2026-05-22, session 2)
 
-### Harness extension: skill-level mocking
+### 5 new multi-skill chain scenario tests
+
+All tests added to `tests/agent/test_skill_chains.py`. Suite now contains 7 tests (up from 2).
+
+| Test | Skills | What it validates |
+|------|--------|-------------------|
+| `test_stuck_detection_blocks_repeated_failed_skill` | `read_memory` × 4 | Semantic stuck detection blocks repeated failures, budget exhausts |
+| `test_context_window_trims_old_skill_output` | `read_memory` × 12 → `evaluate_goal` | Harness completes with `context_window=5` under load |
+| `test_recovers_from_failed_search_by_reading_memory` | `search_documents`(mocked,failed) → `read_memory` → `evaluate_goal` | Model pivots after failure, mixed status assertions |
+| `test_skill_not_found_emits_error` | `nonexistent_skill` → `evaluate_goal` | ValueError → SkillCompleted(status="error"), model recovers |
+| `test_permission_denied_skill_returns_blocked` | `semble_search`(mocked,blocked) → `evaluate_goal` | Mocked blocked status flows through GoalRunner correctly |
+
+**Note:** SkillNotFound status is `"error"` (not `"failed"` as the original handoff spec suggested). GoalRunner's `except` block (`goal_runner.py:751`) emits `status="error"` for unhandled exceptions.
 
 `SessionHarness.build()` now accepts an optional `skill_overrides` parameter. When the mock LLM calls an overridden skill, `_SkillOverrideProxy` returns a mock `SkillResult` — no real execution, no external service calls. All other skills execute normally against the in-memory database.
 
 **Files modified:**
 
-| File | What |
-|------|------|
-| `tests/agent/harness.py` | `_SkillOverrideProxy` class + `skill_overrides` parameter on `build()` |
-| `tests/helpers.py` | `skill_result(status, content, **artifacts)` factory |
-| `tests/agent/conftest.py` | Re-exports `skill_result` |
+| File                      | What                                                                   |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `tests/agent/harness.py`  | `_SkillOverrideProxy` class + `skill_overrides` parameter on `build()` |
+| `tests/helpers.py`        | `skill_result(status, content, **artifacts)` factory                   |
+| `tests/agent/conftest.py` | Re-exports `skill_result`                                              |
 
 **Usage:**
 
@@ -45,10 +57,10 @@ harness = SessionHarness.build(
 
 Two validation tests that prove the harness extension works end-to-end:
 
-| Test | Skills | Demonstrates |
-|------|--------|-------------|
-| `test_reads_memory_then_evaluates` | `read_memory` → `evaluate_goal` | Real skill chain, DB pre-seeding, context window data flow |
-| `test_mocked_search_then_reads_memory_then_evaluates` | `search_documents`(mocked) → `read_memory` → `evaluate_goal` | Mock + real skill mixing, `skill_overrides` API |
+| Test                                                  | Skills                                                       | Demonstrates                                               |
+| ----------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------- |
+| `test_reads_memory_then_evaluates`                    | `read_memory` → `evaluate_goal`                              | Real skill chain, DB pre-seeding, context window data flow |
+| `test_mocked_search_then_reads_memory_then_evaluates` | `search_documents`(mocked) → `read_memory` → `evaluate_goal` | Mock + real skill mixing, `skill_overrides` API            |
 
 ---
 
@@ -80,7 +92,7 @@ assert_skill_order().
 
 ---
 
-## Tests to add (happy path)
+## Tests to add (happy path) ✅ Delivered session 2
 
 ### Stuck detection
 
@@ -181,7 +193,7 @@ def test_recovers_from_failed_search_by_reading_memory():
 
 ---
 
-## Tests to add (error path)
+## Tests to add (error path) ✅ Delivered session 2
 
 ### SkillNotFound
 
@@ -229,12 +241,12 @@ def test_permission_denied_skill_returns_blocked():
 
 ## Current test counts
 
-| Layer | Tests | Runtime |
-|-------|-------|---------|
-| `tests/unit/` | 88 | ~0.2s pure + ~1s DB |
-| `tests/agent/` | 7 (5 goal_loop + 2 skill_chains) | ~1.3s |
-| **Total fast** | **95** | **~3.5s** |
-| `tests/bench/` | 1 (+ 1 rubric) | opt-in, real LLM |
+| Layer          | Tests                             | Runtime             |
+| -------------- | --------------------------------- | ------------------- |
+| `tests/unit/`  | 88                                | ~0.2s pure + ~1s DB |
+| `tests/agent/` | 12 (5 goal_loop + 7 skill_chains) | ~1.6s               |
+| **Total fast** | **100**                           | **~3.4s**           |
+| `tests/bench/` | 1 (+ 1 rubric)                    | opt-in, real LLM    |
 
 ## How to run
 
