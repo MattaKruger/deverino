@@ -1,7 +1,7 @@
 # Next Phases
 
 **Date:** 2026-05-23
-**Status:** Planning — not yet implemented
+**Status:** Phase `create_rubrics` implemented — see [`bench-progress.md`](bench-progress.md)
 
 ---
 
