@@ -157,3 +157,11 @@ Validate any `.acdl` file:
 ```bash
 uv run harness-poc acdl validate deverino_react.acdl
 ```
+
+### Programmatic Inspection
+
+The `acdl_inspect` tool parses `.acdl` files and returns a structural summary
+(fragments, prompts, namespaces, block count). Use it when you need to answer
+questions like "what fragments are defined?" or "which namespaces does this
+prompt declare?" It is the LLM-callable counterpart to `harness-poc acdl inspect`.
+For the full tool reference, see the `acdl-tooling` skill.
