@@ -43,7 +43,7 @@ A `Justfile` at the repo root wraps common recipes: `just repl`, `just tui`, `ju
 
 ### Skill system
 
-Each skill is a self-contained directory with `SKILL.md` (metadata: name, description, args schema) and `skill.py` (an `execute(ctx: SkillContext) -> SkillResult` function). Skills are discovered at startup by `core/skill_runner.py` scanning `harness_poc/system_skills/` and the project-local `skills/` directory. They are registered as OpenAI tool-call definitions so the LLM can invoke them.
+Each skill is a self-contained directory with `SKILL.md` (metadata: name, description, args schema) and `skill.py` (an `execute(ctx: SkillContext) -> SkillResult` function). Skills are discovered at startup by `core/skills/skill_runner.py` scanning `harness_poc/system_skills/` and the project-local `skills/` directory. They are registered as OpenAI tool-call definitions so the LLM can invoke them.
 
 **System skills** (built into the harness):
 - `delegate_task` — spawns a sub-agent for a subtask
@@ -72,25 +72,25 @@ Container tools mount `/workspace:ro` (read-only) and `/scratch:rw` (session-sco
 
 ### Workflow runtime
 
-`core/workflow_runner.py` executes YAML files from `workflows/`. Each workflow is a **linear sequence** of states; each state specifies a skill name and argument templates (using `{{variable}}` substitution). The runner loops through states, calls the skill, and passes output forward.
+`core/execution/workflow_runner.py` executes YAML files from `workflows/`. Each workflow is a **linear sequence** of states; each state specifies a skill name and argument templates (using `{{variable}}` substitution). The runner loops through states, calls the skill, and passes output forward.
 
 ### Pipeline runtime (DAG-style)
 
-`core/pipeline_runner.py` executes YAML files from `pipelines/`. Unlike workflows, pipelines are **DAGs**: nodes declare `depends_on` lists and independent nodes run in parallel via `ThreadPoolExecutor`. Each node can be a skill call or a `GoalRunner` invocation. Outputs flow between nodes via template substitution. Pipeline events (`PipelineStarted`, `PipelineNodeStarted`, `PipelineNodeCompleted`, `PipelineCompleted`) are emitted to the event bus.
+`core/execution/pipeline_runner.py` executes YAML files from `pipelines/`. Unlike workflows, pipelines are **DAGs**: nodes declare `depends_on` lists and independent nodes run in parallel via `ThreadPoolExecutor`. Each node can be a skill call or a `GoalRunner` invocation. Outputs flow between nodes via template substitution. Pipeline events (`PipelineStarted`, `PipelineNodeStarted`, `PipelineNodeCompleted`, `PipelineCompleted`) are emitted to the event bus.
 
 ### Event-driven processing
 
-The runtime is event-driven. `core/events.py` defines typed event dataclasses (`LLMTextEmitted`, `LLMActionEmitted`, `SkillCompleted`, `AgentInputAdded`, `StreamPaused`, `PipelineStarted`, …). Three async processors handle the event loop:
+The runtime is event-driven. `core/events/events.py` defines typed event dataclasses (`LLMTextEmitted`, `LLMActionEmitted`, `SkillCompleted`, `AgentInputAdded`, `StreamPaused`, `PipelineStarted`, …). Three async processors handle the event loop:
 
 - `core/processors/llm_worker.py` — drives LLM streaming and tool dispatch
 - `core/processors/tool_worker.py` — executes skills and writes results back
 - `core/processors/circuit_breaker.py` — catches unhandled exceptions, emits error events
 
-`core/event_store.py` persists events; `core/event_bus.py` provides async pub/sub between processors.
+`core/events/event_store.py` persists events; `core/events/event_bus.py` provides async pub/sub between processors.
 
 ### Blackboard (PostgreSQL / SQLite state)
 
-`core/database.py` (`BlackboardDatabase`) is constructed via `BlackboardDatabase.from_url(database_url)`. `harness.yaml` defaults to `postgresql://deverino:deverino@localhost/deverino`; tests fall back to `sqlite:///...`. It has seven tables:
+`core/storage/database.py` (`BlackboardDatabase`) is constructed via `BlackboardDatabase.from_url(database_url)`. `harness.yaml` defaults to `postgresql://deverino:deverino@localhost/deverino`; tests fall back to `sqlite:///...`. It has seven tables:
 
 | Table | Purpose |
 |---|---|
@@ -108,7 +108,7 @@ State promotion is a two-step process: a skill proposes a change (`state_proposa
 
 ### Document retrieval (Vespa)
 
-`core/vespa_client.py` wraps a Vespa instance (configured in `harness.yaml` under `retrieval`). `index_documents` and `search_documents` project skills use `knowledge_tools` (system tool) to feed documents into Vespa and query them. `docker-compose.yml` runs Vespa locally.
+`core/retrieval/vespa_client.py` wraps a Vespa instance (configured in `harness.yaml` under `retrieval`). `index_documents` and `search_documents` project skills use `knowledge_tools` (system tool) to feed documents into Vespa and query them. `docker-compose.yml` runs Vespa locally.
 
 ### AppState & wiring
 
@@ -116,7 +116,7 @@ State promotion is a two-step process: a skill proposes a change (`state_proposa
 
 ### LLM runtime
 
-`core/pydantic_runtime.py` (`PydanticAgentRuntime`) manages streaming agent execution with tool support. Uses `agent.iter()` (full-graph iterator) instead of `agent.run_stream()`. `GoalRunner` (`core/goal_runner.py`) runs the autonomous ReAct loop — async internally with `await agent.run()`, semantic stuck detection (normalized argument comparison against failed actions), and context window compression (Summarizer + sliding window with 8000-char budget). `GoalRunner` intercepts `evaluate_goal` tool calls to decide loop termination.
+`core/runtime/pydantic_runtime.py` (`PydanticAgentRuntime`) manages streaming agent execution with tool support. Uses `agent.iter()` (full-graph iterator) instead of `agent.run_stream()`. `GoalRunner` (`core/runtime/goal_runner.py`) runs the autonomous ReAct loop — async internally with `await agent.run()`, semantic stuck detection (normalized argument comparison against failed actions), and context window compression (Summarizer + sliding window with 8000-char budget). `GoalRunner` intercepts `evaluate_goal` tool calls to decide loop termination.
 
 ### REPL & TUI
 

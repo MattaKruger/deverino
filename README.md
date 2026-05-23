@@ -297,23 +297,54 @@ harness_poc/
 ├── app_factory.py          # Runtime wiring into AppState
 ├── core/
 │   ├── config.py           # YAML/.env config loading
-│   ├── database.py         # PostgreSQL blackboard and metadata access
-│   ├── db_engine.py        # SQLAlchemy engine setup
-│   ├── events.py           # Typed event hierarchy and registry
-│   ├── event_store.py      # Durable event persistence
-│   ├── event_bus.py        # Sync/async event publication and subscriptions
-│   ├── reducers.py         # Snapshot derivation from event history
+│   ├── logging.py          # Logging configuration
+│   ├── permissions.py      # Permission model
+│   ├── events/             # Typed event hierarchy and async pub/sub
+│   │   ├── events.py       # Event dataclasses and registry
+│   │   ├── event_bus.py    # Sync/async pub/sub
+│   │   ├── event_store.py  # Durable event persistence
+│   │   ├── event_log_observer.py # Event log tailing
+│   │   └── context_map_events.py # PEEK-style context-map event models
+│   ├── execution/          # Declarative execution engines
+│   │   ├── pipeline_runner.py    # Wave-based DAG execution
+│   │   ├── workflow_runner.py    # YAML workflow execution
+│   │   └── materializer_runner.py # Background context-map materializer poller
+│   ├── observability/      # Telemetry and dashboards
+│   │   ├── dashboard.py    # Summary and live dashboard
+│   │   └── logfire_subscriber.py # Logfire event forwarding
 │   ├── processors/         # Async LLM, skill, and circuit-breaker workers
-│   ├── pydantic_runtime.py # PydanticAI streaming/tool runtime
-│   ├── pipeline_runner.py  # Wave-based DAG execution
-│   ├── workflow_runner.py  # YAML workflow execution
-│   ├── context_map_events.py # PEEK-style context-map event models
-│   ├── materializer_runner.py # Background context-map materializer poller
-│   ├── retrieval.py        # Retrieval domain models and chunking
-│   ├── document_index.py   # File/PDF indexing into retrieval chunks
-│   ├── vespa_client.py     # pyvespa adapter
-│   ├── skill_runner.py     # SKILL.md discovery/execution
-│   └── tool_runner.py      # Built-in tool discovery/execution
+│   │   ├── llm_worker.py
+│   │   ├── tool_worker.py
+│   │   ├── circuit_breaker.py
+│   │   └── processor_supervisor.py
+│   ├── retrieval/          # Document retrieval stack
+│   │   ├── retrieval.py    # Domain models and chunking
+│   │   ├── document_index.py # File/PDF indexing into retrieval chunks
+│   │   ├── vespa_client.py # pyvespa adapter
+│   │   └── pdf_converter.py # PDF-to-text extraction
+│   ├── runtime/            # LLM execution and agent loop
+│   │   ├── goal_runner.py  # Autonomous ReAct loop
+│   │   ├── pydantic_runtime.py # PydanticAI streaming/tool runtime
+│   │   ├── llm_client.py   # Provider-agnostic LLM client
+│   │   ├── message_history.py  # Conversation history management
+│   │   ├── reducers.py     # Snapshot derivation from event history
+│   │   └── token_accounting.py # Token budget tracking
+│   ├── skills/             # Skill discovery and execution
+│   │   ├── skill_runner.py # SKILL.md discovery/execution
+│   │   ├── skill_catalog.py # Skill registry
+│   │   ├── skill_context.py # SkillContext/SkillResult types
+│   │   ├── skill_preprocessing.py # Argument preprocessing
+│   │   └── skill_scaffolder.py # `skill create` scaffold generator
+│   ├── storage/            # PostgreSQL blackboard and state
+│   │   ├── database.py     # BlackboardDatabase and metadata access
+│   │   ├── db_engine.py    # SQLAlchemy engine setup
+│   │   ├── models.py       # ORM table definitions
+│   │   ├── state.py        # Session/project state helpers
+│   │   └── blackboard_proxy.py # Skill-facing blackboard facade
+│   └── tools/              # Built-in tool infrastructure
+│       ├── tool_runner.py  # Tool discovery/execution
+│       ├── tool_context.py # ToolContext type
+│       └── tool_result.py  # ToolResult type
 ├── system_tools/           # Built-in LLM-callable primitives
 ├── system_skills/          # System agent skills
 └── system_prompts/         # SOUL.md primary system prompt
