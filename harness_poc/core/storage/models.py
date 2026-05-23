@@ -80,6 +80,14 @@ class DbStateEvent(SQLModel, table=True):
     created_at: str
 
 
+class DbContextMapCycle(SQLModel, table=True):
+    __tablename__ = "context_map_cycles"  # type: ignore[assignment]
+
+    corpus_key: str = Field(primary_key=True)
+    cycle_n: int = Field(default=0)
+    updated_at: str
+
+
 class DbSessionSnapshot(SQLModel, table=True):
     __tablename__ = "session_snapshots"  # type: ignore[assignment]
 
@@ -162,3 +170,4 @@ class DbContextMap(SQLModel, table=True):
     version: int = Field(default=1)
     last_updated: str
     freeze_until: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    schema_version: int = Field(default=1)

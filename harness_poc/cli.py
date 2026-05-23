@@ -106,6 +106,10 @@ dashboard_app = typer.Typer(
     help="Run lightweight local dashboards over harness events.",
     rich_markup_mode="rich",
 )
+cartographer_app = typer.Typer(
+    help="Manage the Deterministic Cartographer.",
+    rich_markup_mode="rich",
+)
 
 
 @app.callback(invoke_without_command=True)
@@ -882,6 +886,100 @@ def _list_tools(app_state: AppState) -> None:
     console.print(table)
 
 
+@cartographer_app.command("calibrate")
+def cartographer_calibrate(
+    corpus: Annotated[
+        str | None,
+        typer.Option(
+            "--corpus",
+            help="Corpus key to calibrate (default: <project_id>:codebase).",
+        ),
+    ] = None,
+    window_days: Annotated[
+        int,
+        typer.Option(
+            "--window-days",
+            help="Lookback window in days for event counting.",
+        ),
+    ] = 14,
+    min_events: Annotated[
+        int,
+        typer.Option(
+            "--min-events",
+            help="Minimum reference events before calibration runs.",
+        ),
+    ] = 50,
+    apply_flag: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option(
+            "--apply/--dry-run",
+            help="Write new weights to harness.yaml (default: --dry-run).",
+        ),
+    ] = False,
+) -> None:
+    """Calibrate priority_weights from observed reference and eviction rates.
+
+    Reads MapEntryReferenced, MapEntryEvicted, and MapEntryInserted events
+    from the event log and computes target priority_weights using a
+    deterministic multiplicative formula.
+
+    --dry-run prints a table showing current, target, and delta for each
+    observation_type. --apply writes the new weights to harness.yaml.
+    """
+    from harness_poc.core.context_map.calibrate import run_calibration
+
+    config = HarnessConfig.load()
+    corpus_key = corpus or f"{config.project_id}:codebase"
+    config_path = str(config.config_path) if apply_flag else None
+
+    db = BlackboardDatabase.from_url(config.runtime.database_url)
+    db.create_tables()
+
+    result = run_calibration(
+        db,
+        corpus_key,
+        window_days=window_days,
+        min_events=min_events,
+        dry_run=not apply_flag,
+        config_path=config_path,
+    )
+
+    if result.status == "insufficient_data":
+        console.print(f"[yellow]{result.message}[/yellow]")
+        raise typer.Exit(0)
+
+    # Print the table
+    table = Table(title=f"Calibration — {corpus_key} ({window_days}d window)")
+    table.add_column("Type", style="cyan")
+    table.add_column("Current", justify="right")
+    table.add_column("Target", justify="right")
+    table.add_column("Δ", justify="right")
+
+    for obs_type in sorted(result.weights):
+        w = result.weights[obs_type]
+        delta_str = f"{w['delta']:+.2f}"
+        delta_style = (
+            "green" if w["delta"] > 0 else "red" if w["delta"] < 0 else "dim"
+        )
+        table.add_row(
+            obs_type,
+            f"{w['current']:.2f}",
+            f"{w['target']:.2f}",
+            f"[{delta_style}]{delta_str}[/{delta_style}]",
+        )
+
+    console.print(table)
+    console.print(
+        f"\n[dim]References: {result.total_references}  "
+        f"Evictions: {result.total_evictions}  "
+        f"Insertions: {result.total_insertions}[/dim]"
+    )
+
+    if apply_flag and result.status == "success":
+        console.print("\n[green]Weights written to harness.yaml.[/green]")
+        console.print("[dim]A backup of the previous config was saved.[/dim]")
+
+
 app.add_typer(workflow_app, name="workflow")
 app.add_typer(state_app, name="state")
 app.add_typer(skill_app, name="skill")
@@ -890,3 +988,4 @@ app.add_typer(documents_app, name="documents")
 app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(dashboard_app, name="dashboard")
 app.add_typer(acdl_app, name="acdl")
+app.add_typer(cartographer_app, name="cartographer")

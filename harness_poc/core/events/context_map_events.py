@@ -67,7 +67,32 @@ class ContextualInsightDiscovered(ContextMapEvent):
     map_section: str
 
 
+class MapEntryInserted(ContextMapEvent):
+    """Emitted when a MapEntry appears for the first time (first_seen_cycle == cycle_n).
+
+    Required by the §4.4 calibration job: without an insertion signal,
+    "entries of this type ever materialized" can only be reconstructed from
+    the current map plus eviction events, which loses entries that were
+    inserted and evicted within the calibration window.
+    """
+
+    event_type: Literal["map_entry_inserted"] = "map_entry_inserted"
+    entry_id: str
+    entry_key: str
+    section: str
+    observation_type: str
+    cycle_n: int
+
+
 class MapEntryPromoted(ContextMapEvent):
+    """DEPRECATED: promotions are an artifact of the old section-table model.
+
+    The flat MapEntry schema has no promotion semantic.
+    This class stays in the registry so historical events deserialize.
+    No new MapEntryPromoted events are emitted after Track A §3.1 lands.
+    See docs/superpowers/specs/2026-05-24-deterministic-cartographer-deferred-features.md §3.4.
+    """
+
     event_type: Literal["map_entry_promoted"] = "map_entry_promoted"
     entry_id: str | None = None
     entry_key: str
@@ -106,7 +131,8 @@ CONTEXT_MAP_EVENT_REGISTRY: dict[str, type[ContextMapEvent]] = {
     "search_failed": SearchFailed,
     "fact_disputed": FactDisputed,
     "contextual_insight_discovered": ContextualInsightDiscovered,
-    "map_entry_promoted": MapEntryPromoted,
+    "map_entry_inserted": MapEntryInserted,
+    "map_entry_promoted": MapEntryPromoted,  # deprecated — kept for historical deserialization
     "map_entry_evicted": MapEntryEvicted,
     "map_entry_referenced": MapEntryReferenced,
 }

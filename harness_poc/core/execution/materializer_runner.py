@@ -58,7 +58,6 @@ class MaterializerRunner:
             {
                 "corpus_key": corpus_key,
                 "max_event_tokens": self._config.runtime.materializer_max_event_tokens,
-                "token_budget": self._config.runtime.materializer_token_budget,
                 "session_id": self._session_id,
             },
             "materializer",

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -14,6 +13,7 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from harness_poc.core.config import HarnessConfig
+from harness_poc.core.context_map.render import render_context_map
 from harness_poc.core.events import EventBus, EventStore
 from harness_poc.core.execution import PipelineRunner, WorkflowRunner
 from harness_poc.core.logging import configure_logging
@@ -364,11 +364,21 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
     system_prompt = config.paths.soul.read_text(encoding="utf-8")
     project_state = identity.database.ensure_project_state()
     session_state = identity.database.ensure_session_state(identity.session_id)
-    corpus_key = f"{identity.config_project_id}:default"
+    corpus_key = f"{identity.config_project_id}:codebase"
     context_map = identity.database.get_context_map(corpus_key)
-    context_map_block = ""
-    if context_map:
-        context_map_block = f"--- Context Map ---\n{json.dumps(context_map, indent=2)}\n---"
+    cycle_n = identity.database.get_cycle(corpus_key)
+    if context_map and config.cartographer.prompt_block != "none":
+        map_body = render_context_map(
+            context_map,
+            cycle_n,
+            prompt_mode=config.cartographer.prompt_block,
+        )
+        cross_body = _render_cross_corpus(
+            identity, config, corpus_key
+        )
+        context_map_block = f"--- Context Map ---\n{map_body}{cross_body}\n---"
+    else:
+        context_map_block = ""
     state_context = build_state_context(project_state, session_state)
     full_system_prompt = "\n\n".join(
         filter(
@@ -460,11 +470,22 @@ def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
     project_state = identity.database.ensure_project_state()
     session_state = identity.database.ensure_session_state(identity.session_id)
     state_context = build_state_context(project_state, session_state)
-    corpus_key = f"{identity.config_project_id}:default"
+    corpus_key = f"{identity.config_project_id}:codebase"
     context_map = identity.database.get_context_map(corpus_key)
-    context_map_block = (
-        f"--- Context Map ---\n{json.dumps(context_map, indent=2)}\n---" if context_map else ""
-    )
+    cycle_n = identity.database.get_cycle(corpus_key)
+    if context_map and config.cartographer.prompt_block != "none":
+        map_body = render_context_map(
+            context_map,
+            cycle_n,
+            prompt_mode=config.cartographer.prompt_block,
+        )
+        # Cross-corpus enrichment (Track B §4.3)
+        cross_body = _render_cross_corpus(
+            identity, config, corpus_key
+        )
+        context_map_block = f"--- Context Map ---\n{map_body}{cross_body}\n---"
+    else:
+        context_map_block = ""
     return {
         "role": "system",
         "content": "\n\n".join(
@@ -478,6 +499,55 @@ def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
             ),
         ),
     }
+
+
+_MIN_CROSS_CORPUS_PARTS = 2  # Header line + at least one entry to be meaningful
+
+
+def _render_cross_corpus(
+    identity: Identity,
+    config: HarnessConfig,
+    active_corpus_key: str,
+) -> str:
+    """Render cross-corpus enrichment entries from related corpora (Track B §4.3).
+
+    Read-only — entries from related corpora are injected into the prompt
+    but never edited by the active corpus's Cartographer.
+    """
+    cc = config.cartographer
+    if not cc.cross_corpus_enabled:
+        return ""
+
+    related = cc.cross_corpus_related_corpora.get(active_corpus_key)
+    if not related:
+        return ""
+
+    db = identity.database
+    maps = db.get_context_maps(related)
+    if not maps:
+        return ""
+
+    parts: list[str] = ["\n\n# Related Corpora"]
+    for corpus_key, entries in maps.items():
+        cycle = db.get_cycle(corpus_key)
+        filtered = [
+            e for e in entries if e.priority >= cc.cross_corpus_min_priority
+        ]
+        filtered.sort(key=lambda e: -e.priority)
+        capped = filtered[: cc.cross_corpus_max_entries]
+        if not capped:
+            continue
+        parts.append(f"\n## {corpus_key} (cycle {cycle})")
+        for entry in capped:
+            summary_one_line = " ".join(entry.summary.split())
+            parts.append(
+                f"  - [entry:{entry.entry_id.replace('-', '')}] "
+                f"(p={entry.priority:.2f}) [{entry.section}] {summary_one_line}"
+            )
+
+    if len(parts) <= _MIN_CROSS_CORPUS_PARTS:
+        return ""
+    return "\n".join(parts)
 
 
 def _build_app_state_with(

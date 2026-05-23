@@ -5,6 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+import tiktoken
 from sqlalchemy import inspect, text
 from sqlmodel import Session, col, select
 
@@ -13,9 +14,11 @@ if TYPE_CHECKING:
 
     from harness_poc.core.events import ContextMapEvent
 
+from harness_poc.core.context_map.schema import MapEntry
 from harness_poc.core.storage.db_engine import create_db_engine
 from harness_poc.core.storage.models import (
     DbContextMap,
+    DbContextMapCycle,
     DbContextMapEvent,
     DbDocumentChunk,
     DbDocumentSource,
@@ -49,6 +52,8 @@ class BlackboardDatabase:
     def create_tables(self) -> None:
         SQLModel.metadata.create_all(self._engine)
         self._ensure_context_map_freeze_column()
+        self._ensure_context_map_schema_version_column()
+        self._ensure_context_map_cycles_table()
 
     def start_session(self, objective: str) -> str:
         session_id = str(uuid.uuid4())
@@ -502,15 +507,19 @@ class BlackboardDatabase:
             ).all()
         return list(rows)
 
-    def get_context_map(self, corpus_key: str) -> dict[str, Any] | None:
+    def get_context_map(self, corpus_key: str) -> list[MapEntry] | None:
         with Session(self._engine) as session:
             row = session.get(DbContextMap, corpus_key)
         if row is None:
             return None
         try:
-            return json.loads(row.map_json)
+            raw = json.loads(row.map_json)
         except json.JSONDecodeError:
             return None
+        if row.schema_version == 1:
+            return _legacy_to_entries(raw, corpus_key)
+        # schema_version >= 2: deserialize list[MapEntry] directly
+        return [MapEntry.model_validate(e) for e in raw] if isinstance(raw, list) else []
 
     def is_map_frozen(self, corpus_key: str, now: str | None = None) -> bool:
         if now is None:
@@ -532,13 +541,16 @@ class BlackboardDatabase:
     def write_map_and_mark_processed(
         self,
         corpus_key: str,
-        map_json: dict[str, Any],
+        map_entries: list[MapEntry],
         token_count: int,
         event_ids: list[str],
         freeze_until: str | None = None,
     ) -> None:
         now = self._utc_now()
-        serialized = json.dumps(map_json, sort_keys=True)
+        serialized = json.dumps(
+            [entry.model_dump(mode="json") for entry in map_entries],
+            sort_keys=True,
+        )
         with Session(self._engine) as session:
             row = session.get(DbContextMap, corpus_key)
             if row is None:
@@ -550,6 +562,7 @@ class BlackboardDatabase:
                         version=1,
                         last_updated=now,
                         freeze_until=freeze_until,
+                        schema_version=2,
                     )
                 )
             else:
@@ -558,6 +571,7 @@ class BlackboardDatabase:
                 row.version += 1
                 row.last_updated = now
                 row.freeze_until = freeze_until
+                row.schema_version = 2
                 session.add(row)
             for event_id in event_ids:
                 event_row = session.get(DbContextMapEvent, event_id)
@@ -565,6 +579,72 @@ class BlackboardDatabase:
                     event_row.processed = 1
                     session.add(event_row)
             session.commit()
+
+    def get_and_bump_cycle(self, corpus_key: str) -> int:
+        """Atomically increment and return the post-increment cycle_n for a corpus.
+
+        First call for a fresh corpus returns 1.
+        Uses INSERT ... ON CONFLICT (Postgres) or SELECT+UPDATE in a transaction (SQLite).
+        """
+        now = self._utc_now()
+        with Session(self._engine) as session:
+            row = session.get(DbContextMapCycle, corpus_key)
+            if row is None:
+                row = DbContextMapCycle(corpus_key=corpus_key, cycle_n=1, updated_at=now)
+                session.add(row)
+            else:
+                row.cycle_n += 1
+                row.updated_at = now
+                session.add(row)
+            session.commit()
+            return row.cycle_n
+
+    def get_cycle(self, corpus_key: str) -> int:
+        """Read-only cycle_n lookup. Returns 0 if no cycle exists yet."""
+        with Session(self._engine) as session:
+            row = session.get(DbContextMapCycle, corpus_key)
+        return row.cycle_n if row is not None else 0
+
+    def get_context_maps(self, corpus_keys: list[str]) -> dict[str, list[MapEntry]]:
+        """Bulk read context maps for multiple corpora (cross-corpus enrichment)."""
+        if not corpus_keys:
+            return {}
+        with Session(self._engine) as session:
+            rows = session.exec(
+                select(DbContextMap).where(col(DbContextMap.corpus_key).in_(corpus_keys))
+            ).all()
+        result: dict[str, list[MapEntry]] = {}
+        for row in rows:
+            try:
+                raw = json.loads(row.map_json)
+            except json.JSONDecodeError:
+                continue
+            if row.schema_version == 1:
+                entries = _legacy_to_entries(raw, row.corpus_key)
+            elif isinstance(raw, list):
+                entries = [MapEntry.model_validate(e) for e in raw]
+            else:
+                continue
+            result[row.corpus_key] = entries
+        return result
+
+    def _ensure_context_map_schema_version_column(self) -> None:
+        inspector = inspect(self._engine)
+        if not inspector.has_table("context_map"):
+            return
+        columns = {column["name"] for column in inspector.get_columns("context_map")}
+        if "schema_version" in columns:
+            return
+        with self._engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE context_map ADD COLUMN schema_version INTEGER DEFAULT 1")
+            )
+
+    def _ensure_context_map_cycles_table(self) -> None:
+        inspector = inspect(self._engine)
+        if inspector.has_table("context_map_cycles"):
+            return
+        DbContextMapCycle.metadata.create_all(self._engine)
 
     def _ensure_context_map_freeze_column(self) -> None:
         inspector = inspect(self._engine)
@@ -589,3 +669,57 @@ class BlackboardDatabase:
         if isinstance(decoded, dict):
             return decoded
         return payload
+
+
+def _legacy_to_entries(raw: dict[str, Any], _corpus_key: str) -> list[MapEntry]:
+    """Translate legacy schema_version=1 dict format to list[MapEntry].
+
+    Best-effort: each {section: {key: {entry_id, content, priority_score}}} becomes
+    a MapEntry with observation_type inferred from section, cycle fields zeroed,
+    materialization_count = 0, and token_estimate recomputed via tiktoken.
+
+    The section → observation_type mapping is reversed from sections.py SECTION_MAP.
+    """
+    from datetime import UTC, datetime
+
+    from harness_poc.core.context_map.sections import SECTION_MAP
+
+    # Reverse mapping: section_name → observation_type (best-guess, may be ambiguous)
+    _section_to_type: dict[str, str] = {}
+    for obs_type, sec in SECTION_MAP.items():
+        if sec not in _section_to_type:
+            _section_to_type[sec] = obs_type
+
+    encoder = tiktoken.get_encoding("cl100k_base")
+    now = datetime.now(tz=UTC)
+    entries: list[MapEntry] = []
+
+    for section, section_entries in raw.items():
+        if not isinstance(section_entries, dict):
+            continue
+        obs_type = _section_to_type.get(section, "insight")
+        for key, value in section_entries.items():
+            if not isinstance(value, dict):
+                continue
+            content = str(value.get("content", ""))
+            entry_id = str(value.get("entry_id", ""))
+            priority = float(value.get("priority_score", 0.5))
+            entries.append(
+                MapEntry(
+                    entry_id=entry_id,
+                    key=str(key),
+                    section=section,
+                    observation_type=obs_type,  # type: ignore[arg-type]
+                    summary=content,
+                    priority=priority,
+                    source_event_ids=[],
+                    first_seen=now,
+                    last_updated=now,
+                    materialization_count=0,
+                    first_seen_cycle=0,
+                    last_seen_cycle=0,
+                    token_estimate=len(encoder.encode(content)),
+                )
+            )
+
+    return entries

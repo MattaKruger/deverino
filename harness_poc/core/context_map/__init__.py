@@ -11,6 +11,7 @@ from harness_poc.core.context_map.config import (
     load_distiller_config,
 )
 from harness_poc.core.context_map.distiller import run_distiller
+from harness_poc.core.context_map.render import render_context_map
 from harness_poc.core.context_map.schema import (
     CartographerResult,
     DistilledBatch,
@@ -37,5 +38,6 @@ __all__ = [
     "deterministic_cartographer",
     "load_cartographer_config",
     "load_distiller_config",
+    "render_context_map",
     "run_distiller",
 ]

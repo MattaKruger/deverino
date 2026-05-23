@@ -41,7 +41,6 @@ class RuntimeConfig:
     tool_result_max_chars: int = 12_000
     materializer_poll_interval: float = 30.0
     materializer_max_event_tokens: int = 8000
-    materializer_token_budget: int = 1024
     materializer_freeze_threshold: int = 3
     materializer_freeze_seconds: int = 300
 
@@ -179,7 +178,6 @@ class HarnessConfig:
             materializer_max_event_tokens=int(
                 runtime_raw.get("materializer_max_event_tokens", 8000)
             ),
-            materializer_token_budget=int(runtime_raw.get("materializer_token_budget", 1024)),
             materializer_freeze_threshold=int(
                 runtime_raw.get("materializer_freeze_threshold", 3)
             ),

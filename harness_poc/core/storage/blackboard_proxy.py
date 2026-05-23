@@ -4,6 +4,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from harness_poc.core.context_map.schema import MapEntry
     from harness_poc.core.events import ContextMapEvent
     from harness_poc.core.permissions import SkillPermissions
     from harness_poc.core.storage.database import BlackboardDatabase
@@ -88,7 +89,7 @@ class BlackboardAccessProxy:
         self._require_read()
         return self._db.list_chunks_for_source(source_id)
 
-    def get_context_map(self, corpus_key: str) -> dict[str, Any] | None:
+    def get_context_map(self, corpus_key: str) -> list[MapEntry] | None:
         self._require_read()
         return self._db.get_context_map(corpus_key)
 
@@ -101,6 +102,22 @@ class BlackboardAccessProxy:
     def get_pending_corpus_keys(self) -> list[str]:
         self._require_read()
         return self._db.get_pending_corpus_keys()
+
+    def get_and_bump_cycle(self, corpus_key: str) -> int:
+        self._require_write()
+        return self._db.get_and_bump_cycle(corpus_key)
+
+    def get_cycle(self, corpus_key: str) -> int:
+        self._require_read()
+        return self._db.get_cycle(corpus_key)
+
+    def get_context_maps(self, corpus_keys: list[str]) -> dict[str, list[MapEntry]]:
+        self._require_read()
+        return self._db.get_context_maps(corpus_keys)
+
+    def read_session_state(self, session_id: str) -> StatePayload | None:
+        self._require_read()
+        return self._db.read_session_state(session_id)
 
     # ---- document metadata write methods ----
 
@@ -119,7 +136,7 @@ class BlackboardAccessProxy:
     def write_map_and_mark_processed(
         self,
         corpus_key: str,
-        map_json: dict[str, Any],
+        map_entries: list[MapEntry],
         token_count: int,
         event_ids: list[str],
         freeze_until: str | None = None,
@@ -127,7 +144,7 @@ class BlackboardAccessProxy:
         self._require_write()
         self._db.write_map_and_mark_processed(
             corpus_key,
-            map_json,
+            map_entries,
             token_count,
             event_ids,
             freeze_until,

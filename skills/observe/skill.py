@@ -144,16 +144,11 @@ def _find_disputed_entry(
 
     best_entry = ""
     best_score = 0
-    for section_name, entries in current_map.items():
-        if not isinstance(entries, dict):
-            continue
-        for entry_key, entry_value in entries.items():
-            if not isinstance(entry_value, str):
-                continue
-            entry_lower = entry_value.lower()
-            score = sum(1 for w in words if w in entry_lower)
-            if score > best_score:
-                best_score = score
-                best_entry = f"[{section_name}] {entry_key}: {entry_value}"
+    for entry in current_map:
+        summary_lower_entry = entry.summary.lower()
+        score = sum(1 for w in words if w in summary_lower_entry)
+        if score > best_score:
+            best_score = score
+            best_entry = f"[{entry.section}] {entry.key}: {entry.summary}"
 
     return best_entry[:500] if best_entry else ""
