@@ -13,7 +13,6 @@ from rich.table import Table
 from harness_poc.app_factory import STARTUP_ERRORS, AppState, build_app_state
 from harness_poc.console import console, print_error
 from harness_poc.core.config import HarnessConfig
-from harness_poc.core.dashboard import DashboardSnapshot, fetch_dashboard_snapshot, snapshot_to_dict
 from harness_poc.core.events import (
     AgentInputAdded,
     BaseEvent,
@@ -24,6 +23,11 @@ from harness_poc.core.events import (
     fetch_event_log_rows,
     fetch_latest_event_log_rows,
     render_event_log_row,
+)
+from harness_poc.core.observability import (
+    DashboardSnapshot,
+    fetch_dashboard_snapshot,
+    snapshot_to_dict,
 )
 from harness_poc.core.processors.circuit_breaker import run_circuit_breaker
 from harness_poc.core.processors.llm_worker import run_llm_worker

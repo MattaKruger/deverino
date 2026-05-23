@@ -5,9 +5,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.events import DocumentRetrieved, SearchFailed
-from harness_poc.core.retrieval import SearchRequest
+from harness_poc.core.retrieval import LiveVespaDocumentClient, SearchRequest
 from harness_poc.core.skills import SkillResult
-from harness_poc.core.vespa_client import LiveVespaDocumentClient
 
 if TYPE_CHECKING:
     from harness_poc.core.retrieval import SearchResult

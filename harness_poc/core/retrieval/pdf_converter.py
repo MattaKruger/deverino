@@ -4,7 +4,7 @@ import logging
 import time
 from pathlib import Path  # noqa: TC003
 
-from harness_poc.core.retrieval import (
+from harness_poc.core.retrieval.retrieval import (
     DocumentChunk,
     compute_content_hash,
     make_chunk_id,

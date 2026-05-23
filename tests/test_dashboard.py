@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from sqlalchemy import Engine
 
-from harness_poc.core.dashboard import fetch_dashboard_snapshot, snapshot_to_dict
 from harness_poc.core.events import (
     AgentStarted,
     EntityReferenced,
@@ -12,6 +11,7 @@ from harness_poc.core.events import (
     SkillCompleted,
     StreamPaused,
 )
+from harness_poc.core.observability import fetch_dashboard_snapshot, snapshot_to_dict
 from harness_poc.core.storage import BlackboardDatabase
 
 

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
-from harness_poc.core.materializer_runner import MaterializerRunner
+from harness_poc.core.execution import MaterializerRunner
 
 if TYPE_CHECKING:
     from harness_poc.app_factory import Runtime

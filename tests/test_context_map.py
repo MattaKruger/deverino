@@ -19,7 +19,7 @@ from harness_poc.core.config import (
     RuntimeConfig,
 )
 from harness_poc.core.events import EntityReferenced, MapEntryEvicted, deserialize_event
-from harness_poc.core.materializer_runner import MaterializerRunner
+from harness_poc.core.execution import MaterializerRunner
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.skills import SkillContext, SkillResult
 from harness_poc.core.storage import (
@@ -538,7 +538,7 @@ def test_materializer_skips_frozen_corpus(
 
     monkeypatch.setattr(runner, "_materialize", fake_materialize)
     monkeypatch.setattr(
-        "harness_poc.core.materializer_runner.datetime",
+        "harness_poc.core.execution.materializer_runner.datetime",
         FrozenDatetime,
     )
 

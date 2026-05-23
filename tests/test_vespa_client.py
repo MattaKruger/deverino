@@ -7,11 +7,13 @@ import pytest
 from harness_poc.core.config import RetrievalConfig
 from harness_poc.core.retrieval import (
     FeedSummary,
+    LiveVespaDocumentClient,
     SearchRequest,
     SearchResult,
     VespaDocumentClient,
+    _build_query_body,
+    _normalize_hit,
 )
-from harness_poc.core.vespa_client import LiveVespaDocumentClient, _build_query_body, _normalize_hit
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

@@ -14,7 +14,7 @@ from harness_poc.core.config import (
     RetrievalConfig,
     RuntimeConfig,
 )
-from harness_poc.core.document_index import DocumentIndexer
+from harness_poc.core.retrieval import DocumentIndexer
 from harness_poc.core.storage import BlackboardDatabase
 from tests.test_vespa_client import FakeVespaClient
 

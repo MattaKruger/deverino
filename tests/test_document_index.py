@@ -6,12 +6,12 @@ from unittest.mock import MagicMock
 import pytest
 from sqlalchemy import Engine
 
-from harness_poc.core import document_index
 from harness_poc.core.config import RetrievalConfig
-from harness_poc.core.document_index import DocumentIndexer
 from harness_poc.core.retrieval import (
     DocumentChunk,
+    DocumentIndexer,
     compute_content_hash,
+    document_index,
     make_chunk_id,
     make_source_id,
 )

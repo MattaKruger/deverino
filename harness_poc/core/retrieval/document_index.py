@@ -11,15 +11,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from harness_poc.core.pdf_converter import convert_pdf_to_chunks
-from harness_poc.core.retrieval import make_document_chunks, make_source_id
+from harness_poc.core.retrieval.pdf_converter import convert_pdf_to_chunks
+from harness_poc.core.retrieval.retrieval import make_document_chunks, make_source_id
 from harness_poc.core.storage import DbDocumentChunk, DbDocumentSource
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from harness_poc.core.config import RetrievalConfig
-    from harness_poc.core.retrieval import VespaDocumentClient
+    from harness_poc.core.retrieval.retrieval import VespaDocumentClient
     from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
 
 SUPPORTED_EXTENSIONS = frozenset(
