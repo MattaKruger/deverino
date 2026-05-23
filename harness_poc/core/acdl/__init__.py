@@ -5,10 +5,10 @@ Deverino harness. Produces typed ASTs for programmatic inspection and
 structural validation.
 """
 
-from harness_poc.core.acdl.ast import ACDLFile
+from harness_poc.core.acdl.ast import ACDLFile, to_dict
 from harness_poc.core.acdl.parser import ParseError, Parser
 
-__all__ = ["ACDLFile", "ParseError", "Parser", "parse", "validate"]
+__all__ = ["ACDLFile", "ParseError", "Parser", "parse", "to_dict", "validate"]
 
 
 def parse(source: str, *, filename: str = "<string>") -> ACDLFile:

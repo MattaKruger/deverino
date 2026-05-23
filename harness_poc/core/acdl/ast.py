@@ -34,6 +34,49 @@ class ACDLFile:
 
     blocks: list[Block]
 
+    # -- query API -----------------------------------------------------------
+
+    def str_frags(self) -> list[StrFragDef]:
+        """All StrFrag definitions in file order."""
+        return [b for b in self.blocks if isinstance(b, StrFragDef)]
+
+    def role_frags(self) -> list[RoleFragDef]:
+        """All RoleFrag definitions in file order."""
+        return [b for b in self.blocks if isinstance(b, RoleFragDef)]
+
+    def fragments(self) -> list[StrFragDef | RoleFragDef]:
+        """All fragment definitions (StrFrag + RoleFrag) in file order."""
+        return [b for b in self.blocks if isinstance(b, (StrFragDef, RoleFragDef))]
+
+    def fragment_named(self, name: str) -> StrFragDef | RoleFragDef | None:
+        """Find a fragment by name. Returns None if not found."""
+        for f in self.fragments():
+            if f.name == name:
+                return f
+        return None
+
+    def prompts(self) -> list[PromptDef]:
+        """All prompt/chart definitions in file order."""
+        return [b for b in self.blocks if isinstance(b, PromptDef)]
+
+    def prompt_named(self, name: str) -> PromptDef | None:
+        """Find a prompt by name. Returns None if not found."""
+        for p in self.prompts():
+            if p.name == name:
+                return p
+        return None
+
+    def namespaces(self) -> list[NamespaceDef]:
+        """All Namespace blocks in file order."""
+        return [b for b in self.blocks if isinstance(b, NamespaceDef)]
+
+    def namespace_named(self, name: str) -> NamespaceDef | None:
+        """Find a namespace by name. Returns None if not found."""
+        for ns in self.namespaces():
+            if ns.name == name:
+                return ns
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Block union — top-level constructs
@@ -78,6 +121,14 @@ class PromptDef:
     name: str
     indices: list[Expression] = field(default_factory=list)
     body: list[PromptBodyItem] = field(default_factory=list)
+
+    def role_messages(self) -> list[RoleMessage]:
+        """All role messages in this prompt body (shallow, not recursive)."""
+        return [item for item in self.body if isinstance(item, RoleMessage)]
+
+    def frag_invocations(self) -> list[FragInvocation]:
+        """All Frag invocations in this prompt body (shallow, not recursive)."""
+        return [item for item in self.body if isinstance(item, FragInvocation)]
 
 
 # ---------------------------------------------------------------------------
@@ -272,3 +323,37 @@ class NameDef:
 
     name: str
     value: list[Token] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Serialization
+# ---------------------------------------------------------------------------
+
+
+def to_dict(node: object) -> object:
+    """Serialize an AST node to plain Python dicts/lists/primitives.
+
+    Returns a JSON-serializable structure suitable for tool output,
+    blackboard storage, or comparison with the JS renderer AST.
+    """
+    if isinstance(node, (str, int, float, bool)) or node is None:
+        return node
+
+    if isinstance(node, list):
+        return [to_dict(item) for item in node]
+
+    if isinstance(node, tuple):
+        return [to_dict(item) for item in node]
+
+    if hasattr(node, "__dataclass_fields__"):
+        result: dict[str, object] = {"_type": type(node).__name__}
+        for field_name in node.__dataclass_fields__:
+            value = getattr(node, field_name)
+            # Skip empty defaults to keep output compact
+            if value in (None, [], {}):
+                continue
+            result[field_name] = to_dict(value)
+        return result
+
+    # Fallback: Token, other objects
+    return str(node)

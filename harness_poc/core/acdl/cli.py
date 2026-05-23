@@ -96,20 +96,14 @@ def inspect_acdl(
 ) -> None:
     """Inspect an .acdl file: list fragments, prompts, and namespaces."""
     from harness_poc.core.acdl import parse
-    from harness_poc.core.acdl.ast import (
-        NamespaceDef,
-        PromptDef,
-        RoleFragDef,
-        StrFragDef,
-    )
 
     source = file.read_text()
     ast = parse(source, filename=str(file))
 
-    str_frags = [b for b in ast.blocks if isinstance(b, StrFragDef)]
-    role_frags = [b for b in ast.blocks if isinstance(b, RoleFragDef)]
-    prompts = [b for b in ast.blocks if isinstance(b, PromptDef)]
-    namespaces = [b for b in ast.blocks if isinstance(b, NamespaceDef)]
+    str_frags = ast.str_frags()
+    role_frags = ast.role_frags()
+    prompts = ast.prompts()
+    namespaces = ast.namespaces()
 
     show_all = not (fragments_only or prompts_only or namespaces_only)
 
