@@ -1,8 +1,8 @@
 # Phase B — Agent-Inspectable ACDL Specification
 
 **Created:** 2026-05-23
-**Status:** planned
-**Depends on:** Phase A complete (commits `ceb52c3`, `9ed5422`, `fe6821a`)
+**Status:** B1–B3 complete, B4 deferred
+**Depends on:** Phase A complete (commits `ceb52c3`, `9ed5422`, `fe6821a`, `f93a7b6`)
 
 ---
 
@@ -325,50 +325,275 @@ can request this if it needs deeper inspection.
 
 ---
 
-### B4 — Expression Parsing (Optional)
+### B4 — Expression Parsing (Revised, May 2026)
 
-**File:** `harness_poc/core/acdl/parser.py`
-**Lines:** ~150
+**Status:** planned — deferred until programmatic condition queries are needed.
 
-Currently, conditions (`If env.x != none`), iterables (`range(1, @T)`), and
-switch expressions are stored as raw `list[Token]`. This makes them opaque to
-queries. B4 parses them into typed expression ASTs.
+#### B4.1 — Why This Is Optional (Contrastive Analysis)
 
-**What to parse:**
+Three sources ground this decision:
 
-- **Comparisons:** `expr != none`, `@T > 1`, `expr == value`
-- **Path access:** `event.type` → `ContextVar(namespace="event", path=["type"])`
-- **Function calls:** `range(a, b)`, `max(a, b)` → `TemplateCall`
-- **Arithmetic:** `@T - 6`, `1 + 2`
+1. **The ACDL paper** (Vespa: `docs/papers_2/2605.01920.pdf`, chunks 25, 39):
+   Conditions may use comparison operators (`==`, `!=`, `<`, `>`) and logical
+   connectives (`&`, `|`). Arithmetic operators (`+`, `-`, `*`, `/`, `%`) are
+   permitted in index positions. But the paper does not define a formal
+   expression AST — it defines syntax, not typed representation.
 
-**New AST nodes (add to `ast.py`):**
+2. **The JS reference renderer** (`docs/acdl/acdl-renderer.js:1274`):
+   `parseConditionalOutside()` and siblings collect raw `toExprToken()` arrays
+   for conditions, iterables, and switch expressions. The renderer does NOT
+   parse them into typed AST nodes. It uses `parseSingleTextArg()` for
+   arithmetic inside text arguments (producing `arithmeticExpr`), but control
+   flow expressions stay as token lists. Our Python parser's
+   `_collect_until_brace()` mirrors this behavior exactly.
+
+3. **The actual `.acdl` files** (52 + 155 + 14 blocks):
+   Every control flow expression pattern is cataloged in §B4.3 below. The
+   grammar is tiny — no operator nesting, no parentheses, no logical
+   connectives in use.
+
+**What the agent can already do without B4:** `to_dict()` serializes
+`ConditionalBlock.if_condition` as structured token objects
+(`{"_type": "Token", "type": "IDENT", "value": "env"}`). An LLM reading
+JSON token sequences can reconstruct `env.user_input[@t] != none` — token
+stream reading is its native operation. The `acdl_inspect` tool already
+returns fragment/prompt/namespace names for structural queries.
+
+**What B4 enables that raw tokens don't:**
+
+- **Programmatic queries:** "find all conditions comparing against `none`"
+  without string-matching token values.
+- **Cross-reference validation:** "does every `ContextVar` in a condition
+  reference a defined namespace?" for CI-time consistency checks.
+- **Compact serialization:** typed nodes are ~40% smaller than token lists
+  in JSON output (one `Comparison` node vs. 5–8 `Token` dicts).
+- **Future evaluation:** if the harness ever conditionally assembles prompts
+  at runtime, typed expressions are the prerequisite.
+
+**Verdict:** B4 is developer infrastructure, not agent infrastructure. The
+agent can reason about control flow from token output. Implement B4 when
+programmatic condition queries or cross-reference validation are needed.
+
+#### B4.2 — Changes From Original Plan
+
+| Original plan | Revised | Reason |
+|---|---|---|
+| New node: `PathAccess` | **Dropped** | `ContextVar` already has `path: list[str]`. `event.type` is `ContextVar(namespace="event", path=["type"])` — no new node needed. |
+| New node: `Comparison` | **Kept, unchanged** | — |
+| No arithmetic node | **New node: `BinaryOp`** | `@T - 6` and `@T - budget.chat_history_turns` appear in actual `.acdl` files. The paper confirms `+`, `-`, `*`, `/`, `%` are part of the language. |
+| No identifier node | **New node: `Identifier`** | Case values (`SkillCalled`) and the `none` literal aren't `NameRef` ($-prefixed) or `TemplateCall` (parenthesized). |
+| `Comparison` vs `BinaryOp` separate? | **Yes, separate** | They occupy different grammar positions: comparisons only at condition level (If/ElseIf), arithmetic only inside function args and indices. Keeping them separate makes queries self-documenting: `isinstance(cond, Comparison)` reads better than checking `operator in ("!=", "==", ...)`. |
+| ~150 lines estimate | **~80 lines** | The grammar has no operator precedence problems (see §B4.3). A two-level recursive descent suffices. |
+
+#### B4.3 — Expression Grammar Inventory
+
+Every expression pattern across all 3 `.acdl` files (verified 2026-05-23):
+
+```
+ATOM:    env.x, sys.x, resp.x     → ContextVar
+         event.type               → ContextVar (path access via existing path field)
+         @T, @t                   → TimeIndex
+         range(...), max(...)     → TemplateCall
+         SkillCalled, none        → Identifier  [NEW]
+         1, 6, 10                 → NumberLiteral
+         "string"                 → StringLiteral
+         $max_iterations          → NameRef
+
+POSTFIX: .ident                    → extends ContextVar.path (existing)
+         [expr]                    → index (existing, on ContextVar/TimeIndex/NameRef)
+
+INFIX:   != none                   → Comparison  [NEW]  (condition level only)
+         @T > 1                   → Comparison  [NEW]
+         @T - 6                   → BinaryOp    [NEW]  (function args only)
+         @T % 25                  → BinaryOp    [NEW]  (per paper §39, not yet in our files)
+
+NOT IN USE (deferred):  and (&), or (|), parentheses, unary -, ternary
+```
+
+The grammar has **no operator precedence problem** because:
+- Comparisons (`!=`, `>`) only appear as the top-level condition after `If`
+  — they never nest inside other expressions in any `.acdl` file.
+- Arithmetic (`-`) only appears inside `TemplateCall` arguments — never at
+  condition level.
+- There are no parenthesized sub-expressions that would create ambiguity.
+- Logical connectives (`&`, `|`) are in the paper's grammar but absent from
+  all actual `.acdl` files. Defer until needed.
+
+#### B4.4 — New AST Nodes
 
 ```python
 @dataclass(frozen=True, slots=True)
 class Comparison:
-    """A comparison expression: left OP right"""
+    """A comparison expression: left OP right.
+
+    Only appears at condition level (If, ElseIf).
+    """
     left: Expression
     operator: str  # "!=", "==", ">", "<", ">=", "<="
     right: Expression
 
 
 @dataclass(frozen=True, slots=True)
-class PathAccess:
-    """A dotted path access: event.type"""
-    base: Expression
-    path: list[str]
+class BinaryOp:
+    """An arithmetic expression: left OP right.
+
+    Appears inside function arguments and index expressions.
+    Operators: "+", "-", "*", "/", "%"
+    """
+    left: Expression
+    operator: str  # "+", "-", "*", "/", "%"
+    right: Expression
+
+
+@dataclass(frozen=True, slots=True)
+class Identifier:
+    """A bare identifier used as a value — not a namespace prefix, not a $var.
+
+    Used for: Case match values (SkillCalled), the 'none' literal,
+    and any other keyword-like identifier appearing in expression position.
+    """
+    name: str
 ```
 
-**Update `Expression` type to include these.**
+**Updated Expression union:**
 
-**Parser changes:**
-- Replace `_collect_until_brace()` in conditions with `_parse_expression()`
-- Handle `!=`, `==`, `>`, `<` as comparison operators
-- Handle `.` as path access
+```python
+type Expression = (
+    ContextVar | TemplateCall | StringLiteral | NumberLiteral
+    | NameRef | TimeIndex | Comparison | BinaryOp | Identifier
+)
+```
 
-**Only do B4 if the agent actually needs to query control flow semantics.** The
-raw-token approach is sufficient for "list all fragments/prompts/namespaces"
-which is the primary use case.
+Three additions: `Comparison`, `BinaryOp`, `Identifier`.
+
+#### B4.5 — Field Type Changes
+
+Five fields migrate from `list[Token]` to typed expressions. These are
+**backward-incompatible** — any code destructuring these fields as lists
+will break. Currently no such code exists outside the test suite.
+
+| Class | Field | Old type | New type |
+|---|---|---|---|
+| `ConditionalBlock` | `if_condition` | `list[Token]` | `Expression` |
+| `ConditionalBlock` | `else_if_conditions` | `list[list[Token]]` | `list[Expression]` |
+| `LoopBlock` | `iterable` | `list[Token]` | `Expression` |
+| `SwitchBlock` | `expression` | `list[Token]` | `Expression` |
+| `SwitchCase` | `match` | `list[Token]` | `Expression` |
+
+`NameDef.value` stays `list[Token]` — its "rest of line" grammar isn't
+enclosed by braces/parens and doesn't benefit from expression parsing.
+
+#### B4.6 — Parser Changes (~80 lines)
+
+**New method: `_parse_condition()`** — parses expression with optional infix
+comparison operator. Used for If conditions, ForEach iterables, Switch
+expressions, and Case matches:
+
+```python
+def _parse_condition(self) -> Expression:
+    """Parse an expression with optional infix comparison operator.
+
+    Handles: expr, expr != expr, expr > expr, expr == expr, etc.
+    """
+    left = self._parse_expression()
+    op = self._peek.value
+    if op in ("!=", "==", ">", "<", ">=", "<="):
+        self._pos += 1
+        right = self._parse_expression()
+        return Comparison(left=left, operator=op, right=right)
+    return left
+```
+
+**Modified: `_parse_expression()`** — add arithmetic and bare identifiers to
+the existing atom parser:
+
+```python
+# After parsing left atom, check for arithmetic operators
+left = atom_result
+op = self._peek.value
+if op in ("+", "-", "*", "/", "%"):
+    self._pos += 1
+    right = self._parse_expression()
+    return BinaryOp(left=left, operator=op, right=right)
+return left
+```
+
+And in the atom dispatch, add:
+
+```python
+# Bare identifier (e.g., 'none', Case values)
+if tok.type == "KEYWORD" and tok.value not in _NAMESPACE_KEYWORDS:
+    return Identifier(name=self._consume("KEYWORD").value)
+```
+
+**Wiring — replace raw token collection with `_parse_condition()`:**
+
+| Location | Current | New |
+|---|---|---|
+| `_parse_conditional` line ~662 | `_collect_until_brace()` | `_parse_condition()` |
+| `_parse_conditional` line ~676 (ElseIf) | `_collect_until_brace()` | `_parse_condition()` |
+| `_parse_loop` line ~706 | `_collect_until(")")` | `_parse_condition()` |
+| `_parse_switch` line ~715 | `_collect_until_brace()` | `_parse_condition()` |
+| `_parse_switch` line ~727 (Case match) | `_collect_until_brace()` | `_parse_condition()` |
+
+#### B4.7 — Explicitly Out of Scope
+
+- **No logical operators** (`&`, `|`) — in the paper's grammar but absent from
+  all `.acdl` files. Add when needed with proper precedence handling.
+- **No parenthesized sub-expressions** — not present. Add when needed.
+- **No unary operators** (`-x`, `!x`) — not present.
+- **No operator precedence** — the grammar has no infix nesting that would
+  require it. Comparisons never contain other comparisons; arithmetic only
+  appears as direct children of function arguments.
+- **No type-checking** — this is a parser, not a type-checker.
+  `Identifier("none")` vs `none` keyword semantics is a downstream concern.
+- **No expression evaluation** — the AST is for inspection, not execution.
+- **No change to `NameDef.value`** — its "rest of line" grammar isn't
+  expression-shaped.
+
+#### B4.8 — Acceptance Criteria
+
+```bash
+uv run python3 -c "
+from harness_poc.core.acdl import parse
+from harness_poc.core.acdl.ast import Comparison, Identifier, ContextVar, BinaryOp, TemplateCall
+from pathlib import Path
+
+ast = parse(Path('deverino_react.acdl').read_text(), filename='t')
+
+# Find ConversationTurn fragment
+ct = ast.fragment_named('ConversationTurn')
+assert ct is not None
+
+# First condition: env.user_input[@t] != none
+first_if = ct.body[0]
+assert isinstance(first_if.if_condition, Comparison)
+assert first_if.if_condition.operator == '!='
+assert isinstance(first_if.if_condition.left, ContextVar)
+assert first_if.if_condition.left.namespace == 'env'
+assert isinstance(first_if.if_condition.right, Identifier)
+assert first_if.if_condition.right.name == 'none'
+
+# DeverinoChatLoop: ForEach(@t: range(max(1, @T - 6), @T))
+loop = ast.prompt_named('DeverinoChatLoop')
+foreach = [b for b in loop.body if hasattr(b, 'iterable')][0]
+assert foreach.variable == '@t'
+assert isinstance(foreach.iterable, TemplateCall)
+assert foreach.iterable.name == 'range'
+print('B4 OK')
+"
+```
+
+#### B4.9 — Execution Notes
+
+- B4 is independent of B1–B3 and can be implemented at any time.
+- The field type changes are **backward-incompatible** — verify no downstream
+  code destructures these fields as `list[Token]` before merging.
+- The `to_dict()` serializer handles new node types automatically (they're
+  frozen dataclasses).
+- The JS renderer is unaffected — it parses its own AST independently.
+- Estimated implementation time: ~30 minutes for parser changes, ~15 minutes
+  for AST changes + test updates.
 
 ---
 
@@ -435,15 +660,15 @@ uv run ty check harness_poc/core/acdl/       # clean
 ## 5. Execution Order
 
 ```
-B1 (query API) → B2 (JSON) → B3 (tool) → [B4 (expressions, optional)]
+B1 (query API) → B2 (JSON) → B3 (tool) → [B4 (expressions, deferred)]
 ```
 
-B1 is the foundation. B2 makes the AST communicable. B3 closes the loop by
-making it callable by the agent. B4 is depth for when the agent needs to
-understand control flow semantics.
+B1–B3 are complete (commits pending). B4 is deferred per §B4.1 — the agent
+can reason about control flow from `to_dict()` token output. Implement when
+programmatic condition queries or cross-reference validation are needed.
 
-**Suggested commit strategy:** One commit per step. Each is independently
-testable and doesn't break existing functionality.
+**Suggested commit strategy:** One commit per implemented step. Each is
+independently testable and doesn't break existing functionality.
 
 ---
 
