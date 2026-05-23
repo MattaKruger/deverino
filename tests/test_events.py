@@ -33,6 +33,7 @@ def test_event_registry_covers_all_concrete_types() -> None:
         "AgentStarted",
         "SkillCalled",
         "SkillRequested",
+        "SkillCancelled",
         "SkillCompleted",
         "AgentInputAdded",
         "LLMActionEmitted",
