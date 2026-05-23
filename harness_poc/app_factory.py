@@ -429,7 +429,11 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
 
     # Expose the final assembled system prompt to tools so they can
     # inspect it at runtime (e.g., inspect_own_context).
-    tool_runner.system_prompt = runtime.pydantic_runtime.agent.system_prompt
+    # PydanticAI stores system prompts as a tuple of strings in
+    # _system_prompts — join them to get the full text.
+    tool_runner.system_prompt = "\n\n".join(
+        runtime.pydantic_runtime.agent._system_prompts
+    )
 
     return runtime
 
