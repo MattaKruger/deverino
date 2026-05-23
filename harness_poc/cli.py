@@ -12,6 +12,7 @@ from rich.table import Table
 
 from harness_poc.app_factory import STARTUP_ERRORS, AppState, build_app_state
 from harness_poc.console import console, print_error
+from harness_poc.core.acdl.cli import acdl_app
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.events import (
     AgentInputAdded,
@@ -888,3 +889,4 @@ app.add_typer(tool_app, name="tool")
 app.add_typer(documents_app, name="documents")
 app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(dashboard_app, name="dashboard")
+app.add_typer(acdl_app, name="acdl")
