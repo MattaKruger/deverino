@@ -45,6 +45,7 @@ class ToolContext:
     database: ToolDatabase | None = None
     runtime_config: RuntimeConfig | None = None
     cancellation: CancellationToken = field(default_factory=CancellationToken)
+    system_prompt: str = ""
 
     @property
     def cancelled(self) -> bool:

@@ -404,7 +404,7 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
     skill_catalog = build_skill_catalog(knowledge_dirs)
     tools = skill_runner.discover_skills()
 
-    return Runtime(
+    runtime = Runtime(
         config=config,
         skill_runner=skill_runner,
         tool_runner=tool_runner,
@@ -426,6 +426,12 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
         tools=tools,
         skill_catalog=skill_catalog,
     )
+
+    # Expose the final assembled system prompt to tools so they can
+    # inspect it at runtime (e.g., inspect_own_context).
+    tool_runner.system_prompt = runtime.pydantic_runtime.agent.system_prompt
+
+    return runtime
 
 
 def build_long_lived(identity: Identity, runtime: Runtime) -> LongLived:

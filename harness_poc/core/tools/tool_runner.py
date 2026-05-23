@@ -64,6 +64,7 @@ class ToolRunner:
         self._runtime_config: RuntimeConfig | None = runtime_config
         self._discovered = False
         self._active_tokens: dict[str, CancellationToken] = {}
+        self.system_prompt: str = ""
 
     # ------------------------------------------------------------------
     # Discovery
@@ -181,6 +182,7 @@ class ToolRunner:
                     database=self._database,
                     runtime_config=self._runtime_config,
                     cancellation=token,
+                    system_prompt=self.system_prompt,
                 )
                 result = self._execute_handler(tool_name, handler, token, ctx, **kwargs)
             else:
