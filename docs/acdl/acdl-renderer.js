@@ -101,7 +101,6 @@ var ACDL = (() => {
     "[",
     "]",
     "@",
-    "#",
     "$",
     "?",
     "!",
@@ -1085,6 +1084,10 @@ var ACDL = (() => {
           path2 = this.parsePathDesc();
         }
         return identifier({ name, path: path2 });
+      }
+      if (tok.type === "STRING") {
+        const name = this.consume("STRING").value;
+        return template({ name, arguments: [], comment: void 0 });
       }
       if (tok.type === "IDENT") {
         if (this.peekNext().value === "(") {

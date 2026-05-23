@@ -10,6 +10,99 @@
 //           goal_runner.py, system_prompts/SOUL.md
 //##############################################################################
 
+//##############################################################################
+// Fragment Definitions (file top level)
+//##############################################################################
+
+StrFrag SoulCharter: {
+    sys.soul_charter
+}
+
+StrFrag StateBlock: {
+    "# Project State"
+    sys.project_state
+    ""
+    "# Current Session State"
+    sys.session_state
+}
+
+StrFrag ContextMapBlock: {
+    "--- Context Map ---"
+    sys.context_map
+    "---"
+}
+
+StrFrag SkillCatalogBlock: {
+    sys.available_skills
+}
+
+StrFrag ToolPolicyBlock: {
+    "## Tool Result Policy"
+    "- Successful tool calls return result content directly as plain text."
+    "- Failed tool calls are prefixed with `[failed]`."
+    "- If a tool returns JSON with `orchestrator_action_required: true`,"
+    "  stop and surface the content to the user unchanged."
+    "- Do not retry failed tools."
+    "- semble_search / web_search: max 2 searches per run, then stop."
+    "- Do not make the same tool call with the same arguments more than once."
+}
+
+RoleFrag ConversationTurn[@t]: {
+    // User input at turn t
+    If env.user_input[@t] != none {
+        U: env.user_input[@t]
+    }
+
+    // Model response at turn t (may be text, tool calls, or both)
+    If resp.tool_calls[@t] != none {
+        A: {
+            resp.reasoning[@t]
+            ForEach(call: resp.tool_calls[@t]) {
+                ACTION_RECORD(call)
+            }
+        }
+    }
+    If resp.answer[@t] != none {
+        A: resp.answer[@t]
+    }
+
+    // Tool observations at turn t
+    If resp.observations[@t] != none {
+        ForEach(obs: resp.observations[@t]) {
+            U: OBSERVATION_RECORD(obs)
+        }
+    }
+}
+
+RoleFrag GoalEvaluationTurn: {
+    // The goal runner injects an evaluation request as user content
+    // after each ReAct cycle, asking whether the objective is met.
+    U: { "[evaluate_goal] Is the objective complete?" }
+    A: { GOAL_EVAL_RESPONSE(resp.reasoning[@T], resp.answer[@T]) }
+}
+
+StrFrag ToolBudgetBlock: {
+    "- Maximum consecutive tool rounds: 10"
+    "- semble_search per-run budget: 3 calls"
+    "- Per-tool duplicate-call guard: active"
+}
+
+StrFrag TruncationPolicy: {
+    "- chat_history_max_tokens: 24000"
+    "- chat_history_recent_turns: 6"
+    "- Older turns beyond budget are dropped (no summary injection)"
+}
+
+StrFrag GoalHeader: {
+    "## Objective"
+    env.goal_objective
+    ""
+    "## Budget"
+    BUDGET_LINE("- Max iterations: ", env.max_iterations)
+    BUDGET_LINE("- Max tokens: ", env.max_tokens)
+    BUDGET_LINE("- Max seconds: ", env.max_seconds)
+}
+
 DeverinoChatLoop[@T]: {
     //##########################################################################
     // Namespace bindings
@@ -43,93 +136,6 @@ DeverinoChatLoop[@T]: {
         tool_calls:          string[]   // resp.tool_calls[@t] -- tool invocations at turn t
         observations:        string[]   // resp.observations[@t] -- tool results at turn t
         token_usage:         (int, int, int)  // resp.token_usage[@t] -- (prompt, completion, total)
-    }
-
-    //##########################################################################
-    // Fragments
-    //##########################################################################
-
-    StrFrag SoulCharter: {
-        sys.soul_charter
-    }
-
-    StrFrag StateBlock: {
-        "# Project State"
-        sys.project_state
-        ""
-        "# Current Session State"
-        sys.session_state
-    }
-
-    StrFrag ContextMapBlock: {
-        "--- Context Map ---"
-        sys.context_map
-        "---"
-    }
-
-    StrFrag SkillCatalogBlock: {
-        sys.available_skills
-    }
-
-    StrFrag ToolPolicyBlock: {
-        "## Tool Result Policy"
-        "- Successful tool calls return result content directly as plain text."
-        "- Failed tool calls are prefixed with `[failed]`."
-        "- If a tool returns JSON with `orchestrator_action_required: true`,"
-        "  stop and surface the content to the user unchanged."
-        "- Do not retry failed tools."
-        "- semble_search / web_search: max 2 searches per run, then stop."
-        "- Do not make the same tool call with the same arguments more than once."
-    }
-
-    RoleFrag ConversationTurn[@t]: {
-        // User input at turn t
-        If env.user_input[@t] != none {
-            U: env.user_input[@t]
-        }
-
-        // Model response at turn t (may be text, tool calls, or both)
-        If resp.tool_calls[@t] != none {
-            A: {
-                resp.reasoning[@t]
-                ForEach(call: resp.tool_calls[@t]) {
-                    ACTION_RECORD(call)
-                }
-            }
-        }
-        If resp.answer[@t] != none {
-            A: resp.answer[@t]
-        }
-
-        // Tool observations at turn t
-        If resp.observations[@t] != none {
-            ForEach(obs: resp.observations[@t]) {
-                U: OBSERVATION_RECORD(obs)
-            }
-        }
-    }
-
-    RoleFrag GoalEvaluationTurn: {
-        // The goal runner injects an evaluation request as user content
-        // after each ReAct cycle, asking whether the objective is met.
-        U: "[evaluate_goal] Is the objective complete?"
-        A: GOAL_EVAL_RESPONSE(resp.reasoning[@T], resp.answer[@T])
-    }
-
-    //##########################################################################
-    // Budget and policy fragments
-    //##########################################################################
-
-    StrFrag ToolBudgetBlock: {
-        "- Maximum consecutive tool rounds: 10"
-        "- semble_search per-run budget: 3 calls"
-        "- Per-tool duplicate-call guard: active"
-    }
-
-    StrFrag TruncationPolicy: {
-        "- chat_history_max_tokens: 24000"
-        "- chat_history_recent_turns: 6"
-        "- Older turns beyond budget are dropped (no summary injection)"
     }
 
     //##########################################################################
@@ -200,16 +206,6 @@ DeverinoGoalLoop[@T, $max_iterations]: {
         // Same as chat loop, plus:
         is_complete: bool            // resp.is_complete[@t] -- goal evaluation result
         final_answer: string         // resp.final_answer -- terminal output on completion
-    }
-
-    StrFrag GoalHeader: {
-        "## Objective"
-        env.goal_objective
-        ""
-        "## Budget"
-        BUDGET_LINE("- Max iterations: ", env.max_iterations)
-        BUDGET_LINE("- Max tokens: ", env.max_tokens)
-        BUDGET_LINE("- Max seconds: ", env.max_seconds)
     }
 
     S: {
