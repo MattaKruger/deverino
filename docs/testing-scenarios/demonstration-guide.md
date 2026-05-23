@@ -12,11 +12,12 @@ correctly about its own infrastructure. Each scenario takes 1–3 minutes.
 Before the full scenarios, verify the plumbing works:
 
 ```
-You: What tools do you have available for inspecting ACDL files?
+You: What tools do you have available for inspecting ACDL files or your
+own system prompt?
 
-Watch for: agent mentions acdl_inspect in its response. If it doesn't know
-about it, say "Check your skill catalog for acdl-tooling" — it should call
-skill_view("acdl-tooling") and then answer.
+Watch for: agent mentions acdl_inspect AND inspect_own_context. If it
+doesn't know about them, say "Check your skill catalog for acdl-tooling"
+— it should call skill_view("acdl-tooling") and then answer.
 ```
 
 ---
@@ -30,8 +31,8 @@ are conditional?
 ```
 
 **Watch for these tool calls (appear as `[tool]` in REPL output):**
-
 - `acdl_inspect(file_path="deverino_react.acdl")`
+- Bonus: `inspect_own_context()` to verify the blueprint matches the actual prompt
 
 **Verify the response contains:**
 
@@ -48,31 +49,36 @@ are conditional?
 
 ---
 
-## Scenario S2 — "What am I made of?" (3 min)
+## Scenario S2 — "What am I made of?" (2 min)
 
 ```
-You: Using the ACDL spec and your own runtime state, describe exactly what
+You: Using the ACDL spec and inspect_own_context, describe exactly what
 context is in your system prompt right now. What's the SOUL? What's in my
 STATE? What skills are in your catalog? What tool policies constrain you?
+Cross-reference against the ACDL blueprint — are there any gaps?
 ```
 
 **Watch for these tool calls:**
-
 - `acdl_inspect(file_path="deverino_react.acdl")` — architectural blueprint
-- `read_memory(memory_key="...")` or similar — runtime state values
+- `inspect_own_context()` — the actual system prompt text
 
 **Verify the response:**
-
-- [ ] References the 5-layer structure from the ACDL spec
-- [ ] Includes concrete values, not templates (e.g., actual STATE content, not "STATE goes here")
-- [ ] Distinguishes between "the spec says layer 3 is conditional on context_map" and "right now, context_map is [present/absent]"
-- [ ] Mentions specific tool policies (max 10 rounds, 3 semble_search, etc.)
+- [ ] References the 5-layer structure from the ACDL spec (S1)
+- [ ] Quotes or summarizes actual sections found via `inspect_own_context`
+- [ ] Reports word/line counts from the tool's structural summary
+- [ ] Cross-references: "the spec says layer 3 (ContextMapBlock) is conditional
+      on `sys.context_map != none`, and my prompt [does/does not] contain it"
+- [ ] Identifies any gaps between spec and runtime (e.g., ToolBudgetBlock and
+      TruncationPolicy are in the spec but NOT in the prompt — they're enforced
+      in harness code)
+- [ ] Reports exact tool policy rules (6 bullet points), not approximate recall
 
 **Red flags:**
-
-- Only describes the spec, doesn't check runtime state
-- Hallucinates STATE values instead of calling `read_memory`
-- Can't say whether ContextMapBlock is currently active
+- Calls `read_memory` instead of `inspect_own_context` — `read_memory` reads
+  the blackboard, not the system prompt
+- Describes the prompt from memory instead of calling the tool
+- Can't identify the budget/truncation gap (the most interesting finding)
+- Reports approximate values when the tool returns exact counts
 
 ---
 
@@ -108,7 +114,9 @@ You: What constraints does the ACDL spec place on your tool usage?
 Read the relevant fragments and tell me my own limits.
 ```
 
-**Watch for:** `acdl_inspect` → drills into ToolBudgetBlock and TruncationPolicy
+**Watch for:** `acdl_inspect` → drills into ToolBudgetBlock and TruncationPolicy.
+Bonus: `inspect_own_context()` to confirm whether budget/truncation text
+actually appears in the prompt (it doesn't — enforced in harness code).
 
 **Verify the response contains:**
 
@@ -216,14 +224,15 @@ to verify the agent reached for the right tool first, not as a fallback.
 
 ## What to do if the agent gets it wrong
 
-| Symptom                                                    | Correction                                                                  |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Calls `read_file` instead of `acdl_inspect`                | "Use acdl_inspect for structural queries, not read_file"                    |
-| Doesn't know `acdl_inspect` exists                         | "Check your skill catalog for acdl-tooling"                                 |
-| Stops at structural summary, doesn't drill into `acdl_ast` | "Look at the acdl_ast artifact for the prompt body"                         |
-| Makes up constraints or fragments                          | "Check the actual ACDL file, don't guess"                                   |
-| Confuses spec and runtime                                  | "Distinguish between what the spec says and what actually runs"             |
-| Can't find a specific fragment                             | "The fragment is called ConversationTurn — check role_frags in the summary" |
+| Symptom | Correction |
+|---------|------------|
+| Calls `read_file` instead of `acdl_inspect` | "Use acdl_inspect for structural queries, not read_file" |
+| Calls `read_memory` instead of `inspect_own_context` | "read_memory reads the blackboard. Use inspect_own_context to read your system prompt." |
+| Doesn't know `acdl_inspect` or `inspect_own_context` exist | "Check your skill catalog for acdl-tooling" |
+| Stops at structural summary, doesn't drill into `acdl_ast` | "Look at the acdl_ast artifact for the prompt body" |
+| Makes up constraints or fragments | "Check the actual ACDL file, don't guess" |
+| Confuses spec and runtime | "Distinguish between what the spec says and what actually runs. Use inspect_own_context to verify." |
+| Can't find a specific fragment | "The fragment is called ConversationTurn — check role_frags in the summary" |
 
 ---
 
