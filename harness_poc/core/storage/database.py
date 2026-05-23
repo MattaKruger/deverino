@@ -13,8 +13,8 @@ if TYPE_CHECKING:
 
     from harness_poc.core.context_map_events import ContextMapEvent
 
-from harness_poc.core.db_engine import create_db_engine
-from harness_poc.core.models import (
+from harness_poc.core.storage.db_engine import create_db_engine
+from harness_poc.core.storage.models import (
     DbContextMap,
     DbContextMapEvent,
     DbDocumentChunk,
@@ -28,7 +28,7 @@ from harness_poc.core.models import (
     DbStateProposal,
     SQLModel,
 )
-from harness_poc.core.state import StatePayload, StateProposal, StateSection
+from harness_poc.core.storage.state import StatePayload, StateProposal, StateSection
 
 
 class BlackboardDatabase:

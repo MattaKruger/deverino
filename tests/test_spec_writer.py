@@ -13,9 +13,9 @@ from harness_poc.core.config import (
     ObservabilityConfig,
     RuntimeConfig,
 )
-from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.skill_context import SkillResult
 from harness_poc.core.skill_runner import SkillRunner
+from harness_poc.core.storage import BlackboardDatabase
 
 MAX_QUESTIONS = 3
 

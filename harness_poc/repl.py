@@ -29,7 +29,7 @@ from harness_poc.core.message_history import (
     prune_message_history,
     sanitize_new_messages,
 )
-from harness_poc.core.state import StateSection, build_state_context
+from harness_poc.core.storage import StateSection, build_state_context
 from harness_poc.core.token_accounting import TokenAccounting, account_for_model_run
 
 logger = logging.getLogger(__name__)

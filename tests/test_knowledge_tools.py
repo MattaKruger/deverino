@@ -317,8 +317,8 @@ class TestSkillRunnerExcludesKnowledge:
             ObservabilityConfig,
             RuntimeConfig,
         )
-        from harness_poc.core.database import BlackboardDatabase
         from harness_poc.core.skill_runner import SkillRunner
+        from harness_poc.core.storage import BlackboardDatabase
 
         repo_root = P.cwd()
         # Use tmp_path for DB + a custom skills dir

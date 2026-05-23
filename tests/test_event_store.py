@@ -5,7 +5,7 @@ from sqlmodel import Session
 
 from harness_poc.core.event_store import EventStore
 from harness_poc.core.events import AgentStarted, SkillCalled, SkillCompleted
-from harness_poc.core.models import DbStateEvent
+from harness_poc.core.storage import DbStateEvent
 
 
 def _make_store(engine: Engine) -> EventStore:

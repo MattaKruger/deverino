@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 from sqlmodel import Session, col, select
 
-from harness_poc.core.models import DbSessionSnapshot, DbStateEvent
+from harness_poc.core.storage import DbSessionSnapshot, DbStateEvent
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
-    from harness_poc.core.database import BlackboardDatabase
+    from harness_poc.core.storage import BlackboardDatabase
 
 SNAPSHOT_HISTORY_LIMIT = 20
 

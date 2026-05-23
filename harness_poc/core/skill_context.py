@@ -9,9 +9,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
     from harness_poc.core.config import HarnessConfig
-    from harness_poc.core.database import BlackboardDatabase
+    from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
 
 
 SkillStatus = Literal["success", "failed", "blocked", "cancelled", "needs_orchestrator_action"]

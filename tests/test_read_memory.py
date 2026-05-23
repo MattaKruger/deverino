@@ -11,8 +11,8 @@ from harness_poc.core.config import (
     ObservabilityConfig,
     RuntimeConfig,
 )
-from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.skill_runner import SkillRunner
+from harness_poc.core.storage import BlackboardDatabase
 
 
 def test_read_memory_lists_keys_when_no_key_provided(db_engine: Engine) -> None:

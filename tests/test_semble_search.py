@@ -12,9 +12,9 @@ from harness_poc.core.config import (
     ObservabilityConfig,
     RuntimeConfig,
 )
-from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.skill_context import SkillContext
 from harness_poc.core.skill_runner import SkillRunner
+from harness_poc.core.storage import BlackboardDatabase
 from skills.semble_search import skill as semble_skill
 
 if TYPE_CHECKING:

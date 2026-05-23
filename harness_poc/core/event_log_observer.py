@@ -9,7 +9,7 @@ from sqlmodel import Session, col, select
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
-from harness_poc.core.models import DbStateEvent
+from harness_poc.core.storage import DbStateEvent
 
 
 @dataclass(frozen=True, slots=True)

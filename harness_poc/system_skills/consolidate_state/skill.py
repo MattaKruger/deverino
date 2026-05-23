@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from harness_poc.core.skill_context import SkillContext, SkillResult
 
 if TYPE_CHECKING:
-    from harness_poc.core.state import StatePayload
+    from harness_poc.core.storage import StatePayload
 
 Mode = Literal["preview", "propose", "approve"]
 

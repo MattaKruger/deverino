@@ -10,7 +10,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
-from harness_poc.core.database import BlackboardDatabase
+from harness_poc.core.storage import BlackboardDatabase
 
 
 def test_session_messages_round_trip(tmp_path: Path) -> None:

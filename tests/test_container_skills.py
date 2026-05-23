@@ -4,7 +4,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 from harness_poc.core.config import (
     HarnessConfig,
     HarnessPaths,
@@ -12,8 +11,8 @@ from harness_poc.core.config import (
     ObservabilityConfig,
     RuntimeConfig,
 )
-from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.permissions import SkillPermissions
+from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
 from harness_poc.core.tool_runner import ToolRunner
 from harness_poc.system_tools.container_spawn import (
     _cleanup_stale_harness_containers,

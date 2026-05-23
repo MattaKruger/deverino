@@ -6,7 +6,7 @@ from dash import Dash, Input, Output, callback, dash_table, dcc, html
 from plotly import graph_objects as go
 
 from harness_poc.core.dashboard import fetch_dashboard_snapshot, snapshot_to_dict
-from harness_poc.core.db_engine import create_db_engine
+from harness_poc.core.storage import create_db_engine
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine

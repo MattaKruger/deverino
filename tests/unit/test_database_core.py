@@ -8,7 +8,7 @@ No Postgres required.
 
 from sqlalchemy import Engine
 
-from harness_poc.core.database import BlackboardDatabase
+from harness_poc.core.storage import BlackboardDatabase
 
 # ---------------------------------------------------------------------------
 # Session lifecycle

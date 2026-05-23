@@ -30,9 +30,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
     from harness_poc.core.config import HarnessConfig, RuntimeConfig
     from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.storage import BlackboardAccessProxy
 
 logger = logging.getLogger(__name__)
 _CANCELLABLE_TOOL_NAMES = frozenset({"container_exec", "execute_python"})

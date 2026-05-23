@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import Engine
 
-from harness_poc.core.database import BlackboardDatabase
-from harness_poc.core.models import DbDocumentChunk, DbDocumentSource
+from harness_poc.core.storage import BlackboardDatabase, DbDocumentChunk, DbDocumentSource
 
 
 def _make_source(source_id: str = "test-source", status: str = "pending") -> DbDocumentSource:

@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 from sqlalchemy import Engine
 
-from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 from harness_poc.core.config import (
     HarnessConfig,
     HarnessPaths,
@@ -14,10 +13,10 @@ from harness_poc.core.config import (
     RetrievalConfig,
     RuntimeConfig,
 )
-from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.retrieval import SearchRequest, SearchResult
 from harness_poc.core.skill_context import SkillContext
+from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
 from skills.search_documents.skill import execute
 
 

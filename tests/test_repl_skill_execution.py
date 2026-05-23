@@ -13,8 +13,8 @@ from harness_poc.core.config import (
     ObservabilityConfig,
     RuntimeConfig,
 )
-from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.skill_runner import SkillRunner
+from harness_poc.core.storage import BlackboardDatabase
 from harness_poc.repl import _parse_skill_arguments, dispatch_skill_command, is_skill_name
 
 if TYPE_CHECKING:

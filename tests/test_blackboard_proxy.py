@@ -5,10 +5,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import Engine
 
-from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
-from harness_poc.core.database import BlackboardDatabase
-from harness_poc.core.models import DbDocumentSource
 from harness_poc.core.permissions import SkillPermissions
+from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase, DbDocumentSource
 
 
 @pytest.fixture

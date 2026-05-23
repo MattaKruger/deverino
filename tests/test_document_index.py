@@ -8,7 +8,6 @@ from sqlalchemy import Engine
 
 from harness_poc.core import document_index
 from harness_poc.core.config import RetrievalConfig
-from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.document_index import DocumentIndexer
 from harness_poc.core.retrieval import (
     DocumentChunk,
@@ -16,6 +15,7 @@ from harness_poc.core.retrieval import (
     make_chunk_id,
     make_source_id,
 )
+from harness_poc.core.storage import BlackboardDatabase
 from tests.test_vespa_client import FakeVespaClient
 
 

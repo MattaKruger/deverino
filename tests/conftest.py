@@ -7,7 +7,7 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
-from harness_poc.core.db_engine import create_db_engine
+from harness_poc.core.storage import create_db_engine
 
 # Skip the Vespa auto-index bootstrap for any test that reaches AppState.
 # Reindexing the docs/ tree takes minutes and is unrelated to anything the
@@ -48,7 +48,7 @@ def in_memory_engine() -> Engine:
     # Import database to ensure all SQLModel table classes are registered
     # before create_all runs. Without this, SQLModel.metadata is empty and
     # no tables are created in the in-memory database.
-    import harness_poc.core.database  # noqa: F401, PLC0415 — triggers model registration
+    import harness_poc.core.storage.database  # noqa: F401, PLC0415 — triggers model registration
 
     engine = create_engine(
         "sqlite:///:memory:",

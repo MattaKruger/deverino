@@ -18,10 +18,10 @@ from harness_poc.core.token_accounting import account_for_model_run
 
 if TYPE_CHECKING:
     from harness_poc.core.config import HarnessConfig
-    from harness_poc.core.database import BlackboardDatabase
     from harness_poc.core.event_bus import EventBus
     from harness_poc.core.pydantic_runtime import PydanticAgentRuntime
     from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.storage import BlackboardDatabase
 
 
 async def run_llm_worker(  # noqa: PLR0913

@@ -31,9 +31,9 @@ if TYPE_CHECKING:
     from pydantic_ai.usage import RunUsage
 
     from harness_poc.core.config import HarnessConfig, LLMConfig
-    from harness_poc.core.database import BlackboardDatabase
     from harness_poc.core.llm_client import Message, Usage
     from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.storage import BlackboardDatabase
     from harness_poc.core.tool_runner import ToolRunner
 
 from harness_poc.core.config import APISettings

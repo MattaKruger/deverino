@@ -14,7 +14,6 @@ from harness_poc.app_factory import STARTUP_ERRORS, AppState, build_app_state
 from harness_poc.console import console, print_error
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.dashboard import DashboardSnapshot, fetch_dashboard_snapshot, snapshot_to_dict
-from harness_poc.core.database import BlackboardDatabase
 from harness_poc.core.event_log_observer import (
     fetch_event_log_rows,
     fetch_latest_event_log_rows,
@@ -32,6 +31,7 @@ from harness_poc.core.goal_runner import GoalRunResult
 from harness_poc.core.processors.circuit_breaker import run_circuit_breaker
 from harness_poc.core.processors.llm_worker import run_llm_worker
 from harness_poc.core.processors.tool_worker import run_skill_worker
+from harness_poc.core.storage import BlackboardDatabase
 from harness_poc.repl import (
     append_session_state,
     approve_state,
@@ -146,7 +146,7 @@ def _resolve_resume(resume: str | None, resume_last: bool) -> str | None:  # noq
         return resume
     if resume_last:
         config = HarnessConfig.load()
-        from harness_poc.core.db_engine import create_db_engine  # noqa: PLC0415
+        from harness_poc.core.storage import create_db_engine  # noqa: PLC0415
 
         db = BlackboardDatabase(create_db_engine(config.runtime.database_url))
         db.create_tables()
@@ -549,7 +549,7 @@ def events_log(  # noqa: PLR0913
     """Observe processor events written to the durable event log."""
     try:
         config = HarnessConfig.load()
-        from harness_poc.core.db_engine import create_db_engine  # noqa: PLC0415
+        from harness_poc.core.storage import create_db_engine  # noqa: PLC0415
 
         _print_events_log(
             EventLogOptions(
@@ -621,7 +621,7 @@ def dashboard_summary(
     """Print a lightweight dashboard snapshot in the terminal."""
     try:
         config = HarnessConfig.load()
-        from harness_poc.core.db_engine import create_db_engine  # noqa: PLC0415
+        from harness_poc.core.storage import create_db_engine  # noqa: PLC0415
 
         snapshot = fetch_dashboard_snapshot(create_db_engine(config.runtime.database_url))
     except Exception as exc:
