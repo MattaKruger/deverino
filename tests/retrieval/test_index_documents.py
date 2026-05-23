@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from sqlalchemy import Engine
 
 from harness_poc.core.config import (
@@ -17,7 +18,9 @@ from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.skills import SkillContext
 from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
 from skills.index_documents.skill import execute
-from tests.test_vespa_client import FakeVespaClient
+from tests.retrieval.test_vespa_client import FakeVespaClient
+
+pytestmark = pytest.mark.integration
 
 
 def _make_config(tmp_path: Path, retrieval: RetrievalConfig) -> HarnessConfig:

@@ -2,24 +2,17 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine
 
-from harness_poc.core.config import (
-    HarnessConfig,
-    HarnessPaths,
-    LLMConfig,
-    ObservabilityConfig,
-    RuntimeConfig,
-)
 from harness_poc.core.skills import SkillRunner
 from harness_poc.core.storage import BlackboardDatabase
 
 
-def test_reflect_on_result_requires_objective(db_engine: Engine) -> None:
-    runner, session_id, _ = _runner(db_engine)
+def test_reflect_on_result_requires_objective(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, _ = session_runner
     with pytest.raises(ValueError, match="reflect_on_result requires objective"):
         runner.execute_skill(
             tool_name="reflect_on_result",
@@ -28,8 +21,10 @@ def test_reflect_on_result_requires_objective(db_engine: Engine) -> None:
         )
 
 
-def test_reflect_on_result_requires_memory_key(db_engine: Engine) -> None:
-    runner, session_id, _ = _runner(db_engine)
+def test_reflect_on_result_requires_memory_key(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, _ = session_runner
     with pytest.raises(ValueError, match="reflect_on_result requires memory_key"):
         runner.execute_skill(
             tool_name="reflect_on_result",
@@ -38,8 +33,10 @@ def test_reflect_on_result_requires_memory_key(db_engine: Engine) -> None:
         )
 
 
-def test_reflect_on_result_fails_when_payload_missing(db_engine: Engine) -> None:
-    runner, session_id, _ = _runner(db_engine)
+def test_reflect_on_result_fails_when_payload_missing(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, _ = session_runner
 
     result = runner.execute_skill(
         tool_name="reflect_on_result",
@@ -55,8 +52,10 @@ def test_reflect_on_result_fails_when_payload_missing(db_engine: Engine) -> None
     assert "No result was found" in reflection["summary"]
 
 
-def test_reflect_on_result_writes_to_memory(db_engine: Engine) -> None:
-    runner, session_id, database = _runner(db_engine)
+def test_reflect_on_result_writes_to_memory(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, database = session_runner
     database.write_memory(
         session_id, "result_key", {"output": "research completed", "status": "done"}
     )
@@ -79,8 +78,10 @@ def test_reflect_on_result_writes_to_memory(db_engine: Engine) -> None:
     assert memory["verdict"] in {"pass", "fail"}
 
 
-def test_reflect_on_result_uses_default_output_key(db_engine: Engine) -> None:
-    runner, session_id, database = _runner(db_engine)
+def test_reflect_on_result_uses_default_output_key(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, database = session_runner
     database.write_memory(session_id, "result_key", {"output": "work done"})
 
     runner.execute_skill(
@@ -148,33 +149,3 @@ def test_fallback_verdict_detects_failed_status() -> None:
     assert _fallback_verdict({"status": "blocked"}) == "fail"
     assert _fallback_verdict({"status": "success"}) == "pass"
     assert _fallback_verdict("just a string") == "pass"
-
-
-def _runner(engine: Engine) -> tuple[SkillRunner, str, BlackboardDatabase]:
-    config = _test_config(engine)
-    database = BlackboardDatabase(engine)
-    session_id = database.start_session("test")
-    return SkillRunner(database=database, config=config), session_id, database
-
-
-def _test_config(engine: Engine) -> HarnessConfig:
-    repo_root = Path.cwd()
-    return HarnessConfig(
-        project_root=repo_root,
-        config_path=repo_root / "harness.yaml",
-        paths=HarnessPaths(
-            soul=repo_root / "harness_poc/system_prompts/SOUL.md",
-            system_tools=repo_root / "harness_poc/system_tools",
-            system_skills=repo_root / "harness_poc/system_skills",
-            project_skills=repo_root / "skills",
-            workflows=repo_root / "workflows",
-            pipelines=repo_root / "pipelines",
-            personas=repo_root / "personas",
-        ),
-        runtime=RuntimeConfig(
-            database_url=engine.url.render_as_string(hide_password=False),
-            default_container_image="python:3.14-slim",
-        ),
-        observability=ObservabilityConfig(logfire_enabled=False),
-        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
-    )

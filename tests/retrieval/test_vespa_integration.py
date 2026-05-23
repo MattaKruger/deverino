@@ -21,10 +21,13 @@ import pytest
 from harness_poc.core.config import RetrievalConfig
 from harness_poc.core.retrieval import LiveVespaDocumentClient, SearchRequest, make_document_chunks
 
-pytestmark = pytest.mark.skipif(
-    os.getenv("VESPA_INTEGRATION") != "1",
-    reason="Set VESPA_INTEGRATION=1 to run live Vespa tests",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        os.getenv("VESPA_INTEGRATION") != "1",
+        reason="Set VESPA_INTEGRATION=1 to run live Vespa tests",
+    ),
+]
 
 FIXTURE_URI = "test/integration-fixture.md"
 FIXTURE_SOURCE_ID = "test-integration-fixture-md"

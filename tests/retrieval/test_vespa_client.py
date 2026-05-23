@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 
     from harness_poc.core.retrieval import DocumentChunk
 
+pytestmark = pytest.mark.integration
+
 
 class FakeVespaClient:
     """In-memory Vespa substitute for unit tests."""

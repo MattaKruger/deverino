@@ -1,19 +1,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import Engine
 
-from harness_poc.core.config import (
-    HarnessConfig,
-    HarnessPaths,
-    LLMConfig,
-    ObservabilityConfig,
-    RuntimeConfig,
-)
+from harness_poc.core.config import HarnessConfig, LLMConfig
 from harness_poc.core.runtime import (
     MAX_SEMBLE_SEARCH_CALLS_PER_RUN,
     AgentDeps,
@@ -44,9 +37,9 @@ def test_build_model_uses_test_model_without_api_key(
 
 
 def test_build_skill_tools_reuses_discovered_skill_schema(
-    db_engine: Engine,
+    test_config: HarnessConfig, db_engine: Engine,
 ) -> None:
-    skill_runner, _database, _config, _session_id = _runtime_parts(db_engine)
+    skill_runner, _database, _config, _session_id = _runtime_parts(test_config, db_engine)
 
     tools = build_skill_tools(skill_runner)
     tool_by_name = {tool.name: tool for tool in tools}
@@ -61,9 +54,9 @@ def test_build_skill_tools_reuses_discovered_skill_schema(
 
 
 def test_execute_skill_as_tool_returns_raw_content_for_success(
-    db_engine: Engine,
+    test_config: HarnessConfig, db_engine: Engine,
 ) -> None:
-    skill_runner, database, config, session_id = _runtime_parts(db_engine)
+    skill_runner, database, config, session_id = _runtime_parts(test_config, db_engine)
     database.write_memory(session_id, "note", {"value": "stored"})
     ctx = _fake_run_context(
         AgentDeps(
@@ -82,9 +75,9 @@ def test_execute_skill_as_tool_returns_raw_content_for_success(
 
 
 def test_execute_skill_as_tool_marks_human_action_required(
-    db_engine: Engine,
+    test_config: HarnessConfig, db_engine: Engine,
 ) -> None:
-    skill_runner, database, config, session_id = _runtime_parts(db_engine)
+    skill_runner, database, config, session_id = _runtime_parts(test_config, db_engine)
     ctx = _fake_run_context(
         AgentDeps(
             session_id=session_id,
@@ -103,9 +96,9 @@ def test_execute_skill_as_tool_marks_human_action_required(
 
 
 def test_execute_skill_as_tool_enforces_semble_search_budget(
-    db_engine: Engine,
+    test_config: HarnessConfig, db_engine: Engine,
 ) -> None:
-    _skill_runner, database, config, session_id = _runtime_parts(db_engine)
+    _skill_runner, database, config, session_id = _runtime_parts(test_config, db_engine)
     calls = 0
 
     def fake_execute_skill(
@@ -114,8 +107,9 @@ def test_execute_skill_as_tool_enforces_semble_search_budget(
         session_id: str,
         on_text: Callable[[str], None] | None = None,
         on_tool_event: Callable[[str], None] | None = None,
+        call_id: str | None = None,
     ) -> SkillResult:
-        del tool_name, arguments, session_id, on_text, on_tool_event
+        del tool_name, arguments, session_id, on_text, on_tool_event, call_id
         nonlocal calls
         calls += 1
         return SkillResult(status="success", content="search result")
@@ -142,8 +136,10 @@ def test_execute_skill_as_tool_enforces_semble_search_budget(
     assert calls == MAX_SEMBLE_SEARCH_CALLS_PER_RUN
 
 
-def test_runtime_can_run_with_test_model(db_engine: Engine) -> None:
-    skill_runner, database, config, session_id = _runtime_parts(db_engine)
+def test_runtime_can_run_with_test_model(
+    test_config: HarnessConfig, db_engine: Engine,
+) -> None:
+    skill_runner, database, config, session_id = _runtime_parts(test_config, db_engine)
     runtime = build_runtime(
         session_id=session_id,
         database=database,
@@ -160,8 +156,10 @@ def test_runtime_can_run_with_test_model(db_engine: Engine) -> None:
     assert result.messages
 
 
-def test_stream_text_calls_on_text_callback(db_engine: Engine) -> None:
-    skill_runner, database, config, session_id = _runtime_parts(db_engine)
+def test_stream_text_calls_on_text_callback(
+    test_config: HarnessConfig, db_engine: Engine,
+) -> None:
+    skill_runner, database, config, session_id = _runtime_parts(test_config, db_engine)
     runtime = build_runtime(
         session_id=session_id,
         database=database,
@@ -179,37 +177,13 @@ def test_stream_text_calls_on_text_callback(db_engine: Engine) -> None:
 
 
 def _runtime_parts(
-    engine: Engine,
+    test_config: HarnessConfig, db_engine: Engine,
 ) -> tuple[SkillRunner, BlackboardDatabase, HarnessConfig, str]:
-    config = _test_config(engine)
-    database = BlackboardDatabase(engine)
+    database = BlackboardDatabase(db_engine)
     session_id = database.start_session("Pydantic runtime test session.")
-    skill_runner = SkillRunner(database=database, config=config)
+    skill_runner = SkillRunner(database=database, config=test_config)
 
-    return skill_runner, database, config, session_id
-
-
-def _test_config(engine: Engine) -> HarnessConfig:
-    project_root = Path.cwd()
-    return HarnessConfig(
-        project_root=project_root,
-        config_path=project_root / "harness.yaml",
-        paths=HarnessPaths(
-            soul=project_root / "harness_poc/system_prompts/SOUL.md",
-            system_tools=project_root / "harness_poc/system_tools",
-            system_skills=project_root / "harness_poc/system_skills",
-            project_skills=project_root / "skills",
-            workflows=project_root / "workflows",
-            pipelines=project_root / "pipelines",
-            personas=project_root / "personas",
-        ),
-        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
-        runtime=RuntimeConfig(
-            database_url=engine.url.render_as_string(hide_password=False),
-            default_container_image="python:3.14-slim",
-        ),
-        observability=ObservabilityConfig(logfire_enabled=False),
-    )
+    return skill_runner, database, test_config, session_id
 
 
 def _fake_run_context(deps: AgentDeps) -> RunContext[AgentDeps]:
@@ -219,6 +193,7 @@ def _fake_run_context(deps: AgentDeps) -> RunContext[AgentDeps]:
 class _FakeRunContext:
     def __init__(self, *, deps: AgentDeps) -> None:
         self.deps = deps
+        self.tool_call_id: str | None = None
 
 
 class _FakeSkillRunner:

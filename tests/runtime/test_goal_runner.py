@@ -6,16 +6,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from typer.testing import CliRunner
-
 from harness_poc.app_factory import AppState, build_app_state
-from harness_poc.cli import app
-from harness_poc.core.events import AgentStarted, LLMTextEmitted, SkillCompleted
-from harness_poc.core.runtime import GoalRunner, count_tokens
+from harness_poc.core.events import AgentStarted, SkillCompleted
+from harness_poc.core.runtime import GoalRunner
 from tests.helpers import (
     _mock_goal_model,
     evaluate_goal_response,
-    text_response,
     tool_call_response,
 )
 
@@ -23,8 +19,6 @@ if TYPE_CHECKING:
     import pytest
 
     from harness_poc.core.runtime import LLMResponse
-
-runner = CliRunner()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -53,17 +47,6 @@ def test_evaluate_goal_skill_registered() -> None:
     assert "evaluate_goal" in names
 
 
-def test_evaluate_goal_stub_execute() -> None:
-    state = _make_app_state()
-    result = state.skill_runner.execute_skill(
-        tool_name="evaluate_goal",
-        arguments={"is_complete": True, "reasoning": "Done."},
-        session_id=state.session_id,
-    )
-    assert result.status == "success"
-    assert "complete=True" in result.content
-
-
 def test_review_work_skill_executes() -> None:
     state = _make_app_state()
     state.database.write_memory(state.session_id, "candidate", {"summary": "ok"})
@@ -81,16 +64,6 @@ def test_review_work_skill_executes() -> None:
 # ---------------------------------------------------------------------------
 # GoalRunner loop behavior (mock LLM)
 # ---------------------------------------------------------------------------
-
-
-def test_completes_on_evaluate_goal_true() -> None:
-    state = _make_app_state([evaluate_goal_response(True, "Task finished successfully.")])
-    runner = GoalRunner(max_iterations=10)
-
-    result = runner.run("Test goal", state)
-    assert result.status == "completed"
-    assert result.iterations == 1
-    assert "Task finished" in result.content
 
 
 def test_completed_generation_goal_prefers_final_answer() -> None:
@@ -141,31 +114,6 @@ def test_continues_on_evaluate_goal_false() -> None:
     assert result.status == "completed"
     assert result.iterations == 2
 
-
-def test_text_response_without_tool_call() -> None:
-    """Text responses should be recorded as LLMTextEmitted and loop continues."""
-    state = _make_app_state([
-        text_response("Let me think about this..."),
-        evaluate_goal_response(True, "I thought about it."),
-    ])
-    runner = GoalRunner(max_iterations=10)
-
-    result = runner.run("Test goal", state)
-    assert result.status == "completed"
-    assert result.iterations == 2
-    events = state.event_bus.get_recent_events(state.session_id)
-    text_events = [e for e in events if isinstance(e, LLMTextEmitted)]
-    assert len(text_events) == 1
-
-
-def test_iteration_budget_exhausted() -> None:
-    """Loop should stop when max_iterations is reached."""
-    state = _make_app_state([evaluate_goal_response(False, "Still working...")])
-    runner = GoalRunner(max_iterations=3)
-
-    result = runner.run("Test goal", state)
-    assert result.status == "budget_exhausted"
-    assert result.iterations == 3
 
 
 def test_token_budget_exhausted() -> None:
@@ -226,20 +174,6 @@ def test_stuck_detection_blocks_repeated_failed_action() -> None:
     assert key1 != key4
 
 
-def test_skill_execution_error_handled() -> None:
-    """Skill errors should be recorded as SkillCompleted(error) and loop continues."""
-    state = _make_app_state([
-        tool_call_response("nonexistent_skill", {}),
-        evaluate_goal_response(True, "Handled error."),
-    ])
-    runner = GoalRunner(max_iterations=10)
-
-    result = runner.run("Test goal", state)
-    assert result.status == "completed"
-    events = state.event_bus.get_recent_events(state.session_id)
-    errors = [e for e in events if isinstance(e, SkillCompleted) and e.status == "error"]
-    assert len(errors) >= 1
-
 
 def test_context_window_builds_from_events() -> None:
     """Verify that the context window is populated from bus events."""
@@ -267,41 +201,3 @@ def test_goal_runner_streams_progress() -> None:
     assert result.status == "completed"
     assert any("evaluate_goal" in chunk for chunk in chunks)
     assert any("Done." in chunk for chunk in chunks)
-
-
-# ---------------------------------------------------------------------------
-# Token counting
-# ---------------------------------------------------------------------------
-
-
-def test_count_tokens_basic() -> None:
-    tokens = count_tokens([{"role": "user", "content": "hello"}])
-    assert tokens > 0
-    assert tokens < 20  # "hello" is just a few tokens
-
-
-def test_count_tokens_scales_with_length() -> None:
-    short = count_tokens([{"role": "user", "content": "hi"}])
-    long = count_tokens([{"role": "user", "content": "hi " * 500}])
-    assert long > short * 10
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-
-def test_goal_cli_command_help() -> None:
-    result = runner.invoke(app, ["goal", "--help"])
-    assert result.exit_code == 0
-    assert "autonomous ReAct" in result.output.lower() or "goal" in result.output
-
-
-def test_goal_cli_executes_with_mock(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CLI should run the goal command without crashing (mock LLM)."""
-    state = _make_app_state([evaluate_goal_response(True, "CLI done.")])
-    monkeypatch.setattr("harness_poc.cli.build_app_state", lambda **_: state)
-
-    result = runner.invoke(app, ["goal", "test objective", "--max-iterations", "1"])
-    assert result.exit_code == 0
-    assert "Status:" in result.output

@@ -1,24 +1,16 @@
 # ruff: noqa: PLC0415
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-from sqlalchemy import Engine
 
-from harness_poc.core.config import (
-    HarnessConfig,
-    HarnessPaths,
-    LLMConfig,
-    ObservabilityConfig,
-    RuntimeConfig,
-)
 from harness_poc.core.skills import SkillRunner
 from harness_poc.core.storage import BlackboardDatabase
 
 
-def test_summarize_memory_requires_memory_key(db_engine: Engine) -> None:
-    runner, session_id, _ = _runner(db_engine)
+def test_summarize_memory_requires_memory_key(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, _ = session_runner
     with pytest.raises(ValueError, match="summarize_memory requires memory_key"):
         runner.execute_skill(
             tool_name="summarize_memory",
@@ -27,8 +19,10 @@ def test_summarize_memory_requires_memory_key(db_engine: Engine) -> None:
         )
 
 
-def test_summarize_memory_fails_when_memory_missing(db_engine: Engine) -> None:
-    runner, session_id, _ = _runner(db_engine)
+def test_summarize_memory_fails_when_memory_missing(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, _ = session_runner
 
     result = runner.execute_skill(
         tool_name="summarize_memory",
@@ -40,9 +34,9 @@ def test_summarize_memory_fails_when_memory_missing(db_engine: Engine) -> None:
 
 
 def test_summarize_memory_produces_summary_for_existing_memory(
-    db_engine: Engine,
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
 ) -> None:
-    runner, session_id, database = _runner(db_engine)
+    runner, session_id, database = session_runner
     database.write_memory(
         session_id,
         "research_key",
@@ -64,8 +58,10 @@ def test_summarize_memory_produces_summary_for_existing_memory(
     assert isinstance(result.artifacts.get("summary"), str)
 
 
-def test_summarize_memory_handles_string_payload(db_engine: Engine) -> None:
-    runner, session_id, database = _runner(db_engine)
+def test_summarize_memory_handles_string_payload(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, database = session_runner
     database.write_memory(session_id, "string_key", "A plain text memory value.")
 
     result = runner.execute_skill(
@@ -95,33 +91,3 @@ def test_summarize_memory_builds_messages_with_string_payload() -> None:
 
     messages = _build_messages(memory_key="test_key", payload="just a string payload")
     assert "just a string payload" in messages[1]["content"]
-
-
-def _runner(engine: Engine) -> tuple[SkillRunner, str, BlackboardDatabase]:
-    config = _test_config(engine)
-    database = BlackboardDatabase(engine)
-    session_id = database.start_session("test")
-    return SkillRunner(database=database, config=config), session_id, database
-
-
-def _test_config(engine: Engine) -> HarnessConfig:
-    repo_root = Path.cwd()
-    return HarnessConfig(
-        project_root=repo_root,
-        config_path=repo_root / "harness.yaml",
-        paths=HarnessPaths(
-            soul=repo_root / "harness_poc/system_prompts/SOUL.md",
-            system_tools=repo_root / "harness_poc/system_tools",
-            system_skills=repo_root / "harness_poc/system_skills",
-            project_skills=repo_root / "skills",
-            workflows=repo_root / "workflows",
-            pipelines=repo_root / "pipelines",
-            personas=repo_root / "personas",
-        ),
-        runtime=RuntimeConfig(
-            database_url=engine.url.render_as_string(hide_password=False),
-            default_container_image="python:3.14-slim",
-        ),
-        observability=ObservabilityConfig(logfire_enabled=False),
-        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
-    )

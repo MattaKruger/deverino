@@ -16,7 +16,7 @@ from harness_poc.core.config import (
 )
 from harness_poc.core.retrieval import DocumentIndexer
 from harness_poc.core.storage import BlackboardDatabase
-from tests.test_vespa_client import FakeVespaClient
+from tests.retrieval.test_vespa_client import FakeVespaClient
 
 
 def _make_config(tmp_path: Path) -> HarnessConfig:

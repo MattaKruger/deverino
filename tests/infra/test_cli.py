@@ -95,6 +95,7 @@ def test_documents_index_invokes_index_documents_skill(monkeypatch: pytest.Monke
     ]
 
 
+@pytest.mark.integration
 def test_workflow_run_executes_workflow_without_container_block() -> None:
     result = runner.invoke(app, ["workflow", "run", "research_task", "smoke"])
 

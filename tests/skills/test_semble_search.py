@@ -1,17 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Engine
-
-from harness_poc.core.config import (
-    HarnessConfig,
-    HarnessPaths,
-    LLMConfig,
-    ObservabilityConfig,
-    RuntimeConfig,
-)
+from harness_poc.core.config import HarnessConfig
 from harness_poc.core.skills import SkillContext, SkillRunner
 from harness_poc.core.storage import BlackboardDatabase
 from skills.semble_search import skill as semble_skill
@@ -26,8 +17,10 @@ OVERSIZED_TOP_K = 100
 SUCCESS_EXIT_CODE = 0
 
 
-def test_semble_search_requires_query(db_engine: Engine) -> None:
-    runner, session_id, _ = _runner(db_engine)
+def test_semble_search_requires_query(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, _ = session_runner
     result = runner.execute_skill(
         tool_name="semble_search",
         arguments={"query": ""},
@@ -37,9 +30,11 @@ def test_semble_search_requires_query(db_engine: Engine) -> None:
     assert "requires a query string" in result.content
 
 
-def test_semble_search_missing_binary_detected(db_engine: Engine) -> None:
+def test_semble_search_missing_binary_detected(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
     """When semble is not installed, returns helpful error."""
-    runner, session_id, _ = _runner(db_engine)
+    runner, session_id, _ = session_runner
     # The test environment may or may not have semble installed.
     # If not installed, we get a clear error message.
     result = runner.execute_skill(
@@ -53,8 +48,10 @@ def test_semble_search_missing_binary_detected(db_engine: Engine) -> None:
         assert "pip install semble" in result.content
 
 
-def test_semble_search_find_related_requires_file_path(db_engine: Engine) -> None:
-    runner, session_id, _ = _runner(db_engine)
+def test_semble_search_find_related_requires_file_path(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, _ = session_runner
     result = runner.execute_skill(
         tool_name="semble_search",
         arguments={"action": "find_related", "query": "dummy"},
@@ -64,8 +61,10 @@ def test_semble_search_find_related_requires_file_path(db_engine: Engine) -> Non
     assert "file_path" in result.content
 
 
-def test_semble_search_find_related_requires_line(db_engine: Engine) -> None:
-    runner, session_id, _ = _runner(db_engine)
+def test_semble_search_find_related_requires_line(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, _ = session_runner
     result = runner.execute_skill(
         tool_name="semble_search",
         arguments={
@@ -79,8 +78,10 @@ def test_semble_search_find_related_requires_line(db_engine: Engine) -> None:
     assert "line" in result.content.lower()
 
 
-def test_semble_search_find_related_rejects_invalid_line(db_engine: Engine) -> None:
-    runner, session_id, _ = _runner(db_engine)
+def test_semble_search_find_related_rejects_invalid_line(
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+) -> None:
+    runner, session_id, _ = session_runner
     result = runner.execute_skill(
         tool_name="semble_search",
         arguments={
@@ -113,16 +114,17 @@ def test_semble_search_mode_validation() -> None:
 
 
 def test_semble_search_emits_subprocess_progress(
-    db_engine: Engine,
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+    test_config: HarnessConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
-    _runner_instance, _session_id, database = _runner(db_engine)
+    _runner_instance, _session_id, database = session_runner
     ctx = SkillContext(
         session_id="s",
         skill_name="semble_search",
         database=database,
-        config=_test_config(db_engine),
+        config=test_config,
         on_tool_event=events.append,
     )
 
@@ -151,15 +153,16 @@ def test_semble_search_emits_subprocess_progress(
 
 
 def test_semble_search_caps_large_output(
-    db_engine: Engine,
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+    test_config: HarnessConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _runner_instance, _session_id, database = _runner(db_engine)
+    _runner_instance, _session_id, database = session_runner
     ctx = SkillContext(
         session_id="s",
         skill_name="semble_search",
         database=database,
-        config=_test_config(db_engine),
+        config=test_config,
     )
     large_output = "x" * (semble_skill.MAX_OUTPUT_CHARS + 100)
 
@@ -186,16 +189,17 @@ def test_semble_search_caps_large_output(
 
 
 def test_semble_search_times_out_with_progress(
-    db_engine: Engine,
+    session_runner: tuple[SkillRunner, str, BlackboardDatabase],
+    test_config: HarnessConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
-    _runner_instance, _session_id, database = _runner(db_engine)
+    _runner_instance, _session_id, database = session_runner
     ctx = SkillContext(
         session_id="s",
         skill_name="semble_search",
         database=database,
-        config=_test_config(db_engine),
+        config=test_config,
         on_tool_event=events.append,
     )
 
@@ -228,33 +232,3 @@ def test_semble_search_times_out_with_progress(
     assert result.artifacts["error"] == "timeout"
     assert fake_process.killed is True
     assert "still running" in events[1]
-
-
-def _runner(engine: Engine) -> tuple[SkillRunner, str, BlackboardDatabase]:
-    config = _test_config(engine)
-    database = BlackboardDatabase(engine)
-    session_id = database.start_session("test")
-    return SkillRunner(database=database, config=config), session_id, database
-
-
-def _test_config(engine: Engine) -> HarnessConfig:
-    repo_root = Path.cwd()
-    return HarnessConfig(
-        project_root=repo_root,
-        config_path=repo_root / "harness.yaml",
-        paths=HarnessPaths(
-            soul=repo_root / "harness_poc/system_prompts/SOUL.md",
-            system_tools=repo_root / "harness_poc/system_tools",
-            system_skills=repo_root / "harness_poc/system_skills",
-            project_skills=repo_root / "skills",
-            workflows=repo_root / "workflows",
-            pipelines=repo_root / "pipelines",
-            personas=repo_root / "personas",
-        ),
-        runtime=RuntimeConfig(
-            database_url=engine.url.render_as_string(hide_password=False),
-            default_container_image="python:3.14-slim",
-        ),
-        observability=ObservabilityConfig(logfire_enabled=False),
-        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
-    )

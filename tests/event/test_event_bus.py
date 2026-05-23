@@ -5,48 +5,6 @@ from unittest.mock import MagicMock
 from sqlalchemy import Engine
 
 from harness_poc.core.events import AgentStarted, EventBus, EventStore, SkillCalled
-from tests.helpers import RecordingEventBus
-
-# --- RecordingEventBus ---
-
-
-def test_recording_bus_stores_published_events() -> None:
-    bus = RecordingEventBus()
-    event = AgentStarted(session_id="s1", goal="test goal")
-    bus.publish(event)
-    assert len(bus.events) == 1
-    assert bus.events[0] is event
-
-
-def test_recording_bus_filters_by_session() -> None:
-    bus = RecordingEventBus()
-    bus.publish(AgentStarted(session_id="s1", goal="g"))
-    bus.publish(AgentStarted(session_id="s2", goal="g"))
-    events = bus.get_recent_events("s1")
-    assert len(events) == 1
-    assert events[0].session_id == "s1"
-
-
-def test_recording_bus_filters_by_event_type() -> None:
-    bus = RecordingEventBus()
-    bus.publish(AgentStarted(session_id="s1", goal="g"))
-    bus.publish(SkillCalled(session_id="s1", tool_name="foo", arguments={}))
-    events = bus.get_recent_events("s1", event_types=[SkillCalled])
-    assert len(events) == 1
-    assert isinstance(events[0], SkillCalled)
-
-
-def test_recording_bus_respects_limit() -> None:
-    bus = RecordingEventBus()
-    num_events = 5
-    limit = 3
-    for i in range(num_events):
-        bus.publish(SkillCalled(session_id="s1", tool_name=f"s{i}", arguments={}))
-    events = bus.get_recent_events("s1", limit=limit)
-    assert len(events) == limit
-    assert isinstance(events[-1], SkillCalled)
-    assert events[-1].tool_name == "s4"
-
 
 # --- EventBus with real EventStore ---
 

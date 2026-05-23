@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from sqlalchemy import Engine
 
 from harness_poc.core.config import (
@@ -18,6 +19,8 @@ from harness_poc.core.retrieval import SearchRequest, SearchResult
 from harness_poc.core.skills import SkillContext
 from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
 from skills.search_documents.skill import execute
+
+pytestmark = pytest.mark.integration
 
 
 def _make_config(

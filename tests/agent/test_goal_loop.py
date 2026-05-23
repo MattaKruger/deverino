@@ -63,6 +63,7 @@ def test_skill_error_does_not_crash_loop():
         tool_call_response("nonexistent_skill", {}),
         evaluate_goal_response(True, "Handled the error.", "Recovered."),
     ])
+
     harness.run("test error handling")
     harness.assert_skill_called("nonexistent_skill")
     harness.assert_completed()

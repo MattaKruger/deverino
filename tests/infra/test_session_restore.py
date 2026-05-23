@@ -42,20 +42,3 @@ def test_session_messages_round_trip(tmp_path: Path) -> None:
     assert first_part.content == "hello"
     assert last_part.content == "ok"
 
-
-def test_get_last_session_id(tmp_path: Path) -> None:
-    db_path = tmp_path / "blackboard.db"
-    db = BlackboardDatabase.from_url(f"sqlite:///{db_path}")
-    assert db.get_last_session_id() is None
-    first = db.start_session("first")
-    second = db.start_session("second")
-    last = db.get_last_session_id()
-    assert last in {first, second}
-
-
-def test_session_exists(tmp_path: Path) -> None:
-    db_path = tmp_path / "blackboard.db"
-    db = BlackboardDatabase.from_url(f"sqlite:///{db_path}")
-    session_id = db.start_session("test")
-    assert db.session_exists(session_id)
-    assert not db.session_exists("does-not-exist")

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from pathlib import Path
 from threading import Event
 from typing import TYPE_CHECKING
 
@@ -17,13 +16,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import Engine
 
-from harness_poc.core.config import (
-    HarnessConfig,
-    HarnessPaths,
-    LLMConfig,
-    ObservabilityConfig,
-    RuntimeConfig,
-)
+from harness_poc.core.config import HarnessConfig
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.runtime import build_runtime
 from harness_poc.core.skills import CancellationToken, SkillResult, SkillRunner
@@ -36,10 +29,11 @@ if TYPE_CHECKING:
 
 
 async def test_tool_runner_cancels_long_running_builtin(
+    test_config: HarnessConfig,
     db_engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    tool_runner, session_id, _database = _tool_runner(db_engine)
+    tool_runner, session_id, _database = _tool_runner(test_config, db_engine)
     tool_runner.discover_tools()
     started = Event()
 
@@ -85,16 +79,17 @@ async def test_tool_runner_cancels_long_running_builtin(
     assert result["content"] == "cancelled: reload"
 
 
-def test_synthetic_tool_return_repairs_pending_tool_call(db_engine: Engine) -> None:
-    config = _test_config(db_engine)
+def test_synthetic_tool_return_repairs_pending_tool_call(
+    test_config: HarnessConfig, db_engine: Engine,
+) -> None:
     database = BlackboardDatabase(db_engine)
     database.create_tables()
     session_id = database.start_session("test")
-    skill_runner = SkillRunner(database=database, config=config)
+    skill_runner = SkillRunner(database=database, config=test_config)
     runtime = build_runtime(
         session_id=session_id,
         database=database,
-        config=config,
+        config=test_config,
         skill_runner=skill_runner,
         system_prompt="You are a test agent.",
         model=TestModel(call_tools=[]),
@@ -129,10 +124,9 @@ def test_synthetic_tool_return_repairs_pending_tool_call(db_engine: Engine) -> N
 
 
 def _tool_runner(
-    engine: Engine,
+    test_config: HarnessConfig, db_engine: Engine,
 ) -> tuple[ToolRunner, str, BlackboardDatabase]:
-    config = _test_config(engine)
-    database = BlackboardDatabase(engine)
+    database = BlackboardDatabase(db_engine)
     database.create_tables()
     session_id = database.start_session("test")
     proxy = BlackboardAccessProxy(
@@ -140,31 +134,8 @@ def _tool_runner(
         SkillPermissions(blackboard="read_write", workspace="read_write"),
     )
     runner = ToolRunner(
-        config=config,
+        config=test_config,
         database=proxy,
-        runtime_config=config.runtime,
+        runtime_config=test_config.runtime,
     )
     return runner, session_id, database
-
-
-def _test_config(engine: Engine) -> HarnessConfig:
-    repo_root = Path.cwd()
-    return HarnessConfig(
-        project_root=repo_root,
-        config_path=repo_root / "harness.yaml",
-        paths=HarnessPaths(
-            soul=repo_root / "harness_poc/system_prompts/SOUL.md",
-            system_tools=repo_root / "harness_poc/system_tools",
-            system_skills=repo_root / "harness_poc/system_skills",
-            project_skills=repo_root / "skills",
-            workflows=repo_root / "workflows",
-            pipelines=repo_root / "pipelines",
-            personas=repo_root / "personas",
-        ),
-        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
-        runtime=RuntimeConfig(
-            database_url=engine.url.render_as_string(hide_password=False),
-            default_container_image="python:3.14-slim",
-        ),
-        observability=ObservabilityConfig(logfire_enabled=False),
-    )
