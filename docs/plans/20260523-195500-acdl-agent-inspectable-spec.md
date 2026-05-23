@@ -327,7 +327,7 @@ can request this if it needs deeper inspection.
 
 ### B4 — Expression Parsing (Revised, May 2026)
 
-**Status:** planned — deferred until programmatic condition queries are needed.
+**Status:** complete — implemented May 2026.
 
 #### B4.1 — Why This Is Optional (Contrastive Analysis)
 

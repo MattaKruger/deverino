@@ -13,10 +13,14 @@ from __future__ import annotations
 
 from harness_poc.core.acdl.ast import (
     ACDLFile,
+    BinaryOp,
     CommentBlock,
+    Comparison,
     ConditionalBlock,
     ContextVar,
+    Expression,
     FragInvocation,
+    Identifier,
     LoopBlock,
     NameDef,
     NamespaceBinding,
@@ -49,7 +53,9 @@ _CONTROL_KEYWORDS: frozenset[str] = frozenset({
 
 _NAMESPACE_KEYWORDS: frozenset[str] = frozenset({"env", "sys", "resp", "prompt"})
 
-_KEYWORDS: frozenset[str] = _CONTROL_KEYWORDS | _NAMESPACE_KEYWORDS | {"Namespace"}
+_LITERAL_KEYWORDS: frozenset[str] = frozenset({"none"})
+
+_KEYWORDS: frozenset[str] = _CONTROL_KEYWORDS | _NAMESPACE_KEYWORDS | _LITERAL_KEYWORDS | {"Namespace"}
 
 _NONSTANDARD_ANNOTATIONS: frozenset[str] = frozenset({
     "Struct", "Event", "Pipeline", "Flow", "Fact",
@@ -661,19 +667,19 @@ class Parser:
 
     def _parse_conditional(self, body_parser) -> ConditionalBlock:
         self._consume("KEYWORD", "If")
-        if_condition = self._collect_until_brace()
+        if_condition = self._parse_condition()
         self._consume("SYMBOL", "{")
         if_body = self._parse_body_until("}", body_parser)
         self._consume("SYMBOL", "}")
 
-        else_if_conditions: list[list[Token]] = []
+        else_if_conditions: list[Expression] = []
         else_if_bodies: list[list] = []
         else_body: list | None = None
 
         while self._peek.type == "KEYWORD" and self._peek.value in ("ElseIf", "Else"):
             kw = self._consume("KEYWORD").value
             if kw == "ElseIf":
-                cond = self._collect_until_brace()
+                cond = self._parse_condition()
                 self._consume("SYMBOL", "{")
                 body = self._parse_body_until("}", body_parser)
                 self._consume("SYMBOL", "}")
@@ -703,7 +709,7 @@ class Parser:
         else:
             variable = self._consume("IDENT").value
         self._consume("SYMBOL", ":")
-        iterable = self._collect_until(")")
+        iterable = self._parse_condition()
         self._consume("SYMBOL", ")")
         self._consume("SYMBOL", "{")
         body = self._parse_body_until("}", body_parser)
@@ -712,7 +718,7 @@ class Parser:
 
     def _parse_switch(self, body_parser) -> SwitchBlock:
         self._consume("KEYWORD", "Switch")
-        expression = self._collect_until_brace()
+        expression = self._parse_condition()
         self._consume("SYMBOL", "{")
         cases: list[SwitchCase] = []
         default_body: list | None = None
@@ -724,7 +730,8 @@ class Parser:
                 continue
             kw = self._consume("KEYWORD")
             if kw.value == "Case":
-                match = self._collect_until_brace()
+                match = self._parse_condition()
+                self._consume("SYMBOL", ":")
                 self._consume("SYMBOL", "{")
                 body = self._parse_body_until("}", body_parser)
                 self._consume("SYMBOL", "}")
@@ -754,13 +761,13 @@ class Parser:
                 break
         return args
 
-    def _parse_expression(self):
-        """Parse a single expression atom for use in arguments or indices."""
+    def _parse_atom(self) -> Expression:
+        """Parse a single expression atom — no BinaryOp postfix."""
         tok = self._peek
 
         if self._match("SYMBOL", "@"):
-            # Time index: @T, @t
-            inner = self._parse_expression()
+            # Time index: @T, @t — inner must be atom, not full expression
+            inner = self._parse_atom()
             return TimeIndex(value=inner)
 
         if tok.type == "STRING":
@@ -769,10 +776,25 @@ class Parser:
         if tok.type == "NUMBER":
             return NumberLiteral(value=self._consume("NUMBER").value)
 
-        if tok.type == "KEYWORD" and tok.value in _NAMESPACE_KEYWORDS:
-            return self._parse_context_var()
+        if tok.type == "KEYWORD":
+            if tok.value in _NAMESPACE_KEYWORDS:
+                return self._parse_context_var()
+            if tok.value in _LITERAL_KEYWORDS:
+                return Identifier(name=self._consume("KEYWORD").value)
+            raise self._err(
+                f"Unexpected keyword {tok.value!r} in expression",
+            )
 
         if tok.type == "IDENT":
+            name = tok.value
+            nxt = self._peek_next()
+            # Bare identifier used as a value (e.g., SkillCalled in Case match)
+            # when NOT followed by (, ., or [ — and not ALL_CAPS (template name)
+            if (
+                name != name.upper()
+                and nxt.value not in ("(", ".", "[")
+            ):
+                return Identifier(name=self._consume("IDENT").value)
             return self._parse_template_or_func()
 
         if tok.type == "SYMBOL" and tok.value == "$":
@@ -784,6 +806,44 @@ class Parser:
         raise self._err(
             f"Unexpected token {tok.type} ({tok.value!r}) in expression",
         )
+
+    def _parse_expression(self) -> Expression:
+        """Parse an expression atom, then check for arithmetic binary operators."""
+        left = self._parse_atom()
+
+        op_tok = self._peek
+        if op_tok.value in ("+", "-", "*", "/", "%"):
+            self._pos += 1
+            right = self._parse_expression()
+            return BinaryOp(left=left, operator=op_tok.value, right=right)
+
+        return left
+
+    def _parse_condition(self) -> Expression:
+        """Parse an expression with optional infix comparison operator.
+
+        Handles: expr, expr != expr, expr > expr, expr == expr, etc.
+        Used for If conditions, ForEach iterables, Switch expressions,
+        and Case matches.
+        """
+        left = self._parse_expression()
+        tok = self._peek
+        nxt = self._peek_next()
+
+        # Two-character operators: !=, ==, >=, <=
+        combined = tok.value + nxt.value
+        if combined in ("!=", "==", ">=", "<="):
+            self._pos += 2
+            right = self._parse_expression()
+            return Comparison(left=left, operator=combined, right=right)
+
+        # Single-character operators: >, <
+        if tok.value in (">", "<"):
+            self._pos += 1
+            right = self._parse_expression()
+            return Comparison(left=left, operator=tok.value, right=right)
+
+        return left
 
     # -- Optional / helper parsers -------------------------------------------
 

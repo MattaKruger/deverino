@@ -212,7 +212,10 @@ class RoleMessage:
 # ---------------------------------------------------------------------------
 
 
-type Expression = ContextVar | TemplateCall | StringLiteral | NumberLiteral | NameRef | TimeIndex
+type Expression = (
+    ContextVar | TemplateCall | StringLiteral | NumberLiteral | NameRef | TimeIndex
+    | Comparison | BinaryOp | Identifier
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +265,42 @@ class TimeIndex:
     value: Expression  # usually just an identifier like "T" or "t"
 
 
+@dataclass(frozen=True, slots=True)
+class Comparison:
+    """A comparison expression: left OP right.
+
+    Only appears at condition level (If, ElseIf).
+    """
+
+    left: Expression
+    operator: str  # "!=", "==", ">", "<", ">=", "<="
+    right: Expression
+
+
+@dataclass(frozen=True, slots=True)
+class BinaryOp:
+    """An arithmetic expression: left OP right.
+
+    Appears inside function arguments and index expressions.
+    Operators: "+", "-", "*", "/", "%"
+    """
+
+    left: Expression
+    operator: str
+    right: Expression
+
+
+@dataclass(frozen=True, slots=True)
+class Identifier:
+    """A bare identifier used as a value — not a namespace prefix, not a $var.
+
+    Used for: Case match values (SkillCalled), the 'none' literal,
+    and any other keyword-like identifier appearing in expression position.
+    """
+
+    name: str
+
+
 # ---------------------------------------------------------------------------
 # Control flow
 # ---------------------------------------------------------------------------
@@ -271,9 +310,9 @@ class TimeIndex:
 class ConditionalBlock:
     """If / ElseIf / Else block."""
 
-    if_condition: list[Token] = field(default_factory=list)
+    if_condition: Expression | None = None
     if_body: list[PromptBodyItem] = field(default_factory=list)
-    else_if_conditions: list[list[Token]] = field(default_factory=list)
+    else_if_conditions: list[Expression] = field(default_factory=list)
     else_if_bodies: list[list[PromptBodyItem]] = field(default_factory=list)
     else_body: list[PromptBodyItem] | None = None
 
@@ -283,7 +322,7 @@ class LoopBlock:
     """ForEach block: ForEach(var: expr) { body }"""
 
     variable: str
-    iterable: list[Token] = field(default_factory=list)
+    iterable: Expression | None = None
     body: list[PromptBodyItem] = field(default_factory=list)
 
 
@@ -291,7 +330,7 @@ class LoopBlock:
 class SwitchBlock:
     """Switch / Case / Default block."""
 
-    expression: list[Token] = field(default_factory=list)
+    expression: Expression | None = None
     cases: list[SwitchCase] = field(default_factory=list)
     default_body: list[PromptBodyItem] | None = None
 
@@ -300,7 +339,7 @@ class SwitchBlock:
 class SwitchCase:
     """A single Case inside a Switch block."""
 
-    match: list[Token] = field(default_factory=list)
+    match: Expression | None = None
     body: list[PromptBodyItem] = field(default_factory=list)
 
 
