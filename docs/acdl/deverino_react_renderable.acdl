@@ -43,7 +43,7 @@ StrFrag GoalHeader: {
     env.max_seconds
 }
 
-RolesFrag ConversationTurn[@t]: {
+RoleFrag ConversationTurn[@t]: {
     If env.user_input[@t] != none {
         U: env.user_input[@t]
     }
@@ -68,7 +68,7 @@ RolesFrag ConversationTurn[@t]: {
     }
 }
 
-RolesFrag EventMappedTurn[event]: {
+RoleFrag EventMappedTurn[event]: {
     Switch event.type {
         Case SkillCalled: {
             A: ACTION_EVENT(event)

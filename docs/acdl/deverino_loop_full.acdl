@@ -1,0 +1,543 @@
+//##############################################################################
+// Deverino Loop - Full ACDL Sketch
+//
+// Covers two loop variants:
+//   1. DeverinoChatLoop  - interactive chat (PydanticAI streaming ReAct)
+//   2. DeverinoGoalLoop  - autonomous goal execution (structured ReAct)
+//
+// Based on:
+//   - harness_poc/core/runtime/pydantic_runtime.py
+//   - harness_poc/core/runtime/goal_runner.py
+//   - harness_poc/core/runtime/message_history.py
+//   - harness_poc/core/events/events.py
+//   - harness_poc/system_prompts/SOUL.md
+//   - deverino_react.acdl
+//##############################################################################
+
+//##############################################################################
+// Namespace declarations
+//##############################################################################
+
+Namespace env := {
+    user_input:          string          // Current user message
+    goal_objective:      string          // Goal runner objective
+    retrieved_chunks:    string[]        // search_documents results
+    web_results:         string[]        // web_search results
+    codebase_matches:    string[]        // semble_search results
+    memory_hits:         string[]        // read_memory results
+    tool_results:        string[]        // All tool observations (ordered)
+}
+
+Namespace sys := {
+    soul_charter:        string          // SOUL.md (agent identity charter)
+    project_id:          string          // harness.yaml project.id
+    project_state:       string          // Durable project-level STATE
+    session_state:       string          // Current session durable STATE
+    context_map:         string          // PEEK materialized orientation cache
+    available_skills:    string          // Skill catalog (knowledge skills)
+    tool_policy:         string          // Appended by _with_tool_policy()
+    session_id:          string          // Durable session identifier
+    config_llm_provider: string          // deepseek | openai | anthropic
+    config_llm_model:    string          // e.g. claude-sonnet-4-20250514
+    config_retrieval:    bool            // Vespa retrieval enabled?
+}
+
+Namespace resp := {
+    answer:              string          // Model text output at turn t
+    reasoning:           string          // Model reasoning at turn t
+    tool_calls:          string[]        // Tool invocations at turn t
+    observations:        string[]        // Tool results at turn t
+    token_usage:         (int,int,int)   // (prompt, completion, total)
+    is_complete:         bool            // Goal loop only
+    final_answer:        string          // Goal loop terminal output
+}
+
+Namespace budget := {
+    max_consecutive_tools:  int          // 10 - hard cap per agent run
+    max_semble_search:      int          // 3 per run
+    chat_history_tokens:    int          // 24000
+    chat_history_turns:     int          // 6 recent turns
+    goal_max_iterations:    int          // 50 default
+    goal_max_tokens:        int          // From CLI --max-tokens
+    goal_max_seconds:       float        // From CLI --max-seconds
+    stuck_threshold:        int          // 3 - semantic duplicate threshold
+    tool_result_max_chars:  int          // Oversized tool return truncation
+}
+
+//##############################################################################
+// Fragments - system prompt layers
+//##############################################################################
+
+StrFrag SoulCharter: {
+    "SOUL: Deverino Primary Agent - Identity & Operating Charter"
+    sys.soul_charter
+}
+
+StrFrag StateBlock: {
+    "# Project State"
+    sys.project_state
+    ""
+    "# Current Session State"
+    sys.session_state
+}
+
+StrFrag ContextMapBlock: {
+    "--- Context Map ---"
+    sys.context_map
+    "---"
+}
+
+StrFrag SkillCatalogBlock: {
+    sys.available_skills
+}
+
+StrFrag ToolPolicyBlock: {
+    "## Tool Result Policy"
+    "- Successful tool calls return result content directly as plain text."
+    "- Failed tool calls are prefixed with `[failed]`."
+    "- If a tool returns JSON with `orchestrator_action_required: true`,"
+    "  stop and surface the content to the user unchanged."
+    "- Do not retry failed tools."
+    "- semble_search / web_search: max 2 searches per run, then stop."
+    "- Do not make the same tool call with the same arguments more than once."
+}
+
+StrFrag ToolBudgetBlock: {
+    "- Maximum consecutive tool rounds:" budget.max_consecutive_tools
+    "- semble_search per-run budget:" budget.max_semble_search "calls"
+    "- Per-tool duplicate-call guard: active"
+}
+
+StrFrag TruncationPolicy: {
+    "- chat_history_max_tokens:" budget.chat_history_tokens
+    "- chat_history_recent_turns:" budget.chat_history_turns
+    "- Older turns beyond budget are dropped (no summary injection)"
+}
+
+StrFrag GoalHeader: {
+    "## Objective"
+    env.goal_objective
+    ""
+    "## Budget"
+    "- Max iterations:" budget.goal_max_iterations
+    "- Max tokens:" budget.goal_max_tokens
+    "- Max seconds:" budget.goal_max_seconds
+}
+
+StrFrag AutonomousPolicy: {
+    "## Autonomous Loop Policy"
+    "- After each tool cycle, you will be asked to evaluate: is the goal complete?"
+    "- If is_complete = true, provide a final_answer and the loop ends."
+    "- If is_complete = false, continue with the next action."
+    "- Do not repeat the same action with the same arguments."
+    "- If consecutive tool rounds exceed 10, the loop caps automatically."
+}
+
+//##############################################################################
+// Conversation turn fragment (chat loop)
+//##############################################################################
+
+RoleFrag ConversationTurn[@t]: {
+    // User input
+    If env.user_input[@t] != none {
+        U: env.user_input[@t]
+    }
+
+    // Assistant: reasoning + tool calls
+    If resp.tool_calls[@t] != none {
+        A: {
+            resp.reasoning[@t]
+            ForEach(call: resp.tool_calls[@t]) {
+                ACTION_RECORD(call)
+            }
+        }
+    }
+
+    // Assistant: text answer
+    If resp.answer[@t] != none {
+        A: resp.answer[@t]
+    }
+
+    // Tool observations (as user-role to simulate tool returns)
+    If resp.observations[@t] != none {
+        ForEach(obs: resp.observations[@t]) {
+            U: OBSERVATION_RECORD(obs)
+        }
+    }
+}
+
+//##############################################################################
+// Event-mapped turn fragment (goal loop - typed event sourcing)
+//##############################################################################
+
+RoleFrag EventMappedTurn[event]: {
+    Switch event.type {
+        Case SkillCalled: {
+            A: ACTION_EVENT(event)
+        }
+        Case SkillCompleted: {
+            U: OBSERVATION_EVENT(event)
+        }
+        Case LLMTextEmitted: {
+            U: LLM_TEXT_EVENT(event)
+        }
+        Case GoalEvaluated: {
+            U: GOAL_EVALUATED_EVENT(event)
+        }
+    }
+}
+
+//##############################################################################
+// DeverinoChatLoop - the interactive streaming ReAct loop
+//
+// Execution: PydanticAI Agent.iter() streaming with "early" end strategy.
+// The model emits text AND tool calls interleaved in the same stream.
+// The loop terminates when the model produces text without a tool call.
+//##############################################################################
+
+DeverinoChatLoop[@T]: {
+
+    // ========================================================================
+    // S-BLOCK: System prompt assembly (5 layers)
+    // ========================================================================
+
+    S: {
+        // Layer 1: Identity charter
+        Frag SoulCharter
+
+        // Layer 2: Durable state
+        Frag StateBlock
+
+        // Layer 3: PEEK context map (conditional)
+        If sys.context_map != none {
+            Frag ContextMapBlock
+        }
+
+        // Layer 4: Skill catalog for tool discovery
+        Frag SkillCatalogBlock
+
+        // Layer 5: Tool policy + budget + truncation
+        Frag ToolPolicyBlock
+        Frag ToolBudgetBlock
+        Frag TruncationPolicy
+    }
+
+    // ========================================================================
+    // HISTORY: Last 6 turns, 24K token cap
+    //
+    // prune_message_history() drops oldest turns when over budget.
+    // No summarization - dropped turns are permanently lost.
+    // Tool return content is sanitized: oversized results get truncated
+    // with a "[tool result truncated: ...]" prefix.
+    // ========================================================================
+
+    If @T > 1 {
+        ForEach(@t: range(max(1, @T - budget.chat_history_turns), @T)) {
+            Frag ConversationTurn[@t]
+        }
+    }
+
+    // ========================================================================
+    // CURRENT: User input
+    // ========================================================================
+    U: env.user_input[@T]
+
+    // ========================================================================
+    // STREAMING EXECUTION (runtime behavior, not rendered)
+    //
+    // The PydanticAI runtime wraps this prompt in an Agent.iter() loop:
+    //
+    //   async with agent.iter(prompt, deps=..., message_history=...) as run:
+    //       async for node in run:
+    //           if is_model_request_node(node):
+    //               stream text deltas → on_text callback
+    //               stream tool call deltas → detect had_tool_call
+    //               if !had_tool_call: consecutive_tool_rounds = 0
+    //           elif is_call_tools_node(node):
+    //               consecutive_tool_rounds++
+    //               if consecutive_tool_rounds > 10: BREAK (hard cap)
+    //               execute tools → results fed back into loop
+    //
+    // Tool execution is bounded by:
+    //   - _tool_budget_exhausted(): per-run caps (e.g. 3 semble_search)
+    //   - Per-tool dedup: same tool+args rejected
+    //   - _with_tool_policy(): model instructed not to retry failures
+    //
+    // Tool results are returned as:
+    //   - success → raw content (model reads directly)
+    //   - failed  → "[failed] <msg>"
+    //   - blocked → "[blocked] <reason>"
+    //   - needs_orchestrator_action → JSON with orchestrator_action_required:true
+    //
+    // End strategy: "early" - loop terminates when model emits text
+    // without any tool call, indicating it has a final answer.
+    // ========================================================================
+}
+
+//##############################################################################
+// DeverinoGoalLoop - autonomous structured ReAct variant
+//
+// Key differences from chat loop:
+//   1. Event-sourced history (typed BaseEvent → role-based messages)
+//   2. Structured output: model returns GoalAction JSON, does NOT call tools
+//   3. Explicit evaluate_goal gate: model declares is_complete
+//   4. 3-budget system: iterations, tokens, wall-clock seconds
+//   5. Semantic stuck detection: 3 same failed actions → halt
+//   6. Context compression: older events summarized, last 3 raw
+// ========================================================================
+//
+// Execution flow (per iteration):
+//
+//   ┌─ _build_messages(goal, recent_events)
+//   │    system: _goal_system_prompt(goal)
+//   │    for each event: _event_to_message(event) → role-based Message
+//   │    user: "Continue working toward the goal..."
+//   │
+//   ├─ Budget checks
+//   │    time > max_seconds? → return budget_exhausted
+//   │    tokens > max_tokens?  → return budget_exhausted
+//   │
+//   ├─ _decide_next_action_async()
+//   │    model → PromptedOutput[GoalAction]  (structured JSON, no tool calls)
+//   │    output_retries = 2
+//   │
+//   ├─ Action routing
+//   │    ├─ _llm_text      → emit LLMTextEmitted, continue
+//   │    ├─ evaluate_goal  → is_complete?
+//   │    │    true:  return completed with _completion_content()
+//   │    │    false: emit GoalEvaluated, continue
+//   │    └─ normal skill   → stuck check → execute → emit SkillCompleted
+//   │
+//   └─ Stuck detection
+//        _is_semantically_stuck(tool, args):
+//          semantic_key = normalized(tool + args)  // whitespace/case invariant
+//          count >= stuck_threshold (3) → block action, emit blocked event
+//
+//   Context compression (in _build_decision_prompt):
+//     - Last 3 events: raw (with _format_event_compact for large content)
+//     - Older events: _summarize_event_list() → dense narrative
+//       (Actions taken; Results; Progress checks)
+//     - 8000 char budget for recent event rendering
+// ========================================================================
+
+DeverinoGoalLoop[@T, max_iterations]: {
+
+    // ========================================================================
+    // S-BLOCK: System prompt assembly
+    // ========================================================================
+
+    S: {
+        Frag SoulCharter
+        Frag StateBlock
+        If sys.context_map != none {
+            Frag ContextMapBlock
+        }
+        Frag SkillCatalogBlock
+        Frag GoalHeader
+        Frag AutonomousPolicy
+    }
+
+    // ========================================================================
+    // HISTORY: Event-sourced, role-mapped
+    //
+    // Events are typed BaseEvent subclasses persisted to PostgreSQL.
+    // _event_to_message() maps:
+    //   SkillCalled     → assistant: "[Action] Called tool(args)"
+    //   SkillCompleted  → user:      "[Observation from tool - status]\ncontent"
+    //   LLMTextEmitted  → user:      "[LLM text]\ncontent"
+    //   GoalEvaluated   → user:      "[evaluate_goal: is_complete=...] reasoning"
+    //
+    // The decision prompt (separate from history) uses:
+    //   - Prior Context Summary (compressed older events)
+    //   - Recent Events (last 3 raw, 8000 char cap)
+    // ========================================================================
+
+    If sys.event_history != none {
+        ForEach(event: sys.event_history) {
+            Frag EventMappedTurn[event]
+        }
+    }
+
+    // ========================================================================
+    // CURRENT: Iteration prompt
+    // ========================================================================
+    U: GOAL_ITERATION_PROMPT(env.goal_objective, sys.iteration)
+}
+
+//##############################################################################
+// DeverinoGoalAction - the structured output schema
+//
+// The goal runner uses pydantic_ai.PromptedOutput to enforce this shape.
+// The model returns JSON - it does NOT call tools directly.
+//##############################################################################
+
+Struct GoalAction: {
+    tool_name:      string          // Skill/tool name, or "_llm_text", or "evaluate_goal"
+    arguments:      dict            // JSON arguments for the tool
+    content:        string          // Optional text (only when tool_name="_llm_text")
+}
+
+//##############################################################################
+// DeverinoGoalEvaluate - intercepted within the loop
+//
+// When tool_name == "evaluate_goal", the runner extracts these from
+// arguments dict and does NOT call the skill runner.
+//##############################################################################
+
+Struct GoalEvaluate: {
+    is_complete:    bool            // true → loop ends with final_answer
+    reasoning:      string          // Why the goal is complete/incomplete
+    final_answer:   string          // The polished final output (required when complete)
+}
+
+//##############################################################################
+// DeverinoGoalRunResult - terminal output
+//##############################################################################
+
+Struct GoalRunResult: {
+    status:         "completed" | "budget_exhausted" | "error"
+    content:        string          // Final answer (or budget-exhaustion message)
+    iterations:     int             // Total iterations consumed
+    total_tokens:   int             // Total tokens consumed
+    events:         dict[]          // Structured event log
+}
+
+//##############################################################################
+// DeverinoToolResult - what the skill runner returns
+// (used by both chat and goal loops)
+//##############################################################################
+
+Struct ToolResult: {
+    status:         "success" | "failed" | "error" | "blocked"
+                  | "needs_orchestrator_action"
+    content:        string          // Raw output or error message
+    artifacts:      dict            // Optional structured artifacts (file refs, etc.)
+}
+
+//##############################################################################
+// DeverinoEvent - typed event model (BaseEvent subclasses)
+//
+// Persisted to PostgreSQL via EventStore. Used for:
+//   - Goal loop history (role-mapped into messages)
+//   - Context map materialization (Distiller → Cartographer → Evictor)
+//   - Audit trail
+//##############################################################################
+
+Event AgentStarted: {
+    session_id:     string
+    goal:           string
+}
+
+Event SkillCalled: {
+    session_id:     string
+    tool_name:      string
+    arguments:      dict
+}
+
+Event SkillCompleted: {
+    session_id:     string
+    tool_name:      string
+    status:         string
+    content:        string
+    artifacts:      dict
+}
+
+Event LLMTextEmitted: {
+    session_id:     string
+    content:        string
+}
+
+Event GoalEvaluated: {
+    session_id:     string
+    is_complete:    bool
+    reasoning:      string
+    final_answer:   string
+}
+
+Event SubAgentDispatched: {
+    session_id:     string
+    sub_session_id: string
+    persona:        string
+    objective:      string
+}
+
+Event SubAgentCompleted: {
+    session_id:     string
+    sub_session_id: string
+    status:         string
+    content:        string
+}
+
+//##############################################################################
+// DeverinoContextMapMaterialization - side process
+//
+// Runs async (ContextMapMaterializer cron) to keep the PEEK cache fresh.
+// Pipeline: Distiller → Cartographer → Evictor
+//   - Distiller:  Reads unprocessed events, produces structured observations
+//   - Cartographer: Merges observations into the context map
+//   - Evictor:    Removes stale/contradicted entries, enforces token budget
+//
+// The output (sys.context_map) is injected into the S-block of both loops
+// when non-empty, giving the agent orientation without loading full history.
+//##############################################################################
+
+Pipeline ContextMapMaterialization[corpus_key]: {
+    Step Distiller: {
+        Input:  unprocessed_events[corpus_key]
+        Output: structured_observations
+        Budget: max_event_tokens (default 8000)
+    }
+    Step Cartographer: {
+        Input:  existing_context_map + structured_observations
+        Output: merged_context_map
+        Budget: token_budget (default 1024)
+        Action: upsert observations, resolve contradictions
+    }
+    Step Evictor: {
+        Input:  merged_context_map
+        Output: pruned_context_map
+        Action: remove stale entries, enforce token budget
+    }
+}
+
+//##############################################################################
+// DeverinoSubAgentDelegation - delegate_task flow
+//
+// Spawns a PydanticAI sub-agent with isolated persona + objective.
+// Writes structured result to blackboard memory.
+// The parent agent reads the result via read_memory or summarize_memory.
+//##############################################################################
+
+Flow DelegateTask: {
+    Input: {
+        persona:    string      // Sub-agent role (e.g. "code reviewer")
+        objective:  string      // Concrete task description
+    }
+
+    Step 1: Spawn PydanticAgent {
+        model:       sys.config_llm_model (same provider)
+        system:      persona + objective + harness context (inherited)
+        tools:       same tool set as parent (inherited)
+    }
+
+    Step 2: SubAgentRun {
+        execution:   standard streaming ReAct loop
+        isolation:   separate message history
+    }
+
+    Step 3: WriteBlackboard {
+        key:         generated sub_session_id
+        value:       structured result { status, content, usage }
+    }
+
+    Step 4: EmitEvents {
+        SubAgentDispatched  - when spawned
+        SubAgentCompleted   - when finished
+    }
+
+    Output: ToolResult {
+        status:       "success" | "failed"
+        content:      summary of sub-agent result
+        artifacts:    { memory_key: sub_session_id }
+    }
+}

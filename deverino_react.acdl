@@ -1,53 +1,53 @@
-###############################################################################
-# DeverinoReAct — ACDL Specification for the Deverino Agent Harness
-#
-# Describes the ReAct loop executed by PydanticAI's streaming runtime,
-# covering: system prompt construction (SOUL + STATE + context_map + catalog),
-# turn-level user input, tool invocation and observation, history truncation,
-# and the autonomous goal variant.
-#
-# Based on: harness_poc/core/pydantic_runtime.py, app_factory.py,
-#           goal_runner.py, system_prompts/SOUL.md
-###############################################################################
+//##############################################################################
+// DeverinoReAct -- ACDL Specification for the Deverino Agent Harness
+//
+// Describes the ReAct loop executed by PydanticAI's streaming runtime,
+// covering: system prompt construction (SOUL + STATE + context_map + catalog),
+// turn-level user input, tool invocation and observation, history truncation,
+// and the autonomous goal variant.
+//
+// Based on: harness_poc/core/pydantic_runtime.py, app_factory.py,
+//           goal_runner.py, system_prompts/SOUL.md
+//##############################################################################
 
-Prompt DeverinoChatLoop[@T]: {
-    ###########################################################################
-    # Namespace bindings
-    ###########################################################################
+DeverinoChatLoop[@T]: {
+    //##########################################################################
+    // Namespace bindings
+    //##########################################################################
     Namespace env := {
-        user_input:          string     // env.user_input[@T] — current user message
-        retrieved_chunks:    string[]   // env.retrieved_chunks — from search_documents
-        web_results:         string[]   // env.web_results — from web_search
-        codebase_matches:    string[]   // env.codebase_matches — from semble_search
-        tool_results:        string[]   // env.tool_results — ordered by call sequence
-        memory_hits:         string[]   // env.memory_hits — from read_memory
+        user_input:          string     // env.user_input[@T] -- current user message
+        retrieved_chunks:    string[]   // env.retrieved_chunks -- from search_documents
+        web_results:         string[]   // env.web_results -- from web_search
+        codebase_matches:    string[]   // env.codebase_matches -- from semble_search
+        tool_results:        string[]   // env.tool_results -- ordered by call sequence
+        memory_hits:         string[]   // env.memory_hits -- from read_memory
     }
 
     Namespace sys := {
-        soul_charter:        string     // sys.soul_charter — SOUL.md, agent identity & principles
-        project_id:          string     // sys.project_id — from harness.yaml project.id
-        project_state:       string     // sys.project_state — durable project-level STATE
-        session_state:       string     // sys.session_state — current session durable STATE
-        context_map:         string     // sys.context_map — PEEK materialized orientation cache
-        available_skills:    string     // sys.available_skills — skill catalog for tool discovery
-        tool_policy:         string     // sys.tool_policy — appended by _with_tool_policy()
-        session_id:          string     // sys.session_id — durable session identifier
+        soul_charter:        string     // sys.soul_charter -- SOUL.md, agent identity & principles
+        project_id:          string     // sys.project_id -- from harness.yaml project.id
+        project_state:       string     // sys.project_state -- durable project-level STATE
+        session_state:       string     // sys.session_state -- current session durable STATE
+        context_map:         string     // sys.context_map -- PEEK materialized orientation cache
+        available_skills:    string     // sys.available_skills -- skill catalog for tool discovery
+        tool_policy:         string     // sys.tool_policy -- appended by _with_tool_policy()
+        session_id:          string     // sys.session_id -- durable session identifier
         config_llm_provider: string     // sys.config.llm.provider
         config_llm_model:    string     // sys.config.llm.model
         config_retrieval:    bool       // sys.config.retrieval.enabled
     }
 
     Namespace resp := {
-        answer:              string     // resp.answer[@t] — model text output at turn t
-        reasoning:           string     // resp.reasoning[@t] — model reasoning at turn t
-        tool_calls:          string[]   // resp.tool_calls[@t] — tool invocations at turn t
-        observations:        string[]   // resp.observations[@t] — tool results at turn t
-        token_usage:         (int, int, int)  // resp.token_usage[@t] — (prompt, completion, total)
+        answer:              string     // resp.answer[@t] -- model text output at turn t
+        reasoning:           string     // resp.reasoning[@t] -- model reasoning at turn t
+        tool_calls:          string[]   // resp.tool_calls[@t] -- tool invocations at turn t
+        observations:        string[]   // resp.observations[@t] -- tool results at turn t
+        token_usage:         (int, int, int)  // resp.token_usage[@t] -- (prompt, completion, total)
     }
 
-    ###########################################################################
-    # Fragments
-    ###########################################################################
+    //##########################################################################
+    // Fragments
+    //##########################################################################
 
     StrFrag SoulCharter: {
         sys.soul_charter
@@ -82,43 +82,43 @@ Prompt DeverinoChatLoop[@T]: {
         "- Do not make the same tool call with the same arguments more than once."
     }
 
-    RolesFrag ConversationTurn[@t]: {
+    RoleFrag ConversationTurn[@t]: {
         // User input at turn t
         If env.user_input[@t] != none {
-            Role user: env.user_input[@t]
+            U: env.user_input[@t]
         }
 
         // Model response at turn t (may be text, tool calls, or both)
         If resp.tool_calls[@t] != none {
-            Role assistant: {
+            A: {
                 resp.reasoning[@t]
                 ForEach(call: resp.tool_calls[@t]) {
-                    "[Action] " + call
+                    ACTION_RECORD(call)
                 }
             }
         }
         If resp.answer[@t] != none {
-            Role assistant: resp.answer[@t]
+            A: resp.answer[@t]
         }
 
         // Tool observations at turn t
         If resp.observations[@t] != none {
             ForEach(obs: resp.observations[@t]) {
-                Role user: "[Observation] " + obs
+                U: OBSERVATION_RECORD(obs)
             }
         }
     }
 
-    RolesFrag GoalEvaluationTurn: {
+    RoleFrag GoalEvaluationTurn: {
         // The goal runner injects an evaluation request as user content
         // after each ReAct cycle, asking whether the objective is met.
-        Role user: "[evaluate_goal] Is the objective complete?"
-        Role assistant: resp.reasoning[@T] + "\n" + resp.answer[@T]
+        U: "[evaluate_goal] Is the objective complete?"
+        A: GOAL_EVAL_RESPONSE(resp.reasoning[@T], resp.answer[@T])
     }
 
-    ###########################################################################
-    # Budget and policy fragments
-    ###########################################################################
+    //##########################################################################
+    // Budget and policy fragments
+    //##########################################################################
 
     StrFrag ToolBudgetBlock: {
         "- Maximum consecutive tool rounds: 10"
@@ -132,9 +132,9 @@ Prompt DeverinoChatLoop[@T]: {
         "- Older turns beyond budget are dropped (no summary injection)"
     }
 
-    ###########################################################################
-    # Context assembly (S namespace — the static/system block)
-    ###########################################################################
+    //##########################################################################
+    // Context assembly (S namespace -- the static/system block)
+    //##########################################################################
 
     S: {
         // Layer 1: Identity charter
@@ -157,9 +157,9 @@ Prompt DeverinoChatLoop[@T]: {
         Frag TruncationPolicy
     }
 
-    ###########################################################################
-    # Turn history (U namespace — the conversation turns)
-    ###########################################################################
+    //##########################################################################
+    // Turn history (U namespace -- the conversation turns)
+    //##########################################################################
 
     // Compact recent history: last N turns within token budget
     If @T > 1 {
@@ -172,16 +172,16 @@ Prompt DeverinoChatLoop[@T]: {
     U: env.user_input[@T]
 }
 
-###############################################################################
-# Addendum: DeverinoGoalLoop — Autonomous goal variant
-#
-# The goal runner (goal_runner.py) wraps the same ReAct loop inside an
-# explicit iteration budget with structured evaluation after each cycle.
-# The key difference: state is event-sourced (typed BaseEvent subclasses),
-# and the loop terminates when the model says "is_complete = true".
-###############################################################################
+//##############################################################################
+// Addendum: DeverinoGoalLoop -- Autonomous goal variant
+//
+// The goal runner (goal_runner.py) wraps the same ReAct loop inside an
+// explicit iteration budget with structured evaluation after each cycle.
+// The key difference: state is event-sourced (typed BaseEvent subclasses),
+// and the loop terminates when the model says "is_complete = true".
+//##############################################################################
 
-Prompt DeverinoGoalLoop[@T, $max_iterations]: {
+DeverinoGoalLoop[@T, $max_iterations]: {
     Namespace env := {
         goal_objective: string       // The original goal
         max_iterations: int          // From --max-iterations CLI arg
@@ -198,8 +198,8 @@ Prompt DeverinoGoalLoop[@T, $max_iterations]: {
 
     Namespace resp := {
         // Same as chat loop, plus:
-        is_complete: bool            // resp.is_complete[@t] — goal evaluation result
-        final_answer: string         // resp.final_answer — terminal output on completion
+        is_complete: bool            // resp.is_complete[@t] -- goal evaluation result
+        final_answer: string         // resp.final_answer -- terminal output on completion
     }
 
     StrFrag GoalHeader: {
@@ -207,9 +207,9 @@ Prompt DeverinoGoalLoop[@T, $max_iterations]: {
         env.goal_objective
         ""
         "## Budget"
-        "- Max iterations: " + string(env.max_iterations)
-        "- Max tokens: " + string(env.max_tokens)
-        "- Max seconds: " + string(env.max_seconds)
+        BUDGET_LINE("- Max iterations: ", env.max_iterations)
+        BUDGET_LINE("- Max tokens: ", env.max_tokens)
+        BUDGET_LINE("- Max seconds: ", env.max_seconds)
     }
 
     S: {
@@ -238,44 +238,42 @@ Prompt DeverinoGoalLoop[@T, $max_iterations]: {
     }
 
     // Current iteration evaluation
-    U: env.goal_objective + " (iteration " + string(sys.iteration) + ")"
+    U: GOAL_ITERATION_PROMPT(env.goal_objective, sys.iteration)
 }
 
-RolesFrag EventMappedTurn[event]: {
+RoleFrag EventMappedTurn[event]: {
     // Maps typed BaseEvent instances to conversation roles:
     //   SkillCalled     -> assistant: "[Action] called tool(...)"
-    //   SkillCompleted  -> user: "[Observation from tool — status] \n content"
+    //   SkillCompleted  -> user: "[Observation from tool -- status] \n content"
     //   LLMTextEmitted  -> user: "[LLM text] \n content"
     //   GoalEvaluated   -> user: "[evaluate_goal: is_complete=bool] reasoning"
     // This mirrors _event_to_message() in goal_runner.py
 }
 
-###############################################################################
-# StrFrag catalog: Knowledge skills injected into system context
-###############################################################################
+//##############################################################################
+// StrFrag catalog: Knowledge skills injected into system context
+//##############################################################################
 
 StrFrag SkillCatalogEntry[skill]: {
     sys.skill_name[skill]
     sys.skill_description[skill]
     If sys.skill_parameters[skill] != none {
-        "Parameters: " + sys.skill_parameters[skill]
+        SKILL_PARAMS(sys.skill_parameters[skill])
     }
-    "Auto-invokable: " + string(sys.skill_auto_invokable[skill])
+    SKILL_AUTO(sys.skill_auto_invokable[skill])
 }
 
-###############################################################################
-# Fact annotations (semantic metadata about the loop behavior)
-###############################################################################
+//##############################################################################
+// Fact annotations (semantic metadata about the loop behavior)
+//##############################################################################
 
-Fact: {
-    // The ReAct loop type: tool-augmented generation with streaming observation
-    "react_style": "streaming_tool_loop"
-    "framework": "pydantic_ai"
-    "end_strategy": "early"           // PydanticAI ends when model produces text (no tool call)
-    "max_consecutive_tool_rounds": 10  // Hard cap in pydantic_runtime.py:98
-    "history_truncation": "drop_oldest" // No summarization, just drops oldest turns
-    "tool_call_deduplication": "per_run" // _tool_budget_exhausted per skill per agent run
-    "context_assembly": "layered_concatenation" // SOUL + STATE + context_map + catalog + policy
-    "context_map_provenance": "event_sourced_peek" // Background materializer from typed events
-    "event_schema": "typed_pydantic_BaseEvent" // Events.py registry, persisted to PostgreSQL
-}
+// Fact annotations (semantic metadata about the loop behavior):
+//   react_style: streaming_tool_loop
+//   framework: pydantic_ai
+//   end_strategy: early
+//   max_consecutive_tool_rounds: 10
+//   history_truncation: drop_oldest
+//   tool_call_deduplication: per_run
+//   context_assembly: layered_concatenation
+//   context_map_provenance: event_sourced_peek
+//   event_schema: typed_pydantic_BaseEvent

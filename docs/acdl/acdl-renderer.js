@@ -70,7 +70,7 @@ var ACDL = (() => {
     "and",
     "or",
     "StrFrag",
-    "RolesFrag",
+    "RoleFrag",
     "Frag"
   ]);
   var LOGIC_OP = /* @__PURE__ */ new Set([
@@ -522,13 +522,36 @@ var ACDL = (() => {
           blocks.push(commentBlock({ text }));
         } else if (tok.type === "KEYWORD" && tok.value === "StrFrag") {
           blocks.push(this.parseStrFragDef());
-        } else if (tok.type === "KEYWORD" && tok.value === "RolesFrag") {
+        } else if (tok.type === "KEYWORD" && tok.value === "RoleFrag") {
           blocks.push(this.parseRolesFragDef());
+        } else if (tok.type === "IDENT") {
+          let lookPos = this.pos + 1;
+          while (lookPos < this.tokens.length && this.tokens[lookPos].type === "COMMENT") lookPos++;
+          const lookTok = this.tokens[lookPos];
+          if (lookTok && (lookTok.value === ":" || lookTok.value === "[")) {
+            blocks.push(this.parsePrompt());
+          } else {
+            this.skipBlock();
+          }
         } else {
           blocks.push(this.parsePrompt());
         }
       }
       return blocks;
+    }
+    skipBlock() {
+      while (this.peek().type !== "EOF" && this.peek().value !== "{") {
+        this.pos++;
+      }
+      if (this.peek().value === "{") {
+        this.pos++;
+        let depth = 1;
+        while (this.peek().type !== "EOF" && depth > 0) {
+          if (this.peek().value === "{") depth++;
+          if (this.peek().value === "}") depth--;
+          this.pos++;
+        }
+      }
     }
     /**
      * Parse a StrFrag definition: StrFrag Name[params]: { RoleBuildingBlock* }
@@ -555,10 +578,10 @@ var ACDL = (() => {
       return strFragDef({ name, params, body });
     }
     /**
-     * Parse a RolesFrag definition: RolesFrag Name[params]: { PromptBlock* }
+     * Parse a RoleFrag definition: RoleFrag Name[params]: { PromptBlock* }
      */
     parseRolesFragDef() {
-      this.consume("KEYWORD", "RolesFrag");
+      this.consume("KEYWORD", "RoleFrag");
       const name = this.consume("IDENT").value;
       let params = [];
       if (this.peek().value === "[") {
@@ -580,7 +603,7 @@ var ACDL = (() => {
         body.push(this.parsePromptBodyItem());
       }
       this.consume("SYMBOL", "}");
-      console.log("parsed RolesFrag definition");
+      console.log("parsed RoleFrag definition");
       return rolesFragDef({ name, params, body });
     }
     parseTitle() {
@@ -685,6 +708,9 @@ var ACDL = (() => {
             return this.parseMarkBlock();
           case "Frag":
             return this.parseRolesFragInvocation();
+          default:
+            this.skipBlock();
+            return commentBlock({ text: "" });
         }
       }
       if (tok.type === "IDENT" && val === "PromptEndsHere") {
@@ -693,6 +719,20 @@ var ACDL = (() => {
       if (tok.type === "COMMENT") {
         const text = this.consume("COMMENT").value;
         return commentBlock({ text });
+      }
+      if (tok.type === "IDENT") {
+        let lookPos = this.pos + 1;
+        let foundBrace = false;
+        for (let i = 0; i < 6 && lookPos < this.tokens.length; i++, lookPos++) {
+          if (this.tokens[lookPos].value === "{") {
+            foundBrace = true;
+            break;
+          }
+        }
+        if (foundBrace) {
+          this.skipBlock();
+          return commentBlock({ text: "" });
+        }
       }
       throw new Error(`[${tok.line}:${tok.col}] Syntax Error: Unexpected token "${val}" in global scope.`);
     }
@@ -820,6 +860,10 @@ var ACDL = (() => {
         return this.parseEndBlock();
       }
       if (tok.type === "IDENT") return this.parseTemplateOrFunc();
+      if (tok.type === "STRING") {
+        const name = this.consume("STRING").value;
+        return template({ name, arguments: [], comment: void 0 });
+      }
       throw new Error(`[${tok.line}:${tok.col}] Unexpected ${tok.type} (${val}) inside role.`);
     }
     /* ───────────────── Name Definitions ───────────────── */
