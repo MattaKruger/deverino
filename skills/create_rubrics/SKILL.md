@@ -7,6 +7,7 @@ description: >-
   conversationally — describe the scenario, review the generated rubric,
   confirm to write it to tests/bench/rubrics/.
 version: "1.0"
+auto_invokable: true
 parameters:
   type: object
   properties:
@@ -35,7 +36,7 @@ parameters:
       description: >-
         Set to true to write a previously generated draft rubric to disk.
         Requires slug to locate the draft.
-  required: []
+  required: [description, goal]
 entrypoint:
   module: skill
   function: execute

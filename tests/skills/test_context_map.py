@@ -76,7 +76,7 @@ def _ctx(db: BlackboardDatabase, tmp_path: Path) -> SkillContext:
 
 
 def _materializer_module() -> ModuleType:
-    path = Path(__file__).parents[1] / "skills" / "context-map-materializer" / "skill.py"
+    path = Path(__file__).parents[2] / "skills" / "context-map-materializer" / "skill.py"
     spec = importlib.util.spec_from_file_location("context_map_materializer_skill", path)
     assert spec is not None
     assert spec.loader is not None

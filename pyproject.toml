@@ -72,7 +72,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "TC002", "TC003", "PLR2004", "SLF001", "FBT001", "FBT002"]
+"tests/**/*.py" = ["S101", "TC002", "TC003", "PLR2004", "SLF001", "FBT001", "FBT002", "INP001", "TC001"]
 "harness_poc/core/skills/skill_catalog.py" = ["PLW0603", "TC003"]
 "harness_poc/core/skills/skill_preprocessing.py" = ["S105", "S603", "S607", "TC003"]
 "harness_poc/system_tools/container_destroy.py" = ["ERA001", "TC001"]
@@ -86,9 +86,10 @@ ignore = [
 ]
 "skills/observe/skill.py" = ["PLR0911", "PLR2004"]
 "skills/spec_writer/skill.py" = ["TC001", "TC003"]
-"tests/test_container_skills.py" = ["PLC0415"]
-"tests/test_execute_python.py" = ["ARG001", "PLC0415", "PLR0913", "TC001"]
-"tests/test_knowledge_tools.py" = ["ARG002", "N817", "PLC0415"]
+"tests/runtime/test_container_skills.py" = ["PLC0415"]
+"tests/runtime/test_execute_python.py" = ["ARG001", "PLC0415", "PLR0913"]
+"tests/runtime/test_pydantic_runtime.py" = ["PLR0913"]
+"tests/skills/test_knowledge_tools.py" = ["ARG002", "N817", "PLC0415"]
 
 [tool.ruff.format]
 quote-style = "double"

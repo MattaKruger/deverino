@@ -36,13 +36,10 @@ SMOKE_CASES: list[tuple[str, dict, set[str]]] = [
         "objective": "What is PydanticAI?",
         "use_mock": True,
     }, {"success"}),
-    ("container_spawn", {"image": "python:3.14-slim"}, {"success", "failed"}),
-    ("container_exec", {"command": "", "container": "test"}, {"failed"}),
-    ("container_destroy", {}, {"failed"}),
 ]
 
 
-@pytest.mark.parametrize("skill_name,arguments,expected", SMOKE_CASES)
+@pytest.mark.parametrize(("skill_name", "arguments", "expected"), SMOKE_CASES)
 def test_skill_smoke(
     session_runner: tuple[SkillRunner, str, BlackboardDatabase],
     skill_name: str,
