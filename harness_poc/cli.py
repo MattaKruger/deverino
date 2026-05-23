@@ -14,11 +14,6 @@ from harness_poc.app_factory import STARTUP_ERRORS, AppState, build_app_state
 from harness_poc.console import console, print_error
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.dashboard import DashboardSnapshot, fetch_dashboard_snapshot, snapshot_to_dict
-from harness_poc.core.event_log_observer import (
-    fetch_event_log_rows,
-    fetch_latest_event_log_rows,
-    render_event_log_row,
-)
 from harness_poc.core.events import (
     AgentInputAdded,
     BaseEvent,
@@ -26,6 +21,9 @@ from harness_poc.core.events import (
     LLMTextEmitted,
     SkillCompleted,
     StreamPaused,
+    fetch_event_log_rows,
+    fetch_latest_event_log_rows,
+    render_event_log_row,
 )
 from harness_poc.core.goal_runner import GoalRunResult
 from harness_poc.core.processors.circuit_breaker import run_circuit_breaker

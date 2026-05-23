@@ -15,8 +15,7 @@ from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.document_index import DocumentIndexer
-from harness_poc.core.event_bus import EventBus
-from harness_poc.core.event_store import EventStore
+from harness_poc.core.events import EventBus, EventStore
 from harness_poc.core.logging import configure_logging
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.pipeline_runner import PipelineRunner

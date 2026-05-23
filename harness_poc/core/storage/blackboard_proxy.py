@@ -4,7 +4,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from harness_poc.core.context_map_events import ContextMapEvent
+    from harness_poc.core.events import ContextMapEvent
     from harness_poc.core.permissions import SkillPermissions
     from harness_poc.core.storage.database import BlackboardDatabase
     from harness_poc.core.storage.models import DbDocumentChunk, DbDocumentSource

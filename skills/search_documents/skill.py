@@ -4,7 +4,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.context_map_events import DocumentRetrieved, SearchFailed
+from harness_poc.core.events import DocumentRetrieved, SearchFailed
 from harness_poc.core.retrieval import SearchRequest
 from harness_poc.core.skill_context import SkillResult
 from harness_poc.core.vespa_client import LiveVespaDocumentClient

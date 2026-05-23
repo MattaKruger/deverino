@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.context_map_events import EVENT_REGISTRY
+from harness_poc.core.events import CONTEXT_MAP_EVENT_REGISTRY as EVENT_REGISTRY
 from harness_poc.core.skill_context import SkillResult
 
 if TYPE_CHECKING:

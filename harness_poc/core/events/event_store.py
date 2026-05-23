@@ -9,7 +9,7 @@ from sqlmodel import Session, col, select
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
-from harness_poc.core.events import EVENT_REGISTRY, BaseEvent
+from harness_poc.core.events.events import EVENT_REGISTRY, BaseEvent
 from harness_poc.core.storage import DbStateEvent
 
 logger = logging.getLogger(__name__)

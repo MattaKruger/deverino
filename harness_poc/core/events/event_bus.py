@@ -5,12 +5,12 @@ import logging
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
-from harness_poc.core.events import BaseEvent
+from harness_poc.core.events.events import BaseEvent
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable, Generator
 
-    from harness_poc.core.event_store import EventStore
+    from harness_poc.core.events.event_store import EventStore
 
 logger = logging.getLogger(__name__)
 

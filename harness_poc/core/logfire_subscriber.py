@@ -16,7 +16,7 @@ from harness_poc.core.events import (
 )
 
 if TYPE_CHECKING:
-    from harness_poc.core.event_bus import EventBus
+    from harness_poc.core.events import EventBus
 
 
 def configure_logfire(*, include_content: bool = False) -> None:

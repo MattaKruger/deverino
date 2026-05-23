@@ -83,7 +83,7 @@ class MapEntryEvicted(ContextMapEvent):
     reason: str
 
 
-EVENT_REGISTRY: dict[str, type[ContextMapEvent]] = {
+CONTEXT_MAP_EVENT_REGISTRY: dict[str, type[ContextMapEvent]] = {
     "corpus_ingested": CorpusIngested,
     "document_retrieved": DocumentRetrieved,
     "entity_referenced": EntityReferenced,
@@ -94,6 +94,9 @@ EVENT_REGISTRY: dict[str, type[ContextMapEvent]] = {
     "map_entry_promoted": MapEntryPromoted,
     "map_entry_evicted": MapEntryEvicted,
 }
+
+# Backward-compatibility alias (used by deserialize_event internally)
+EVENT_REGISTRY = CONTEXT_MAP_EVENT_REGISTRY
 
 
 def deserialize_event(data: dict[str, Any]) -> ContextMapEvent:

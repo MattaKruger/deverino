@@ -3,8 +3,7 @@ from __future__ import annotations
 from sqlalchemy import Engine
 from sqlmodel import Session
 
-from harness_poc.core.event_store import EventStore
-from harness_poc.core.events import AgentStarted, SkillCalled, SkillCompleted
+from harness_poc.core.events import AgentStarted, EventStore, SkillCalled, SkillCompleted
 from harness_poc.core.storage import DbStateEvent
 
 

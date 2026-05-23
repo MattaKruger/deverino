@@ -11,7 +11,7 @@ from sqlmodel import Session, col, select
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
-    from harness_poc.core.context_map_events import ContextMapEvent
+    from harness_poc.core.events import ContextMapEvent
 
 from harness_poc.core.storage.db_engine import create_db_engine
 from harness_poc.core.storage.models import (

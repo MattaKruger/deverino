@@ -4,13 +4,15 @@ import json
 
 from sqlalchemy import Engine
 
-from harness_poc.core.event_log_observer import (
+from harness_poc.core.events import (
+    AgentInputAdded,
+    EventStore,
+    LLMActionEmitted,
+    SkillCompleted,
     fetch_event_log_rows,
     fetch_latest_event_log_rows,
     render_event_log_row,
 )
-from harness_poc.core.event_store import EventStore
-from harness_poc.core.events import AgentInputAdded, LLMActionEmitted, SkillCompleted
 
 
 def test_fetch_event_log_rows_filters_by_session_type_and_offset(db_engine: Engine) -> None:

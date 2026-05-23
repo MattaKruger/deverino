@@ -4,7 +4,7 @@ import json
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.context_map_events import (
+from harness_poc.core.events import (
     ContextMapEvent,
     MapEntryEvicted,
     MapEntryPromoted,

@@ -18,7 +18,7 @@ from harness_poc.core.config import (
     ObservabilityConfig,
     RuntimeConfig,
 )
-from harness_poc.core.context_map_events import EntityReferenced, MapEntryEvicted, deserialize_event
+from harness_poc.core.events import EntityReferenced, MapEntryEvicted, deserialize_event
 from harness_poc.core.materializer_runner import MaterializerRunner
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.skill_context import SkillContext, SkillResult
