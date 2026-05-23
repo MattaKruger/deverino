@@ -181,3 +181,31 @@ def test_prompt_with_namespace() -> None:
     prompt = ast.blocks[0]
     assert isinstance(prompt, PromptDef)
     assert len(prompt.body) >= 2
+
+
+# ---------------------------------------------------------------------------
+# CI guard — validates every .acdl file in the repository
+# ---------------------------------------------------------------------------
+
+
+def test_all_acdl_files_in_repo_parse() -> None:
+    """Every .acdl file in the repository must parse without errors."""
+    repo_root = Path(__file__).resolve().parent.parent
+    acdl_files = sorted(
+        p for p in repo_root.glob("**/*.acdl")
+        if ".deverino-scratch" not in str(p)
+        and "node_modules" not in str(p)
+        and ".git" not in str(p)
+    )
+    assert acdl_files, "No .acdl files found — check glob pattern"
+
+    failed: list[str] = []
+    for path in acdl_files:
+        try:
+            rel = str(path.relative_to(repo_root))
+            parse(path.read_text(), filename=rel)
+        except ParseError as e:
+            failed.append(str(e))
+
+    if failed:
+        pytest.fail("\n".join(failed))

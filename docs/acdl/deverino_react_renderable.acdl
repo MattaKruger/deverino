@@ -1,6 +1,13 @@
-// Parser-compatible ACDL rendering companion for ../../deverino_react.acdl.
-// This keeps the visualization-focused structure while omitting local annotations
-// that the current official ACDL parser does not accept.
+// Visualization-focused ACDL rendering companion for ../../deverino_react.acdl.
+//
+// The main file (deverino_react.acdl) is the canonical specification and parses
+// correctly with the Python ACDL parser. This companion exists for visual clarity:
+// - Mark blocks group related sections for the SVG/HTML renderer
+// - Template placeholders (PROJECT_STATE_HEADER, etc.) keep the diagram compact
+// - Switch/Case in EventMappedTurn shows an alternative structural style
+//
+// Both files are valid ACDL. Use this one for presentations; use the main file
+// for spec-level accuracy and programmatic inspection.
 
 StrFrag SoulCharter: {
     sys.soul_charter
