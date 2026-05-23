@@ -80,7 +80,22 @@ class MapEntryEvicted(ContextMapEvent):
     entry_id: str | None = None
     entry_key: str
     section: str
-    reason: str
+    reason: str  # Structured: "stale@cycle=N,age=M,type=X" or "budget@cycle=N,priority=P"
+    materialization_count: int = 0
+
+
+class MapEntryReferenced(ContextMapEvent):
+    """Emitted (by a future wiring spec) when the agent's response cites a map entry.
+
+    Defined here so the schema is stable; emission lives elsewhere.
+    """
+
+    event_type: Literal["map_entry_referenced"] = "map_entry_referenced"
+    entry_id: str
+    entry_key: str
+    section: str
+    cycle_n: int
+    citation_context: str  # Snippet of agent output that cited the entry
 
 
 CONTEXT_MAP_EVENT_REGISTRY: dict[str, type[ContextMapEvent]] = {
@@ -93,6 +108,7 @@ CONTEXT_MAP_EVENT_REGISTRY: dict[str, type[ContextMapEvent]] = {
     "contextual_insight_discovered": ContextualInsightDiscovered,
     "map_entry_promoted": MapEntryPromoted,
     "map_entry_evicted": MapEntryEvicted,
+    "map_entry_referenced": MapEntryReferenced,
 }
 
 # Backward-compatibility alias (used by deserialize_event internally)

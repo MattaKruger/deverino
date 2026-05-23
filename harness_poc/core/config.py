@@ -9,6 +9,13 @@ import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from harness_poc.core.context_map.config import (
+    CartographerConfig,
+    DistillerConfig,
+    load_cartographer_config,
+    load_distiller_config,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class HarnessPaths:
@@ -118,6 +125,8 @@ class HarnessConfig:
     observability: ObservabilityConfig
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     tui: TuiConfig = field(default_factory=TuiConfig)
+    distiller: DistillerConfig = field(default_factory=DistillerConfig)
+    cartographer: CartographerConfig = field(default_factory=CartographerConfig)
     project_id: str = field(default="default")
 
     @classmethod
@@ -221,6 +230,12 @@ class HarnessConfig:
             vim_initial_mode=vim_initial_mode,
         )
 
+        distiller_raw = _mapping(raw.get("distiller"), "distiller")
+        distiller_cfg = load_distiller_config(distiller_raw)
+
+        cartographer_raw = _mapping(raw.get("cartographer"), "cartographer")
+        cartographer_cfg = load_cartographer_config(cartographer_raw)
+
         project_raw = _mapping(raw.get("project"), "project")
         project_id = str(project_raw.get("id") or "")
         if not project_id:
@@ -238,6 +253,8 @@ class HarnessConfig:
             observability=observability,
             retrieval=retrieval,
             tui=tui,
+            distiller=distiller_cfg,
+            cartographer=cartographer_cfg,
             project_id=project_id,
         )
 

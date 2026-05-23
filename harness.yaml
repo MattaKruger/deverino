@@ -58,3 +58,24 @@ retrieval:
     - docs/
   auto_index_ignore_paths:
     - docs/acdl   # ACDL source — code, not prose documentation
+
+distiller:
+  model: anthropic/claude-haiku-4-5
+  max_retries: 3
+  prompt_template: distiller_v1
+
+cartographer:
+  token_budget: 1024
+  tokenizer_name: cl100k_base
+  recency_bonus: 0.01
+  recency_cap: 0.5
+  staleness_penalty: 0.05
+  staleness_floor: 0.2
+  priority_weights:
+    dispute: 1.0
+    schema: 0.9
+    insight: 0.8
+    boundary: 0.7
+    entity: 0.6
+    result: 0.5
+    constant: 0.4
