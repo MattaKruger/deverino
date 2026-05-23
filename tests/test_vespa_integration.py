@@ -19,8 +19,7 @@ from contextlib import suppress
 import pytest
 
 from harness_poc.core.config import RetrievalConfig
-from harness_poc.core.retrieval import SearchRequest, make_document_chunks
-from harness_poc.core.vespa_client import LiveVespaDocumentClient
+from harness_poc.core.retrieval import LiveVespaDocumentClient, SearchRequest, make_document_chunks
 
 pytestmark = pytest.mark.skipif(
     os.getenv("VESPA_INTEGRATION") != "1",

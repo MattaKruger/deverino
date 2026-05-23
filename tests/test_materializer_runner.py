@@ -4,13 +4,13 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
-from harness_poc.core.materializer_runner import MaterializerRunner
+from harness_poc.core.execution import MaterializerRunner
 
 if TYPE_CHECKING:
     from harness_poc.app_factory import Runtime
     from harness_poc.core.config import HarnessConfig
-    from harness_poc.core.database import BlackboardDatabase
-    from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.skills import SkillRunner
+    from harness_poc.core.storage import BlackboardDatabase
 
 
 class _FakeSkillRunner:

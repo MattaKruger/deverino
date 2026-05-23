@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from harness_poc.core.skill_runner import SkillRunner
+from harness_poc.core.skills import SkillRunner
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -18,9 +18,7 @@ if TYPE_CHECKING:
 
 from harness_poc.app_factory import StreamingContext
 from harness_poc.core.events import AgentInputAdded, LLMActionEmitted, LLMTextEmitted
-from harness_poc.core.goal_runner import GoalRunResult
-from harness_poc.core.message_history import estimate_message_tokens
-from harness_poc.core.pydantic_runtime import AgentRunResult
+from harness_poc.core.runtime import AgentRunResult, GoalRunResult, estimate_message_tokens
 from harness_poc.repl import handle_chat_input, handle_goal_command
 from tests.helpers import RecordingEventBus
 

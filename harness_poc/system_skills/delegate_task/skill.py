@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 
-from harness_poc.core.pydantic_runtime import build_model
-from harness_poc.core.skill_context import SkillContext, SkillResult
+from harness_poc.core.runtime import build_model
+from harness_poc.core.skills import SkillContext, SkillResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
-from harness_poc.core.pydantic_runtime import AgentDeps, _emit_tool_progress
-from harness_poc.core.skill_context import SkillContext
+from harness_poc.core.runtime import AgentDeps, _emit_tool_progress
+from harness_poc.core.skills import SkillContext
 
 if TYPE_CHECKING:
     from collections.abc import Callable

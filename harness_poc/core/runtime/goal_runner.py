@@ -21,7 +21,7 @@ from harness_poc.core.events import (
     SkillCalled,
     SkillCompleted,
 )
-from harness_poc.core.pydantic_runtime import build_model
+from harness_poc.core.runtime.pydantic_runtime import build_model
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from pydantic_ai.models import Model
 
     from harness_poc.app_factory import AppState
-    from harness_poc.core.llm_client import Message
+    from harness_poc.core.runtime.llm_client import Message
 
 _encoder_cache: dict[str, tiktoken.Encoding] = {}
 logger = logging.getLogger(__name__)

@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.document_index import DocumentIndexer
-from harness_poc.core.skill_context import SkillResult
-from harness_poc.core.vespa_client import LiveVespaDocumentClient
+from harness_poc.core.retrieval import DocumentIndexer, LiveVespaDocumentClient
+from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
-    from harness_poc.core.skill_context import SkillContext
+    from harness_poc.core.skills import SkillContext
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:

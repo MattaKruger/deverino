@@ -4,9 +4,7 @@ from unittest.mock import MagicMock
 
 from sqlalchemy import Engine
 
-from harness_poc.core.event_bus import EventBus
-from harness_poc.core.event_store import EventStore
-from harness_poc.core.events import AgentStarted, SkillCalled
+from harness_poc.core.events import AgentStarted, EventBus, EventStore, SkillCalled
 from tests.helpers import RecordingEventBus
 
 # --- RecordingEventBus ---

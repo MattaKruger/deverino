@@ -22,17 +22,17 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, cast
 
-from harness_poc.core.skill_context import CancellationToken, SkillResult, SkillStatus
-from harness_poc.core.tool_context import ToolContext
-from harness_poc.core.tool_result import ToolResult
+from harness_poc.core.skills import CancellationToken, SkillResult, SkillStatus
+from harness_poc.core.tools.tool_context import ToolContext
+from harness_poc.core.tools.tool_result import ToolResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
     from harness_poc.core.config import HarnessConfig, RuntimeConfig
-    from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.skills import SkillRunner
+    from harness_poc.core.storage import BlackboardAccessProxy
 
 logger = logging.getLogger(__name__)
 _CANCELLABLE_TOOL_NAMES = frozenset({"container_exec", "execute_python"})

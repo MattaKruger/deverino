@@ -13,12 +13,12 @@ if TYPE_CHECKING:
     from types import ModuleType
 
     from harness_poc.core.config import HarnessConfig
-    from harness_poc.core.database import BlackboardDatabase
-    from harness_poc.core.skill_context import SkillResult
+    from harness_poc.core.skills.skill_context import SkillResult
+    from harness_poc.core.storage import BlackboardDatabase
 
-from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 from harness_poc.core.permissions import SkillPermissions
-from harness_poc.core.skill_context import CancellationToken, SkillContext
+from harness_poc.core.skills.skill_context import CancellationToken, SkillContext
+from harness_poc.core.storage import BlackboardAccessProxy
 
 logger = logging.getLogger(__name__)
 

@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any, cast
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, PromptedOutput
 
-from harness_poc.core.pydantic_runtime import build_model, is_live_model
-from harness_poc.core.skill_context import SkillContext, SkillResult
+from harness_poc.core.runtime import build_model, is_live_model
+from harness_poc.core.skills import SkillContext, SkillResult
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model

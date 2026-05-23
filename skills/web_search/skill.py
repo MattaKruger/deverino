@@ -7,7 +7,7 @@ import httpx
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from harness_poc.core.skill_context import SkillContext, SkillResult
+from harness_poc.core.skills import SkillContext, SkillResult
 
 LANGSEARCH_API_BASE = "https://api.langsearch.com/v1/web-search"
 MAX_RESULTS = 20

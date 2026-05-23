@@ -17,9 +17,9 @@ from harness_poc.app_factory import (
     StreamingContext,
 )
 from harness_poc.core.config import HarnessConfig
-from harness_poc.core.database import BlackboardDatabase
-from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
-from harness_poc.core.skill_runner import SkillRunner
+from harness_poc.core.runtime import GoalRunner, GoalRunResult
+from harness_poc.core.skills import SkillRunner
+from harness_poc.core.storage import BlackboardDatabase
 from tests.helpers import (
     RecordingEventBus,
     TraceAssertions,
@@ -30,8 +30,8 @@ if TYPE_CHECKING:
     from typing import Any
 
     from harness_poc.core.events import BaseEvent, SkillCalled, SkillCompleted
-    from harness_poc.core.llm_client import LLMResponse
-    from harness_poc.core.skill_context import SkillResult
+    from harness_poc.core.runtime import LLMResponse
+    from harness_poc.core.skills import SkillResult
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ class SessionHarness:
             poolclass=StaticPool,
         )
         # Import database module to ensure SQLModel table classes are registered
-        import harness_poc.core.database  # noqa: F401, PLC0415
+        import harness_poc.core.storage.database  # noqa: F401, PLC0415
         SQLModel.metadata.create_all(engine)
         database = BlackboardDatabase(engine)
 

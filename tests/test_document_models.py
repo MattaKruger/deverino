@@ -3,8 +3,7 @@ from __future__ import annotations
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
-from harness_poc.core.database import BlackboardDatabase
-from harness_poc.core.models import DbDocumentChunk, DbDocumentSource
+from harness_poc.core.storage import BlackboardDatabase, DbDocumentChunk, DbDocumentSource
 
 
 def test_document_source_table_created(db_engine: Engine) -> None:

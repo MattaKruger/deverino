@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.tool_context import ToolContext
+from harness_poc.core.tools import ToolContext
 from harness_poc.system_tools.read_memory import read_memory as _read_memory
 
 if TYPE_CHECKING:
-    from harness_poc.core.skill_context import SkillContext, SkillResult
+    from harness_poc.core.skills import SkillContext, SkillResult
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:

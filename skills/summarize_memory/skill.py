@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.pydantic_runtime import build_model, chat_text
-from harness_poc.core.skill_context import SkillContext, SkillResult
+from harness_poc.core.runtime import build_model, chat_text
+from harness_poc.core.skills import SkillContext, SkillResult
 
 if TYPE_CHECKING:
-    from harness_poc.core.llm_client import Message
+    from harness_poc.core.runtime import Message
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:

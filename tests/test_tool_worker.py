@@ -5,14 +5,19 @@ from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import Engine
 
-from harness_poc.core.event_bus import EventBus
-from harness_poc.core.event_store import EventStore
-from harness_poc.core.events import SkillCalled, SkillCancelled, SkillCompleted, StreamPaused
+from harness_poc.core.events import (
+    EventBus,
+    EventStore,
+    SkillCalled,
+    SkillCancelled,
+    SkillCompleted,
+    StreamPaused,
+)
 from harness_poc.core.processors.tool_worker import run_skill_worker
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
-    from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.skills import SkillRunner
 
 
 class _FakeSkillRunner:

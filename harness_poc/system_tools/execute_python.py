@@ -10,12 +10,12 @@ import base64
 import json
 from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.skills import SkillResult
 from harness_poc.system_tools.container_exec import container_exec
 from harness_poc.system_tools.container_spawn import container_spawn
 
 if TYPE_CHECKING:
-    from harness_poc.core.tool_context import ToolContext
+    from harness_poc.core.tools import ToolContext
 
 DEFAULT_TIMEOUT_SECONDS = 30
 MAX_TIMEOUT_SECONDS = 300

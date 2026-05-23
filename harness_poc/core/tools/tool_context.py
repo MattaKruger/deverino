@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from harness_poc.core.config import RuntimeConfig
 
-from harness_poc.core.skill_context import CancellationToken
+from harness_poc.core.skills import CancellationToken
 
 
 class ToolDatabase(Protocol):

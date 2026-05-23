@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from harness_poc.core.pdf_converter import convert_pdf_to_chunks
+from harness_poc.core.retrieval import convert_pdf_to_chunks
 
 
 def _fake_docling(chunks_data: list[tuple[str, list[str]]]) -> dict:

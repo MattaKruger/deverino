@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from harness_poc.cli import app
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.skills import SkillResult
 
 runner = CliRunner()
 

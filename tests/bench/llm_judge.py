@@ -8,7 +8,7 @@ import logging
 from pydantic_ai import Agent
 
 from harness_poc.core.config import LLMConfig
-from harness_poc.core.pydantic_runtime import build_model
+from harness_poc.core.runtime import build_model
 
 logger = logging.getLogger(__name__)
 

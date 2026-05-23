@@ -13,7 +13,7 @@ import subprocess
 import time
 from typing import Any
 
-from harness_poc.core.skill_context import CancellationToken, SkillResult
+from harness_poc.core.skills import CancellationToken, SkillResult
 
 BACKENDS = ("podman", "docker")
 DEFAULT_TIMEOUT_SECONDS = 120

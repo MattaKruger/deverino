@@ -12,8 +12,8 @@ from harness_poc.core.events import (
     PipelineNodeStarted,
     PipelineStarted,
 )
-from harness_poc.core.pipeline_runner import PipelineRunner, build_waves
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.execution import PipelineRunner, build_waves
+from harness_poc.core.skills import SkillResult
 from tests.helpers import RecordingEventBus
 
 if TYPE_CHECKING:

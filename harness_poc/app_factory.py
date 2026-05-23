@@ -13,27 +13,24 @@ import yaml
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sqlalchemy.exc import OperationalError as SAOperationalError
 
-from harness_poc.core.blackboard_proxy import BlackboardAccessProxy
 from harness_poc.core.config import HarnessConfig
-from harness_poc.core.database import BlackboardDatabase
-from harness_poc.core.db_engine import create_db_engine
-from harness_poc.core.document_index import DocumentIndexer
-from harness_poc.core.event_bus import EventBus
-from harness_poc.core.event_store import EventStore
+from harness_poc.core.events import EventBus, EventStore
+from harness_poc.core.execution import PipelineRunner, WorkflowRunner
 from harness_poc.core.logging import configure_logging
 from harness_poc.core.permissions import SkillPermissions
-from harness_poc.core.pipeline_runner import PipelineRunner
-from harness_poc.core.pydantic_runtime import (
+from harness_poc.core.retrieval import DocumentIndexer, LiveVespaDocumentClient
+from harness_poc.core.runtime import (
     PydanticAgentRuntime,
     build_runtime,
 )
-from harness_poc.core.skill_catalog import build_skill_catalog
-from harness_poc.core.skill_runner import SkillRunner
-from harness_poc.core.skill_scaffolder import SkillScaffolder
-from harness_poc.core.state import build_state_context
-from harness_poc.core.tool_runner import ToolRunner
-from harness_poc.core.vespa_client import LiveVespaDocumentClient
-from harness_poc.core.workflow_runner import WorkflowRunner
+from harness_poc.core.skills import SkillRunner, SkillScaffolder, build_skill_catalog
+from harness_poc.core.storage import (
+    BlackboardAccessProxy,
+    BlackboardDatabase,
+    build_state_context,
+    create_db_engine,
+)
+from harness_poc.core.tools import ToolRunner
 from harness_poc.system_tools.knowledge_tools import init_knowledge_context
 
 logger = logging.getLogger(__name__)
@@ -49,9 +46,9 @@ if TYPE_CHECKING:
     from pydantic_ai.messages import ModelMessage
     from pydantic_ai.models import Model
 
-    from harness_poc.core.llm_client import Message
-    from harness_poc.core.materializer_runner import MaterializerRunner
-    from harness_poc.core.processor_supervisor import ProcessorSupervisor
+    from harness_poc.core.execution import MaterializerRunner
+    from harness_poc.core.processors import ProcessorSupervisor
+    from harness_poc.core.runtime import Message
 
 
 def _default_on_text(chunk: str) -> None:
@@ -432,8 +429,8 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
 
 
 def build_long_lived(identity: Identity, runtime: Runtime) -> LongLived:
-    from harness_poc.core.materializer_runner import MaterializerRunner  # noqa: PLC0415
-    from harness_poc.core.processor_supervisor import ProcessorSupervisor  # noqa: PLC0415
+    from harness_poc.core.execution import MaterializerRunner  # noqa: PLC0415
+    from harness_poc.core.processors import ProcessorSupervisor  # noqa: PLC0415
 
     materializer = MaterializerRunner(
         db=identity.database,
@@ -513,7 +510,7 @@ def build_app_state(
     long_lived = build_long_lived(identity, runtime)
 
     if config.observability.logfire_enabled:
-        from harness_poc.core.logfire_subscriber import (  # noqa: PLC0415
+        from harness_poc.core.observability import (  # noqa: PLC0415
             configure_logfire,
             wire_logfire,
         )

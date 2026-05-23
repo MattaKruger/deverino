@@ -8,10 +8,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
-    from harness_poc.core.tool_context import ToolContext
+    from harness_poc.core.tools import ToolContext
 
 
 def read_memory(

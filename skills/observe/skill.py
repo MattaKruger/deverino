@@ -3,16 +3,16 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.context_map_events import (
+from harness_poc.core.events import (
     ContextualInsightDiscovered,
     EntityReferenced,
     FactDisputed,
     SchemaDiscovered,
 )
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
-    from harness_poc.core.skill_context import SkillContext
+    from harness_poc.core.skills import SkillContext
 
 logger = logging.getLogger(__name__)
 

@@ -14,8 +14,8 @@ from harness_poc.core.config import (
     ObservabilityConfig,
     RuntimeConfig,
 )
-from harness_poc.core.database import BlackboardDatabase
-from harness_poc.core.skill_runner import SkillRunner
+from harness_poc.core.skills import SkillRunner
+from harness_poc.core.storage import BlackboardDatabase
 
 
 def test_reflect_on_result_requires_objective(db_engine: Engine) -> None:
