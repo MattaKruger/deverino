@@ -14,7 +14,7 @@ from harness_poc.core.config import (
     ObservabilityConfig,
     RuntimeConfig,
 )
-from harness_poc.core.skill_runner import SkillRunner
+from harness_poc.core.skills import SkillRunner
 from harness_poc.core.storage import BlackboardDatabase
 
 

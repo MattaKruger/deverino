@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.events import CONTEXT_MAP_EVENT_REGISTRY as EVENT_REGISTRY
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
-    from harness_poc.core.skill_context import SkillContext
+    from harness_poc.core.skills import SkillContext
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:

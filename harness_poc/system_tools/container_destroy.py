@@ -11,8 +11,8 @@ import shutil
 import subprocess
 from typing import Any
 
-from harness_poc.core.skill_context import SkillResult
-from harness_poc.core.tool_context import ToolContext
+from harness_poc.core.skills import SkillResult
+from harness_poc.core.tools import ToolContext
 
 BACKENDS = ("podman", "docker")
 

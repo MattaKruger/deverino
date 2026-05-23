@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from harness_poc.core.skill_catalog import build_skill_catalog
-from harness_poc.core.skill_preprocessing import (
+from harness_poc.core.skills import (
+    build_skill_catalog,
     expand_inline_shell,
     substitute_template_vars,
 )
@@ -317,7 +317,7 @@ class TestSkillRunnerExcludesKnowledge:
             ObservabilityConfig,
             RuntimeConfig,
         )
-        from harness_poc.core.skill_runner import SkillRunner
+        from harness_poc.core.skills import SkillRunner
         from harness_poc.core.storage import BlackboardDatabase
 
         repo_root = P.cwd()

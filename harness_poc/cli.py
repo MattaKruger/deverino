@@ -25,10 +25,10 @@ from harness_poc.core.events import (
     fetch_latest_event_log_rows,
     render_event_log_row,
 )
-from harness_poc.core.goal_runner import GoalRunResult
 from harness_poc.core.processors.circuit_breaker import run_circuit_breaker
 from harness_poc.core.processors.llm_worker import run_llm_worker
 from harness_poc.core.processors.tool_worker import run_skill_worker
+from harness_poc.core.runtime import GoalRunResult
 from harness_poc.core.storage import BlackboardDatabase
 from harness_poc.repl import (
     append_session_state,

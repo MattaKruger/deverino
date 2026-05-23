@@ -5,7 +5,7 @@ import subprocess
 import time
 from typing import Any, Literal
 
-from harness_poc.core.skill_context import SkillContext, SkillResult
+from harness_poc.core.skills import SkillContext, SkillResult
 
 SEARCH_MODES = {"hybrid", "semantic", "bm25"}
 DEFAULT_TOP_K = 5

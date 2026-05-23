@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from harness_poc.core.skill_context import SkillContext, SkillResult
+from harness_poc.core.skills import SkillContext, SkillResult
 
 if TYPE_CHECKING:
     from harness_poc.core.storage import StatePayload

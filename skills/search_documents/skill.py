@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.events import DocumentRetrieved, SearchFailed
 from harness_poc.core.retrieval import SearchRequest
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.skills import SkillResult
 from harness_poc.core.vespa_client import LiveVespaDocumentClient
 
 if TYPE_CHECKING:
     from harness_poc.core.retrieval import SearchResult
-    from harness_poc.core.skill_context import SkillContext
+    from harness_poc.core.skills import SkillContext
 
 _VALID_MODES = {"hybrid", "semantic", "keyword"}
 _EXCERPT_CHARS = 300

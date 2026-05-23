@@ -17,10 +17,9 @@ from harness_poc.core.config import (
     RuntimeConfig,
 )
 from harness_poc.core.permissions import SkillPermissions
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.skills import SkillResult
 from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
-from harness_poc.core.tool_context import ToolContext
-from harness_poc.core.tool_runner import ToolRunner
+from harness_poc.core.tools import ToolContext, ToolRunner
 
 CUSTOM_TIMEOUT_SECONDS = 7
 

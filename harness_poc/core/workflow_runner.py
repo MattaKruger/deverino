@@ -8,8 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 import yaml
 
 if TYPE_CHECKING:
-    from harness_poc.core.skill_context import SkillResult
-    from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.skills import SkillResult, SkillRunner
 
 
 TEMPLATE_PATTERN = re.compile(r"{{\s*([^}]+?)\s*}}")

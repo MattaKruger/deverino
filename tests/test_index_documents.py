@@ -14,7 +14,7 @@ from harness_poc.core.config import (
     RuntimeConfig,
 )
 from harness_poc.core.permissions import SkillPermissions
-from harness_poc.core.skill_context import SkillContext
+from harness_poc.core.skills import SkillContext
 from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
 from skills.index_documents.skill import execute
 from tests.test_vespa_client import FakeVespaClient

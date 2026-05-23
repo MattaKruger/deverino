@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from harness_poc.core.events import EventBus
-    from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.skills import SkillRunner
 
 
 async def run_skill_worker(

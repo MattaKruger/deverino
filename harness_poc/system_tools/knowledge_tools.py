@@ -31,7 +31,7 @@ from typing import Any
 
 import yaml
 
-from harness_poc.core.skill_preprocessing import substitute_template_vars
+from harness_poc.core.skills import substitute_template_vars
 
 logger = logging.getLogger(__name__)
 

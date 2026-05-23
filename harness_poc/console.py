@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.skills import SkillRunner
     from harness_poc.core.workflow_runner import WorkflowRunResult
 
 

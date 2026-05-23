@@ -15,7 +15,7 @@ from harness_poc.core.config import (
 )
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.retrieval import SearchRequest, SearchResult
-from harness_poc.core.skill_context import SkillContext
+from harness_poc.core.skills import SkillContext
 from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
 from skills.search_documents.skill import execute
 

@@ -1,4 +1,4 @@
-# ruff: noqa: PLC0415, TC001
+# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -13,8 +13,7 @@ from harness_poc.core.config import (
     ObservabilityConfig,
     RuntimeConfig,
 )
-from harness_poc.core.skill_context import SkillResult
-from harness_poc.core.skill_runner import SkillRunner
+from harness_poc.core.skills import SkillResult, SkillRunner
 from harness_poc.core.storage import BlackboardDatabase
 
 MAX_QUESTIONS = 3
@@ -143,7 +142,7 @@ def _test_config(tmp_path: Path, engine: Engine) -> HarnessConfig:
 def test_gather_state_round_trips_through_blackboard(tmp_path: Path, db_engine: Engine) -> None:
     _runner_obj, session_id, database = _runner(tmp_path, db_engine)
     config = _test_config(tmp_path, db_engine)
-    from harness_poc.core.skill_context import SkillContext
+    from harness_poc.core.skills import SkillContext
     from skills.spec_writer.skill import (
         GatherState,
         _load_gather_state,
@@ -181,7 +180,7 @@ def test_gather_state_round_trips_through_blackboard(tmp_path: Path, db_engine: 
 def test_load_gather_state_returns_none_when_missing(tmp_path: Path, db_engine: Engine) -> None:
     _runner_obj, session_id, database = _runner(tmp_path, db_engine)
     config = _test_config(tmp_path, db_engine)
-    from harness_poc.core.skill_context import SkillContext
+    from harness_poc.core.skills import SkillContext
     from skills.spec_writer.skill import _load_gather_state
 
     ctx = SkillContext(
@@ -464,7 +463,7 @@ def test_draft_with_gather_key_reads_completed_xml_from_blackboard(
 ) -> None:
     runner, session_id, database = _runner(tmp_path, db_engine)
     config = _test_config(tmp_path, db_engine)
-    from harness_poc.core.skill_context import SkillContext
+    from harness_poc.core.skills import SkillContext
     from skills.spec_writer.skill import GatherState, _save_gather_state
 
     ctx = SkillContext(

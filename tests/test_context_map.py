@@ -21,7 +21,7 @@ from harness_poc.core.config import (
 from harness_poc.core.events import EntityReferenced, MapEntryEvicted, deserialize_event
 from harness_poc.core.materializer_runner import MaterializerRunner
 from harness_poc.core.permissions import SkillPermissions
-from harness_poc.core.skill_context import SkillContext, SkillResult
+from harness_poc.core.skills import SkillContext, SkillResult
 from harness_poc.core.storage import (
     BlackboardAccessProxy,
     BlackboardDatabase,
@@ -31,7 +31,7 @@ from harness_poc.core.storage import (
 from harness_poc.system_skills.append_event.skill import execute as append_event_execute
 
 if TYPE_CHECKING:
-    from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.skills import SkillRunner
 
 
 def _db() -> BlackboardDatabase:

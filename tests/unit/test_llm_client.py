@@ -10,7 +10,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from harness_poc.core.llm_client import LLMResponse, Message, ToolCall, Usage
+from harness_poc.core.runtime import LLMResponse, Message, ToolCall, Usage
 
 # ---------------------------------------------------------------------------
 # LLMResponse — construction and immutability

@@ -9,7 +9,7 @@ from harness_poc.core.materializer_runner import MaterializerRunner
 if TYPE_CHECKING:
     from harness_poc.app_factory import Runtime
     from harness_poc.core.config import HarnessConfig
-    from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.skills import SkillRunner
     from harness_poc.core.storage import BlackboardDatabase
 
 

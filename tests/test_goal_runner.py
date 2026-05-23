@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 from harness_poc.app_factory import AppState, build_app_state
 from harness_poc.cli import app
 from harness_poc.core.events import AgentStarted, LLMTextEmitted, SkillCompleted
-from harness_poc.core.goal_runner import GoalRunner, count_tokens
+from harness_poc.core.runtime import GoalRunner, count_tokens
 from tests.helpers import (
     _mock_goal_model,
     evaluate_goal_response,
@@ -22,7 +22,7 @@ from tests.helpers import (
 if TYPE_CHECKING:
     import pytest
 
-    from harness_poc.core.llm_client import LLMResponse
+    from harness_poc.core.runtime import LLMResponse
 
 runner = CliRunner()
 
@@ -185,7 +185,7 @@ def test_goal_token_budget_uses_context_delta(monkeypatch: pytest.MonkeyPatch) -
         evaluate_goal_response(False, "Still working..."),
         evaluate_goal_response(True, "Done."),
     ])
-    monkeypatch.setattr("harness_poc.core.goal_runner.count_tokens", lambda _messages: 100)
+    monkeypatch.setattr("harness_poc.core.runtime.goal_runner.count_tokens", lambda _messages: 100)
     runner = GoalRunner(max_iterations=10, max_tokens=150)
 
     result = runner.run("Test goal", state)
@@ -214,7 +214,7 @@ def test_stuck_detection_blocks_repeated_failed_action() -> None:
 
     # --- Verify semantic normalization: different whitespace/casing should
     # --- produce the same semantic key.
-    from harness_poc.core.goal_runner import _semantic_key
+    from harness_poc.core.runtime import _semantic_key
 
     key1 = _semantic_key("semble_search", {"query": "BlackboardDatabase schema"})
     key2 = _semantic_key("semble_search", {"query": "BlackboardDatabase  schema"})

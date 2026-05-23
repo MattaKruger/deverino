@@ -9,10 +9,10 @@ from harness_poc.core.events import (
     FactDisputed,
     SchemaDiscovered,
 )
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
-    from harness_poc.core.skill_context import SkillContext
+    from harness_poc.core.skills import SkillContext
 
 logger = logging.getLogger(__name__)
 

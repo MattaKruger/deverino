@@ -13,7 +13,7 @@ from harness_poc.core.config import (
 )
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
-from harness_poc.core.tool_runner import ToolRunner
+from harness_poc.core.tools import ToolRunner
 from harness_poc.system_tools.container_spawn import (
     _cleanup_stale_harness_containers,
     container_spawn,
@@ -147,7 +147,7 @@ def test_container_spawn_mounts_scratch_outside_read_only_workspace(
         database,
         SkillPermissions(blackboard="read_write", workspace="read_write"),
     )
-    from harness_poc.core.tool_context import ToolContext
+    from harness_poc.core.tools import ToolContext
 
     ctx = ToolContext(
         session_id=session_id,

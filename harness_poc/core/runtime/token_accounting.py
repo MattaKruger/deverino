@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from harness_poc.core.message_history import estimate_message_tokens
+from harness_poc.core.runtime.message_history import estimate_message_tokens
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelMessage
 
-    from harness_poc.core.llm_client import Usage
+    from harness_poc.core.runtime.llm_client import Usage
 
 
 @dataclass(frozen=True, slots=True)

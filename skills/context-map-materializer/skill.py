@@ -9,12 +9,12 @@ from harness_poc.core.events import (
     MapEntryEvicted,
     MapEntryPromoted,
 )
-from harness_poc.core.pydantic_runtime import build_model, chat_text
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.runtime import build_model, chat_text
+from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
-    from harness_poc.core.llm_client import Message
-    from harness_poc.core.skill_context import SkillContext
+    from harness_poc.core.runtime import Message
+    from harness_poc.core.skills import SkillContext
 
 _CHARS_PER_TOKEN = 4
 _SECTION_PRIORITY = [

@@ -90,7 +90,7 @@ def _render_skill_python(skill_name: str) -> str:
 
 from typing import Any
 
-from harness_poc.core.skill_context import SkillContext, SkillResult
+from harness_poc.core.skills import SkillContext, SkillResult
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:

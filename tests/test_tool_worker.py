@@ -14,10 +14,10 @@ from harness_poc.core.events import (
     StreamPaused,
 )
 from harness_poc.core.processors.tool_worker import run_skill_worker
-from harness_poc.core.skill_context import SkillResult
+from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
-    from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.skills import SkillRunner
 
 
 class _FakeSkillRunner:

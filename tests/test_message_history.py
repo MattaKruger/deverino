@@ -9,7 +9,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
-from harness_poc.core.message_history import (
+from harness_poc.core.runtime import (
     estimate_message_tokens,
     prune_message_history,
     sanitize_new_messages,

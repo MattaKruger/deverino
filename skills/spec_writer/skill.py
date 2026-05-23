@@ -5,13 +5,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 from harness_poc.core.config import LLMConfig
-from harness_poc.core.llm_client import Message
-from harness_poc.core.pydantic_runtime import (
+from harness_poc.core.runtime import (
+    Message,
     build_model,
     chat_text,
     is_live_model,
 )
-from harness_poc.core.skill_context import SkillContext, SkillResult
+from harness_poc.core.skills import SkillContext, SkillResult
 
 DEFAULT_OUTPUT_KEY = "spec_writer_result"
 DEFAULT_GATHER_KEY = "spec_gather_state"

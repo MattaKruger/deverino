@@ -15,8 +15,8 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
-from harness_poc.core.skill_context import SkillResult
-from harness_poc.core.tool_context import ToolContext
+from harness_poc.core.skills import SkillResult
+from harness_poc.core.tools import ToolContext
 
 if TYPE_CHECKING:
     from pathlib import Path

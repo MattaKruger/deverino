@@ -19,20 +19,18 @@ from harness_poc.core.events import EventBus, EventStore
 from harness_poc.core.logging import configure_logging
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.pipeline_runner import PipelineRunner
-from harness_poc.core.pydantic_runtime import (
+from harness_poc.core.runtime import (
     PydanticAgentRuntime,
     build_runtime,
 )
-from harness_poc.core.skill_catalog import build_skill_catalog
-from harness_poc.core.skill_runner import SkillRunner
-from harness_poc.core.skill_scaffolder import SkillScaffolder
+from harness_poc.core.skills import SkillRunner, SkillScaffolder, build_skill_catalog
 from harness_poc.core.storage import (
     BlackboardAccessProxy,
     BlackboardDatabase,
     build_state_context,
     create_db_engine,
 )
-from harness_poc.core.tool_runner import ToolRunner
+from harness_poc.core.tools import ToolRunner
 from harness_poc.core.vespa_client import LiveVespaDocumentClient
 from harness_poc.core.workflow_runner import WorkflowRunner
 from harness_poc.system_tools.knowledge_tools import init_knowledge_context
@@ -50,9 +48,9 @@ if TYPE_CHECKING:
     from pydantic_ai.messages import ModelMessage
     from pydantic_ai.models import Model
 
-    from harness_poc.core.llm_client import Message
     from harness_poc.core.materializer_runner import MaterializerRunner
     from harness_poc.core.processor_supervisor import ProcessorSupervisor
+    from harness_poc.core.runtime import Message
 
 
 def _default_on_text(chunk: str) -> None:

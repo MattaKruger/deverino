@@ -17,8 +17,7 @@ from harness_poc.core.events import (
     SkillCalled,
     SkillCompleted,
 )
-from harness_poc.core.goal_runner import GoalRunner, GoalRunResult
-from harness_poc.core.pydantic_runtime import build_model
+from harness_poc.core.runtime import GoalRunner, GoalRunResult, build_model
 from tests.bench.rubric_loader import Rubric
 
 # Default models — overridable via env vars for cross-model comparison.

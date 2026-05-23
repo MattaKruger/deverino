@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from harness_poc.core.config import LLMConfig
     from harness_poc.core.events import BaseEvent
-    from harness_poc.core.goal_runner import GoalRunResult
+    from harness_poc.core.runtime import GoalRunResult
 
 
 # ---------------------------------------------------------------------------

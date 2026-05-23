@@ -15,7 +15,7 @@ from harness_poc.core.events import (
     PipelineNodeStarted,
     PipelineStarted,
 )
-from harness_poc.core.goal_runner import GoalRunner
+from harness_poc.core.runtime import GoalRunner
 
 if TYPE_CHECKING:
     from pathlib import Path

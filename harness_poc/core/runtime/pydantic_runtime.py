@@ -31,10 +31,10 @@ if TYPE_CHECKING:
     from pydantic_ai.usage import RunUsage
 
     from harness_poc.core.config import HarnessConfig, LLMConfig
-    from harness_poc.core.llm_client import Message, Usage
-    from harness_poc.core.skill_runner import SkillRunner
+    from harness_poc.core.runtime.llm_client import Message, Usage
+    from harness_poc.core.skills import SkillRunner
     from harness_poc.core.storage import BlackboardDatabase
-    from harness_poc.core.tool_runner import ToolRunner
+    from harness_poc.core.tools import ToolRunner
 
 from harness_poc.core.config import APISettings
 
@@ -493,7 +493,7 @@ def _execute_builtin_tool(
             tool_name,
             arguments,
             session_id=ctx.deps.session_id,
-            call_id=ctx.tool_call_id,
+            call_id=_tool_call_id(ctx),
         )
     except Exception:
         _emit_tool_progress(ctx, f"  {tool_name}: FAILED")
@@ -556,13 +556,17 @@ def execute_skill_as_tool(
     # Stream progress so the user sees tool activity during execution.
     _emit_tool_progress(ctx, f"  {skill_name}: {_summarise_args(arguments)} ...")
     try:
+        call_id = _tool_call_id(ctx)
+        call_kwargs: dict[str, Any] = {}
+        if call_id is not None:
+            call_kwargs["call_id"] = call_id
         result = ctx.deps.skill_runner.execute_skill(
             tool_name=skill_name,
             arguments=arguments,
             session_id=ctx.deps.session_id,
             on_text=ctx.deps.stream_text,
             on_tool_event=ctx.deps.on_tool_event,
-            call_id=ctx.tool_call_id,
+            **call_kwargs,
         )
     except Exception:
         _emit_tool_progress(ctx, f"  {skill_name}: FAILED")
@@ -619,6 +623,11 @@ def execute_skill_as_tool(
         },
     )
     return f"[{result.status}] {result.content}"
+
+
+def _tool_call_id(ctx: RunContext[AgentDeps]) -> str | None:
+    call_id = getattr(ctx, "tool_call_id", None)
+    return call_id if isinstance(call_id, str) else None
 
 
 def _with_tool_policy(system_prompt: str) -> str:
