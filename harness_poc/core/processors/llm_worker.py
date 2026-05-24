@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -16,7 +17,11 @@ from harness_poc.core.events import (
 )
 from harness_poc.core.runtime import account_for_model_run, build_runtime, derive_session_state
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from harness_poc.core.config import HarnessConfig
     from harness_poc.core.events import EventBus
     from harness_poc.core.runtime import PydanticAgentRuntime
@@ -122,62 +127,73 @@ def _extract_references(
     """Scan assistant output for [entry:<id>] markers and emit MapEntryReferenced events.
 
     Track B §4.2: Inline regex post-processor that runs immediately before
-    LLMTextEmitted is published.
+    LLMTextEmitted is published. Cross-corpus citations are attributed to the
+    source corpus per §4.3, not the active one.
     """
-    import logging
+    active_corpus_key = f"{config.project_id}:codebase"
 
-    logger = logging.getLogger(__name__)
-
-    # Resolve corpus_key — derive from project config (no session state dependency)
-    corpus_key = f"{config.project_id}:codebase"
-
-    cycle_n = database.get_cycle(corpus_key)
-    context_map = database.get_context_map(corpus_key) or []
-
-    # Check related corpora too (cross-corpus case, §4.3)
     cc = config.cartographer
-    related_keys: list[str] = []
-    if cc.cross_corpus_enabled:
-        related_keys = cc.cross_corpus_related_corpora.get(corpus_key, [])
-    related_maps = database.get_context_maps(related_keys) if related_keys else {}
+    related_keys: list[str] = (
+        cc.cross_corpus_related_corpora.get(active_corpus_key, [])
+        if cc.cross_corpus_enabled
+        else []
+    )
 
-    entries_by_id: dict[str, object] = {}
-    for entry in context_map:
-        entries_by_id[entry.entry_id.replace("-", "")] = entry
-        entries_by_id[entry.entry_id] = entry
-    for entries in related_maps.values():
+    # (entry, source_corpus_key) keyed by both dashed and undashed entry_id.
+    # Active corpus wins on collision (see _index_active below).
+    lookup: dict[str, tuple[object, str]] = {}
+
+    def _index_related(entries: Iterable[object], source: str) -> None:
         for entry in entries:
-            entries_by_id[entry.entry_id.replace("-", "")] = entry
-            entries_by_id[entry.entry_id] = entry
+            entry_id = getattr(entry, "entry_id", "")
+            if not entry_id:
+                continue
+            lookup.setdefault(entry_id.replace("-", ""), (entry, source))
+            lookup.setdefault(entry_id, (entry, source))
 
-    seen: set[str] = set()
+    def _index_active(entries: Iterable[object]) -> None:
+        # Explicit overwrite — active corpus is authoritative on duplicate ids.
+        for entry in entries:
+            entry_id = getattr(entry, "entry_id", "")
+            if not entry_id:
+                continue
+            lookup[entry_id.replace("-", "")] = (entry, active_corpus_key)
+            lookup[entry_id] = (entry, active_corpus_key)
+
+    related_maps = database.get_context_maps(related_keys) if related_keys else {}
+    for source_key, entries in related_maps.items():
+        _index_related(entries, source_key)
+    _index_active(database.get_context_map(active_corpus_key) or [])
+
+    # Per-turn dedup keyed on (source_corpus, entry_id). Same id in two corpora
+    # is theoretical but the dedup must not collapse them.
+    seen: set[tuple[str, str]] = set()
     refs: list[MapEntryReferenced] = []
+    cycle_cache: dict[str, int] = {}
 
     for match in _CITATION_RE.finditer(content):
         entry_id = match.group(1)
-        if entry_id in seen:
+        hit = lookup.get(entry_id)
+        if hit is None:
+            logger.debug("Citation marker references unknown entry_id=%s", entry_id)
             continue
-        seen.add(entry_id)
-        entry = entries_by_id.get(entry_id)
-        if entry is None:
-            # Marker points at evicted or unknown entry — log, do not emit
-            logger.debug(
-                "Citation marker references unknown entry_id=%s",
-                entry_id,
-            )
+        entry, source_corpus = hit
+        dedup_key = (source_corpus, entry_id)
+        if dedup_key in seen:
             continue
-        # Get attributes from entry (could be MapEntry)
-        entry_key = getattr(entry, "key", "")
-        section = getattr(entry, "section", "")
+        seen.add(dedup_key)
+
+        if source_corpus not in cycle_cache:
+            cycle_cache[source_corpus] = database.get_cycle(source_corpus)
 
         refs.append(
             MapEntryReferenced(
                 session_id=session_id,
-                corpus_key=corpus_key,
+                corpus_key=source_corpus,
                 entry_id=entry_id,
-                entry_key=str(entry_key),
-                section=str(section),
-                cycle_n=cycle_n,
+                entry_key=str(getattr(entry, "key", "")),
+                section=str(getattr(entry, "section", "")),
+                cycle_n=cycle_cache[source_corpus],
                 citation_context=content[
                     max(0, match.start() - 80) : match.end() + 80
                 ],
