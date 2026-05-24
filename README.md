@@ -120,7 +120,7 @@ retrieval:
     - docs/acdl
 
 distiller:
-  model: anthropic/claude-haiku-4-5
+  model: deepseek/deepseek-chat
   max_retries: 3
   prompt_template: distiller_v1
 
