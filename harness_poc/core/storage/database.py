@@ -54,8 +54,14 @@ class BlackboardDatabase:
         self._ensure_context_map_freeze_column()
         self._ensure_context_map_schema_version_column()
         self._ensure_context_map_cycles_table()
+        self._ensure_sessions_active_corpus_column()
 
-    def start_session(self, objective: str) -> str:
+    def start_session(
+        self,
+        objective: str,
+        *,
+        active_corpus_key: str | None = None,
+    ) -> str:
         session_id = str(uuid.uuid4())
         with Session(self._engine) as session:
             session.add(
@@ -64,6 +70,7 @@ class BlackboardDatabase:
                     global_objective=objective,
                     status="active",
                     created_at=self._utc_now(),
+                    active_corpus_key=active_corpus_key,
                 )
             )
             session.commit()
@@ -495,6 +502,39 @@ class BlackboardDatabase:
             ).all()
         return list(rows)
 
+    def get_all_corpus_keys(self) -> list[str]:
+        """Return every known corpus key — materialized or pending.
+
+        Union of (a) corpora with a materialized context map and (b) corpora
+        that still have unprocessed events queued. Sorted lexicographically so
+        callers get a stable order without re-sorting.
+        """
+        with Session(self._engine) as session:
+            materialized = session.exec(select(DbContextMap.corpus_key)).all()
+            pending = session.exec(
+                select(DbContextMapEvent.corpus_key)
+                .where(DbContextMapEvent.processed == 0)
+                .distinct()
+            ).all()
+        return sorted(set(materialized) | set(pending))
+
+    def get_session_corpus_key(
+        self,
+        session_id: str,
+        *,
+        default: str,
+    ) -> str:
+        """Return the stored active_corpus_key, falling back to `default`.
+
+        Default applies to legacy sessions created before the schema change
+        and to fresh sessions started without an explicit --corpus flag.
+        """
+        with Session(self._engine) as session:
+            row = session.get(DbSession, session_id)
+        if row is None or not row.active_corpus_key:
+            return default
+        return row.active_corpus_key
+
     def get_context_map(self, corpus_key: str) -> list[MapEntry] | None:
         with Session(self._engine) as session:
             row = session.get(DbContextMap, corpus_key)
@@ -639,6 +679,17 @@ class BlackboardDatabase:
             return
         with self._engine.begin() as connection:
             connection.execute(text("ALTER TABLE context_map ADD COLUMN freeze_until TEXT"))
+
+    def _ensure_sessions_active_corpus_column(self) -> None:
+        """Add sessions.active_corpus_key for databases predating Gap 2."""
+        inspector = inspect(self._engine)
+        cols = {c["name"] for c in inspector.get_columns("sessions")}
+        if "active_corpus_key" in cols:
+            return
+        with self._engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE sessions ADD COLUMN active_corpus_key TEXT"),
+            )
 
     @staticmethod
     def _utc_now() -> str:

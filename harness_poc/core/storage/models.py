@@ -18,6 +18,7 @@ class DbSession(SQLModel, table=True):
     global_objective: str
     status: str
     created_at: str
+    active_corpus_key: str | None = Field(default=None)
 
 
 class DbSharedMemory(SQLModel, table=True):
