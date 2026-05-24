@@ -144,7 +144,7 @@ def test_goal_token_budget_uses_context_delta(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_stuck_detection_blocks_repeated_failed_action() -> None:
-    """Semantic stuck detection blocks actions that previously failed (not successful ones)."""
+    """Semantic stuck detection blocks repeated actions regardless of success/failure."""
     # First attempt: nonexistent_skill fails
     state = _make_app_state([
         tool_call_response("nonexistent_skill", {}),

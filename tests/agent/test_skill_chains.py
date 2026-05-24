@@ -139,8 +139,8 @@ def test_mocked_search_then_reads_memory_then_evaluates():
 def test_stuck_detection_blocks_repeated_failed_skill():
     """Model repeats the same failing read_memory call 3+ times.
 
-    GoalRunner tracks failed actions via _failed_action_keys. After
-    stuck_threshold (3) consecutive semantically-identical failures,
+    GoalRunner tracks all actions via _action_keys. After
+    stuck_threshold (3) consecutive semantically-identical attempts,
     subsequent calls are blocked with SkillCompleted(status="blocked")
     instead of executing. The loop exhausts its iteration budget.
 
@@ -291,8 +291,7 @@ def test_permission_denied_skill_returns_blocked():
     """Skill returns status="blocked" due to permission restrictions.
 
     The mock override returns a SkillResult with status="blocked".
-    GoalRunner treats this as a non-success status and tracks it
-    in _failed_action_keys. The model adapts and completes.
+    GoalRunner tracks it in _action_keys. The model adapts and completes.
     """
     harness = SessionHarness.build(
         [

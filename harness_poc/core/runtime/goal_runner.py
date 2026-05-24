@@ -452,7 +452,7 @@ class GoalRunner:
     stuck_threshold: int = 3
     decision_model: Model | None = None
 
-    _failed_action_keys: deque[str] = field(default_factory=lambda: deque(maxlen=5))
+    _action_keys: deque[str] = field(default_factory=lambda: deque(maxlen=5))
 
     def run(
         self,
@@ -483,7 +483,7 @@ class GoalRunner:
             },
         )
         start_time = time.monotonic()
-        self._failed_action_keys.clear()
+        self._action_keys.clear()
         total_tokens = 0
         previous_context_tokens = 0
         events: list[dict[str, Any]] = []
@@ -629,11 +629,11 @@ class GoalRunner:
                 },
             )
 
-            # --- Stuck detection (semantic, only against FAILED actions) ---
+            # --- Stuck detection (semantic, against ALL repeated actions) ---
             if self._is_semantically_stuck(tool_name, arguments):
                 error_msg = (
                     "Action rejected: You have already attempted this specific "
-                    f"approach ({tool_name}). It failed previously. You must "
+                    f"approach ({tool_name}) multiple times. You must "
                     "pivot your strategy or use a different tool."
                 )
                 logger.warning(
@@ -749,9 +749,8 @@ class GoalRunner:
                 # Collect successful tool results for post-run observation extraction
                 if result.status == "success" and result.content:
                     tool_results.append(f"[tool: {tool_name}]\n{result.content[:4000]}")
-                # Track failed actions for semantic stuck detection
-                if result.status in ("failed", "error", "blocked"):
-                    self._failed_action_keys.append(_semantic_key(tool_name, arguments))
+                # Track all actions for semantic stuck detection
+                self._action_keys.append(_semantic_key(tool_name, arguments))
                 events.append(
                     {
                         "type": "tool_observation",
@@ -779,8 +778,8 @@ class GoalRunner:
                         content=error_msg,
                     )
                 )
-                # Track failed actions for semantic stuck detection
-                self._failed_action_keys.append(_semantic_key(tool_name, arguments))
+                # Track all actions for semantic stuck detection
+                self._action_keys.append(_semantic_key(tool_name, arguments))
                 events.append(
                     {
                         "type": "tool_observation",
@@ -995,15 +994,15 @@ class GoalRunner:
             "that the goal is complete.\n"
             "- If you are stuck or cannot proceed, call `evaluate_goal` with "
             "`is_complete: false` and explain what is blocking you.\n"
-            "- Do not repeat a previously failed action — the system "
+            "- Do not repeat a previously attempted action — the system "
             "will detect semantically similar attempts and block them.\n"
             "- Be concise. Focus on actions, not conversation.\n"
         )
 
     def _is_semantically_stuck(self, tool_name: str, arguments: dict[str, Any]) -> bool:
-        """Check if this action is semantically similar to a recent failed action."""
-        if len(self._failed_action_keys) < self.stuck_threshold:
+        """Check if this action has been repeated enough to be considered stuck."""
+        if len(self._action_keys) < self.stuck_threshold:
             return False
         key = _semantic_key(tool_name, arguments)
-        match_count = sum(1 for k in self._failed_action_keys if k == key)
+        match_count = sum(1 for k in self._action_keys if k == key)
         return match_count >= self.stuck_threshold
