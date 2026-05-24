@@ -19,11 +19,20 @@ parameters:
         - "schema": You discovered a data format, config shape, or API contract
         - "dispute": You found a stale or incorrect entry in the current context map
         - "insight": You noticed a non-obvious relationship between components
+        - "boundary": You identified something definitively NOT in the codebase
+          (missing file, absent feature, undocumented area). Prevents hallucination.
+        - "constant": You documented a stable domain constant (config value,
+          magic number, fixed name).
+        - "result": You recorded a reusable computation or analysis result
+          that need not be re-derived.
       enum:
         - entity
         - schema
         - dispute
         - insight
+        - boundary
+        - constant
+        - result
     summary:
       type: string
       description: >-
@@ -73,3 +82,6 @@ designed to keep the signal-to-noise ratio high.
 | schema           | SchemaDiscovered            |
 | dispute          | FactDisputed                |
 | insight          | ContextualInsightDiscovered |
+| boundary         | BoundaryIdentified          |
+| constant         | ConstantDocumented          |
+| result           | ResultRecorded              |

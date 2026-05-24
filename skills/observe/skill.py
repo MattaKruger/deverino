@@ -4,9 +4,13 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.events import (
+    BoundaryIdentified,
+    ConstantDocumented,
+    ContextMapEvent,
     ContextualInsightDiscovered,
     EntityReferenced,
     FactDisputed,
+    ResultRecorded,
     SchemaDiscovered,
 )
 from harness_poc.core.skills import SkillResult
@@ -15,6 +19,130 @@ if TYPE_CHECKING:
     from harness_poc.core.skills import SkillContext
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Event builders — one per observation_type
+# ---------------------------------------------------------------------------
+
+
+def _build_entity(
+    ctx: SkillContext,
+    corpus_key: str,
+    summary: str,
+    detail: str,
+) -> ContextMapEvent:
+    return EntityReferenced(
+        session_id=ctx.session_id,
+        corpus_key=corpus_key,
+        entity_name=summary[:200],
+        entity_type=_guess_entity_type(summary),
+        context=detail,
+    )
+
+
+def _build_schema(
+    ctx: SkillContext,
+    corpus_key: str,
+    summary: str,
+    detail: str,
+) -> ContextMapEvent:
+    return SchemaDiscovered(
+        session_id=ctx.session_id,
+        corpus_key=corpus_key,
+        schema_description=summary,
+        example=detail,
+    )
+
+
+def _build_dispute(
+    ctx: SkillContext,
+    corpus_key: str,
+    summary: str,
+    detail: str,  # noqa: ARG001 — kept for uniform signature
+) -> ContextMapEvent:
+    return FactDisputed(
+        session_id=ctx.session_id,
+        corpus_key=corpus_key,
+        previous_claim=_find_disputed_entry(ctx, corpus_key, summary),
+        corrected_claim=summary,
+        source_doc_id="",
+    )
+
+
+def _build_insight(
+    ctx: SkillContext,
+    corpus_key: str,
+    summary: str,
+    detail: str,  # noqa: ARG001 — kept for uniform signature
+) -> ContextMapEvent:
+    return ContextualInsightDiscovered(
+        session_id=ctx.session_id,
+        corpus_key=corpus_key,
+        insight=summary,
+        supporting_events=[],
+        map_section="context_understanding",
+    )
+
+
+def _build_boundary(
+    ctx: SkillContext,
+    corpus_key: str,
+    summary: str,
+    detail: str,
+) -> ContextMapEvent:
+    return BoundaryIdentified(
+        session_id=ctx.session_id,
+        corpus_key=corpus_key,
+        boundary_description=summary,
+        detail=detail,
+    )
+
+
+def _build_constant(
+    ctx: SkillContext,
+    corpus_key: str,
+    summary: str,
+    detail: str,
+) -> ContextMapEvent:
+    return ConstantDocumented(
+        session_id=ctx.session_id,
+        corpus_key=corpus_key,
+        constant_summary=summary,
+        detail=detail,
+    )
+
+
+def _build_result(
+    ctx: SkillContext,
+    corpus_key: str,
+    summary: str,
+    detail: str,
+) -> ContextMapEvent:
+    return ResultRecorded(
+        session_id=ctx.session_id,
+        corpus_key=corpus_key,
+        result_summary=summary,
+        detail=detail,
+    )
+
+
+_Builder = "Callable[[SkillContext, str, str, str], ContextMapEvent]"
+
+_BUILDERS: dict[str, _Builder] = {
+    "entity": _build_entity,
+    "schema": _build_schema,
+    "dispute": _build_dispute,
+    "insight": _build_insight,
+    "boundary": _build_boundary,
+    "constant": _build_constant,
+    "result": _build_result,
+}
+
+
+# ---------------------------------------------------------------------------
+# Main entrypoint
+# ---------------------------------------------------------------------------
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
@@ -29,45 +157,16 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     if not detail:
         return SkillResult(status="failed", content="Missing detail.", artifacts={})
 
-    corpus_key = f"{ctx.config.project_id}:codebase"
-
-    if observation_type == "entity":
-        event = EntityReferenced(
-            session_id=ctx.session_id,
-            corpus_key=corpus_key,
-            entity_name=summary[:200],
-            entity_type=_guess_entity_type(summary),
-            context=detail,
-        )
-    elif observation_type == "schema":
-        event = SchemaDiscovered(
-            session_id=ctx.session_id,
-            corpus_key=corpus_key,
-            schema_description=summary,
-            example=detail,
-        )
-    elif observation_type == "dispute":
-        event = FactDisputed(
-            session_id=ctx.session_id,
-            corpus_key=corpus_key,
-            previous_claim=_find_disputed_entry(ctx, corpus_key, summary),
-            corrected_claim=summary,
-            source_doc_id="",
-        )
-    elif observation_type == "insight":
-        event = ContextualInsightDiscovered(
-            session_id=ctx.session_id,
-            corpus_key=corpus_key,
-            insight=summary,
-            supporting_events=[],
-            map_section="context_understanding",
-        )
-    else:
+    builder = _BUILDERS.get(observation_type)
+    if builder is None:
         return SkillResult(
             status="failed",
             content=f"Unknown observation_type: {observation_type!r}",
             artifacts={},
         )
+
+    corpus_key = f"{ctx.config.project_id}:codebase"
+    event = builder(ctx, corpus_key, summary, detail)
 
     try:
         ctx.database.append_context_map_event(event)

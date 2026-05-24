@@ -67,6 +67,24 @@ class ContextualInsightDiscovered(ContextMapEvent):
     map_section: str
 
 
+class BoundaryIdentified(ContextMapEvent):
+    event_type: Literal["boundary_identified"] = "boundary_identified"
+    boundary_description: str
+    detail: str
+
+
+class ConstantDocumented(ContextMapEvent):
+    event_type: Literal["constant_documented"] = "constant_documented"
+    constant_summary: str
+    detail: str
+
+
+class ResultRecorded(ContextMapEvent):
+    event_type: Literal["result_recorded"] = "result_recorded"
+    result_summary: str
+    detail: str
+
+
 class MapEntryInserted(ContextMapEvent):
     """Emitted when a MapEntry appears for the first time (first_seen_cycle == cycle_n).
 
@@ -131,6 +149,9 @@ CONTEXT_MAP_EVENT_REGISTRY: dict[str, type[ContextMapEvent]] = {
     "search_failed": SearchFailed,
     "fact_disputed": FactDisputed,
     "contextual_insight_discovered": ContextualInsightDiscovered,
+    "boundary_identified": BoundaryIdentified,
+    "constant_documented": ConstantDocumented,
+    "result_recorded": ResultRecorded,
     "map_entry_inserted": MapEntryInserted,
     "map_entry_promoted": MapEntryPromoted,  # deprecated — kept for historical deserialization
     "map_entry_evicted": MapEntryEvicted,
