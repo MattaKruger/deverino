@@ -130,14 +130,25 @@ def _extract_references(
     LLMTextEmitted is published. Cross-corpus citations are attributed to the
     source corpus per §4.3, not the active one.
     """
-    active_corpus_key = f"{config.project_id}:codebase"
+    active_corpus_key = database.get_session_corpus_key(
+        session_id,
+        default=f"{config.project_id}:codebase",
+    )
 
     cc = config.cartographer
-    related_keys: list[str] = (
-        cc.cross_corpus_related_corpora.get(active_corpus_key, [])
-        if cc.cross_corpus_enabled
-        else []
-    )
+    if not cc.cross_corpus_enabled:
+        related_keys: list[str] = []
+    elif cc.cross_corpus_auto_discover:
+        all_keys = database.get_all_corpus_keys()
+        related_keys = [k for k in all_keys if k != active_corpus_key]
+        # Optional whitelist filter — when configured for this active key,
+        # restrict the auto-discovered set to it.
+        whitelist = cc.cross_corpus_related_corpora.get(active_corpus_key)
+        if whitelist:
+            whitelist_set = set(whitelist)
+            related_keys = [k for k in related_keys if k in whitelist_set]
+    else:
+        related_keys = cc.cross_corpus_related_corpora.get(active_corpus_key, [])
 
     # (entry, source_corpus_key) keyed by both dashed and undashed entry_id.
     # Active corpus wins on collision (see _index_active below).
@@ -175,7 +186,13 @@ def _extract_references(
         entry_id = match.group(1)
         hit = lookup.get(entry_id)
         if hit is None:
-            logger.debug("Citation marker references unknown entry_id=%s", entry_id)
+            logger.warning(
+                "Unresolved [entry:%s] citation. active=%s related=%s known=%s",
+                entry_id,
+                active_corpus_key,
+                related_keys,
+                database.get_all_corpus_keys(),
+            )
             continue
         entry, source_corpus = hit
         dedup_key = (source_corpus, entry_id)

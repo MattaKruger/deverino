@@ -33,6 +33,7 @@ _CARTOGRAPHER_KNOWN_KEYS = frozenset(
         "priority_weights",
         "prompt_block",
         "cross_corpus",
+        "cross_corpus_auto_discover",
     }
 )
 
@@ -64,6 +65,7 @@ class CartographerConfig:
     cross_corpus_related_corpora: dict[str, list[str]] = field(default_factory=dict)
     cross_corpus_max_entries: int = 16
     cross_corpus_min_priority: float = 0.7
+    cross_corpus_auto_discover: bool = True
 
 
 def load_distiller_config(raw: dict[str, Any]) -> DistillerConfig:
@@ -110,6 +112,9 @@ def load_cartographer_config(raw: dict[str, Any]) -> CartographerConfig:
         cross_corpus_related_corpora=_parse_cross_corpus_corpora(raw),
         cross_corpus_max_entries=_parse_cross_corpus_int(raw, "max_cross_entries", 16),
         cross_corpus_min_priority=_parse_cross_corpus_float(raw, "min_priority", 0.7),
+        cross_corpus_auto_discover=bool(
+            raw.get("cross_corpus_auto_discover", True),
+        ),
     )
 
 
