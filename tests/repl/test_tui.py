@@ -1,13 +1,20 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock
 
 from textual.widgets import OptionList, TextArea
 
 from harness_poc.app_factory import StreamingContext
 from harness_poc.core.config import TuiConfig
-from harness_poc.tui import ChatApp, _format_spinner_status, _should_render_markdown
+from harness_poc.tui import (
+    ChatApp,
+    _format_spinner_status,
+    _is_chat_at_scroll_end,
+    _scroll_chat_end_if_following,
+    _should_render_markdown,
+)
 
 if TYPE_CHECKING:
     import pytest
@@ -15,6 +22,17 @@ if TYPE_CHECKING:
     from harness_poc.app_factory import AppState
 
 EXPECTED_SKILL_COMPLETIONS = 2
+
+
+@dataclass
+class FakeScroll:
+    scroll_y: float
+    max_scroll_y: float
+    calls: list[str] = field(default_factory=list)
+
+    def scroll_end(self, *, animate: bool = False) -> None:
+        del animate
+        self.calls.append("scroll_end")
 
 
 def _make_app_state(tui: TuiConfig | None = None) -> AppState:
@@ -97,6 +115,24 @@ def test_tui_keeps_markdown_for_block_content() -> None:
     assert _should_render_markdown("| A | B |\n|---|---|") is True
     assert _should_render_markdown("```python\nprint('x')\n```") is True
     assert _should_render_markdown("- item") is True
+
+
+def test_tui_auto_scrolls_when_chat_was_already_at_bottom() -> None:
+    chat = FakeScroll(scroll_y=100.0, max_scroll_y=100.0)
+
+    assert _is_chat_at_scroll_end(cast("Any", chat)) is True
+    _scroll_chat_end_if_following(cast("Any", chat), was_at_end=True)
+
+    assert chat.calls == ["scroll_end"]
+
+
+def test_tui_does_not_auto_scroll_when_user_has_scrolled_up() -> None:
+    chat = FakeScroll(scroll_y=90.0, max_scroll_y=100.0)
+
+    assert _is_chat_at_scroll_end(cast("Any", chat)) is False
+    _scroll_chat_end_if_following(cast("Any", chat), was_at_end=False)
+
+    assert chat.calls == []
 
 
 async def test_vim_disabled_by_default() -> None:

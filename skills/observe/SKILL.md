@@ -11,6 +11,12 @@ auto_invokable: true
 parameters:
   type: object
   properties:
+    corpus_key:
+      type: string
+      description: >-
+        Target corpus for this observation. Defaults to '{project}:codebase'.
+        Use when observing facts about a different corpus (e.g.,
+        'deverino:dashboard' for dashboard-specific observations).
     observation_type:
       type: string
       description: >-

@@ -43,6 +43,8 @@ logger = logging.getLogger(__name__)
 _TOKEN_MILLION = 1_000_000
 _TOKEN_THOUSAND = 1_000
 
+_SCROLL_END_EPSILON = 1.0
+
 _SPINNER_ICONS = [
     "( ͡° ͜ʖ ͡°)",
     "(ง •̀_•́)ง",
@@ -109,6 +111,15 @@ def _should_render_markdown(text: str) -> bool:
 def _should_show_completions(line_before_cursor: str) -> bool:
     stripped = line_before_cursor.lstrip()
     return stripped.startswith("/") and "\t" not in stripped
+
+
+def _is_chat_at_scroll_end(chat: VerticalScroll) -> bool:
+    return chat.scroll_y >= chat.max_scroll_y - _SCROLL_END_EPSILON
+
+
+def _scroll_chat_end_if_following(chat: VerticalScroll, *, was_at_end: bool) -> None:
+    if was_at_end:
+        chat.scroll_end(animate=False)
 
 
 def _special_resource_completion(line_before_cursor: str) -> str | None:
@@ -589,6 +600,7 @@ class ChatApp(App[None]):
             current = "".join(buffer)
 
             def _update() -> None:
+                was_at_end = _is_chat_at_scroll_end(chat)
                 if state["widget"] is None:
                     self._stop_spinner()
                     w = Static(current, markup=False)
@@ -597,7 +609,7 @@ class ChatApp(App[None]):
                     chat.mount(w)
                 else:
                     state["widget"].update(current)
-                chat.scroll_end(animate=False)
+                _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
 
             self.call_from_thread(_update)
 
@@ -623,13 +635,14 @@ class ChatApp(App[None]):
             combined = "\n".join(f"  ⚙ {line}" for line in display_lines)
 
             def _update_tool() -> None:
+                was_at_end = _is_chat_at_scroll_end(chat)
                 if tool_state["widget"] is None:
                     w = Static(combined, classes="tool-line", markup=False)
                     tool_state["widget"] = w
                     chat.mount(w)
                 else:
                     tool_state["widget"].update(combined)
-                chat.scroll_end(animate=False)
+                _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
 
             self.call_from_thread(_update_tool)
 
@@ -643,8 +656,9 @@ class ChatApp(App[None]):
         except Exception as exc:
             logger.exception("ChatApp worker raised", extra={"text": text})
             self._stop_spinner()
+            was_at_end = _is_chat_at_scroll_end(chat)
             await chat.mount(Static(f"[red]Error: {exc}[/red]", markup=True))
-            chat.scroll_end(animate=False)
+            _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
 
         # Flush any tokens buffered in the last throttle window
         if buffer and state["widget"] is not None:
@@ -652,6 +666,7 @@ class ChatApp(App[None]):
 
         # Replace live streaming Static with rendered Markdown
         response = "".join(buffer)
+        was_at_end = _is_chat_at_scroll_end(chat)
         if state["widget"] is not None:
             await state["widget"].remove()
         if response:
@@ -666,31 +681,34 @@ class ChatApp(App[None]):
                 await chat.mount(Static(response, markup=False))
             self._chat_messages.append(f"Agent: {response}")
         self._stop_spinner()
-        chat.scroll_end(animate=False)
+        _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
         self._app_state.streaming.reset_callbacks()
         self._update_header()
 
     def _tui_print_markdown(self, text: str) -> None:
         def _mount() -> None:
             chat = self.query_one("#chat", VerticalScroll)
+            was_at_end = _is_chat_at_scroll_end(chat)
             linkified = _linkify_file_refs(text, str(self._app_state.config.project_root))
             chat.mount(Markdown(linkified, open_links=False))
-            chat.scroll_end(animate=False)
+            _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
 
         self.call_from_thread(_mount)
 
     def _tui_print_error(self, text: str) -> None:
         def _mount() -> None:
             chat = self.query_one("#chat", VerticalScroll)
+            was_at_end = _is_chat_at_scroll_end(chat)
             chat.mount(Static(f"[red]{text}[/red]", markup=True))
-            chat.scroll_end(animate=False)
+            _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
 
         self.call_from_thread(_mount)
 
     def _tui_print_text(self, text: str, markup: bool = True) -> None:  # noqa: FBT001, FBT002
         def _mount() -> None:
             chat = self.query_one("#chat", VerticalScroll)
+            was_at_end = _is_chat_at_scroll_end(chat)
             chat.mount(Static(text, markup=markup))
-            chat.scroll_end(animate=False)
+            _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
 
         self.call_from_thread(_mount)

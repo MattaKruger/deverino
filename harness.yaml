@@ -79,3 +79,11 @@ cartographer:
     entity: 0.6
     result: 0.5
     constant: 0.4
+  cross_corpus:
+    enabled: true
+    related_corpora:
+      "deverino:codebase":
+        - "deverino:dashboard"
+        - "deverino:benchmarks"
+    max_cross_entries: 16
+    min_priority: 0.7

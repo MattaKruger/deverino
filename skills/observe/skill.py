@@ -165,7 +165,20 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             artifacts={},
         )
 
-    corpus_key = f"{ctx.config.project_id}:codebase"
+    corpus_key = (
+        str(arguments.get("corpus_key") or "").strip()
+        or f"{ctx.config.project_id}:codebase"
+    )
+    if ":" not in corpus_key:
+        return SkillResult(
+            status="failed",
+            content=(
+                f"Invalid corpus_key {corpus_key!r}: expected 'project:name' form "
+                f"(e.g., '{ctx.config.project_id}:dashboard')."
+            ),
+            artifacts={},
+        )
+
     event = builder(ctx, corpus_key, summary, detail)
 
     try:
