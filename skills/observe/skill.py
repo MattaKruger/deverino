@@ -170,7 +170,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 
     try:
         ctx.database.append_context_map_event(event)
-    except (AttributeError, PermissionError):
+    except AttributeError, PermissionError:
         logger.debug("Skipping %s context-map event (no event proxy)", observation_type)
         return SkillResult(
             status="success",
@@ -229,7 +229,7 @@ def _find_disputed_entry(
     """Try to find a matching entry in the current context map that is being disputed."""
     try:
         current_map = ctx.database.get_context_map(corpus_key)
-    except (AttributeError, PermissionError):
+    except AttributeError, PermissionError:
         return ""
 
     if not current_map:

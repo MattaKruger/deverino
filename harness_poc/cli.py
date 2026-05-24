@@ -725,10 +725,7 @@ def _event_log_entry(event: BaseEvent) -> dict[str, str]:
 def _append_state(command: str, text: str) -> None:
     app_state = _new_app_state()
     _run_command(lambda: append_session_state(app_state, command, text))
-    console.print(
-        "[dim]This was added to a one-shot session. Use the REPL for "
-        "multi-step propose/approve flows.[/dim]"
-    )
+    console.print("[dim]This was added to a one-shot session. Use the REPL for multi-step propose/approve flows.[/dim]")
 
 
 def _index_documents(
@@ -846,9 +843,7 @@ def pipeline_run(
 
     status_style = {"completed": "green", "failed": "red"}
     color = status_style.get(result.status, "white")
-    console.print(
-        f"\n[{color}]Pipeline '{name}': {result.status}[/{color}] ({result.duration_s:.1f}s)\n"
-    )
+    console.print(f"\n[{color}]Pipeline '{name}': {result.status}[/{color}] ({result.duration_s:.1f}s)\n")
 
     for node_id, node_result in result.node_results.items():
         node_color = {
@@ -958,9 +953,7 @@ def cartographer_calibrate(
     for obs_type in sorted(result.weights):
         w = result.weights[obs_type]
         delta_str = f"{w['delta']:+.2f}"
-        delta_style = (
-            "green" if w["delta"] > 0 else "red" if w["delta"] < 0 else "dim"
-        )
+        delta_style = "green" if w["delta"] > 0 else "red" if w["delta"] < 0 else "dim"
         table.add_row(
             obs_type,
             f"{w['current']:.2f}",

@@ -166,6 +166,7 @@ class SkillRunner:
 
             result = execute(context, normalized_arguments)
             import inspect
+
             if inspect.iscoroutine(result):
                 try:
                     loop = asyncio.get_running_loop()
@@ -259,11 +260,7 @@ class SkillRunner:
     @staticmethod
     def _normalize_arguments(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(arguments)
-        if (
-            tool_name == "delegate_task"
-            and "template_name" in normalized
-            and "persona" not in normalized
-        ):
+        if tool_name == "delegate_task" and "template_name" in normalized and "persona" not in normalized:
             normalized["persona"] = normalized["template_name"]
 
         return normalized
@@ -325,10 +322,7 @@ class SkillRunner:
             msg = f"Skill {skill_file} must define string name and description"
             raise TypeError(msg)
         if skill_type not in ("tool", "skill", "knowledge"):
-            msg = (
-                f"Skill {skill_file} type must be 'tool', 'skill', or 'knowledge', "
-                f"got {skill_type!r}"
-            )
+            msg = f"Skill {skill_file} type must be 'tool', 'skill', or 'knowledge', got {skill_type!r}"
             raise TypeError(msg)
         if not isinstance(parameters, dict):
             msg = f"Skill {skill_file} parameters must be a mapping"

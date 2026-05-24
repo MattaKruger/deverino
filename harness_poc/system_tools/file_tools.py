@@ -211,9 +211,7 @@ def _run_rg(args: list[str], cwd: Path | None = None, timeout: int = 60) -> tupl
         return result.stdout, result.returncode
 
 
-def _run_find(
-    path: str, pattern: str, limit: int, offset: int, cwd: Path | None
-) -> tuple[list[str], int]:
+def _run_find(path: str, pattern: str, limit: int, offset: int, cwd: Path | None) -> tuple[list[str], int]:
     """Fallback: find files by name pattern (no ripgrep)."""
     find_path = shutil.which("find")
     if find_path is None:
@@ -479,8 +477,7 @@ def read_file(  # noqa: PLR0911
     if end_idx < total_lines:
         result["truncated"] = True
         result["hint"] = (
-            f"Use offset={end_idx + 1} to continue reading "
-            f"(showing {offset}-{end_idx} of {total_lines} lines)"
+            f"Use offset={end_idx + 1} to continue reading (showing {offset}-{end_idx} of {total_lines} lines)"
         )
 
     return result
@@ -580,9 +577,7 @@ def patch(  # noqa: PLR0911
         return {"error": f"Failed to read: {e}"}
 
     # Fuzzy find-and-replace
-    new_content, match_count, strategy = _fuzzy_find_and_replace(
-        content, old_string, new_string, replace_all
-    )
+    new_content, match_count, strategy = _fuzzy_find_and_replace(content, old_string, new_string, replace_all)
 
     if match_count == 0:
         error_msg = f"Could not find match for old_string in {path}"
@@ -590,9 +585,7 @@ def patch(  # noqa: PLR0911
         lower_old = old_string.strip().lower()
         lower_content = content.lower()
         if lower_old in lower_content:
-            error_msg += (
-                " (hint: a case-insensitive match exists — verify exact whitespace and indentation)"
-            )
+            error_msg += " (hint: a case-insensitive match exists — verify exact whitespace and indentation)"
         return {"error": error_msg}
 
     if not replace_all and match_count > 1 and strategy is None:
@@ -846,8 +839,7 @@ _register(
             "path": {
                 "type": "string",
                 "description": (
-                    "Path to the file to write (will be created if it doesn't exist, "
-                    "overwritten if it does)"
+                    "Path to the file to write (will be created if it doesn't exist, overwritten if it does)"
                 ),
             },
             "content": {
@@ -889,9 +881,7 @@ _register(
             },
             "replace_all": {
                 "type": "boolean",
-                "description": (
-                    "Replace all occurrences instead of requiring a unique match (default: false)"
-                ),
+                "description": ("Replace all occurrences instead of requiring a unique match (default: false)"),
                 "default": False,
             },
         },
@@ -915,24 +905,17 @@ _register(
         "properties": {
             "pattern": {
                 "type": "string",
-                "description": (
-                    "Regex pattern for content search, or glob pattern (e.g., '*.py') "
-                    "for file search"
-                ),
+                "description": ("Regex pattern for content search, or glob pattern (e.g., '*.py') for file search"),
             },
             "target": {
                 "type": "string",
                 "enum": ["content", "files"],
-                "description": (
-                    "'content' searches inside file contents, 'files' searches for files by name"
-                ),
+                "description": ("'content' searches inside file contents, 'files' searches for files by name"),
                 "default": "content",
             },
             "path": {
                 "type": "string",
-                "description": (
-                    "Directory or file to search in (default: current working directory)"
-                ),
+                "description": ("Directory or file to search in (default: current working directory)"),
                 "default": ".",
             },
             "file_glob": {

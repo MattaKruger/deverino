@@ -110,9 +110,7 @@ class BlackboardDatabase:
     def get_last_session_id(self) -> str | None:
         with Session(self._engine) as session:
             return session.exec(
-                select(DbSession.session_id)
-                .order_by(col(DbSession.created_at).desc())
-                .limit(1)
+                select(DbSession.session_id).order_by(col(DbSession.created_at).desc()).limit(1)
             ).first()
 
     def session_exists(self, session_id: str) -> bool:
@@ -311,9 +309,7 @@ class BlackboardDatabase:
                 session.add(project_row)
                 session.flush()
 
-            next_state = StatePayload.from_dict(project_row.state_payload).append_payload(
-                proposal_payload
-            )
+            next_state = StatePayload.from_dict(project_row.state_payload).append_payload(proposal_payload)
             project_row.state_payload = next_state.to_dict()
             project_row.version += 1
             project_row.updated_at = now
@@ -463,11 +459,7 @@ class BlackboardDatabase:
 
     def list_chunks_for_source(self, source_id: str) -> list[DbDocumentChunk]:
         with Session(self._engine) as session:
-            return list(
-                session.exec(
-                    select(DbDocumentChunk).where(DbDocumentChunk.source_id == source_id)
-                ).all()
-            )
+            return list(session.exec(select(DbDocumentChunk).where(DbDocumentChunk.source_id == source_id)).all())
 
     def append_context_map_event(self, event: ContextMapEvent) -> None:
         with Session(self._engine) as session:
@@ -484,9 +476,7 @@ class BlackboardDatabase:
             )
             session.commit()
 
-    def get_pending_context_map_events(
-        self, corpus_key: str, limit: int = 50
-    ) -> list[DbContextMapEvent]:
+    def get_pending_context_map_events(self, corpus_key: str, limit: int = 50) -> list[DbContextMapEvent]:
         with Session(self._engine) as session:
             return list(
                 session.exec(
@@ -501,9 +491,7 @@ class BlackboardDatabase:
     def get_pending_corpus_keys(self) -> list[str]:
         with Session(self._engine) as session:
             rows = session.exec(
-                select(DbContextMapEvent.corpus_key)
-                .where(DbContextMapEvent.processed == 0)
-                .distinct()
+                select(DbContextMapEvent.corpus_key).where(DbContextMapEvent.processed == 0).distinct()
             ).all()
         return list(rows)
 
@@ -610,9 +598,7 @@ class BlackboardDatabase:
         if not corpus_keys:
             return {}
         with Session(self._engine) as session:
-            rows = session.exec(
-                select(DbContextMap).where(col(DbContextMap.corpus_key).in_(corpus_keys))
-            ).all()
+            rows = session.exec(select(DbContextMap).where(col(DbContextMap.corpus_key).in_(corpus_keys))).all()
         result: dict[str, list[MapEntry]] = {}
         for row in rows:
             try:
@@ -636,9 +622,7 @@ class BlackboardDatabase:
         if "schema_version" in columns:
             return
         with self._engine.begin() as connection:
-            connection.execute(
-                text("ALTER TABLE context_map ADD COLUMN schema_version INTEGER DEFAULT 1")
-            )
+            connection.execute(text("ALTER TABLE context_map ADD COLUMN schema_version INTEGER DEFAULT 1"))
 
     def _ensure_context_map_cycles_table(self) -> None:
         inspector = inspect(self._engine)

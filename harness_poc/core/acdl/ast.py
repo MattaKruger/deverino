@@ -190,7 +190,15 @@ type PromptBodyItem = (
 )
 
 type RoleBodyItem = (
-    ContextVar | TemplateCall | StringLiteral | CommentBlock | ConditionalBlock | LoopBlock | SwitchBlock | NameDef | FragInvocation
+    ContextVar
+    | TemplateCall
+    | StringLiteral
+    | CommentBlock
+    | ConditionalBlock
+    | LoopBlock
+    | SwitchBlock
+    | NameDef
+    | FragInvocation
 )
 
 
@@ -213,8 +221,7 @@ class RoleMessage:
 
 
 type Expression = (
-    ContextVar | TemplateCall | StringLiteral | NumberLiteral | NameRef | TimeIndex
-    | Comparison | BinaryOp | Identifier
+    ContextVar | TemplateCall | StringLiteral | NumberLiteral | NameRef | TimeIndex | Comparison | BinaryOp | Identifier
 )
 
 

@@ -49,9 +49,7 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 
     current_map: list[MapEntry] = db.get_context_map(corpus_key) or []
     cycle_n = db.get_and_bump_cycle(corpus_key)
-    distiller_model = build_model(
-        ctx.config.llm, fallback_model=None
-    )  # resolved_model handles the fallback
+    distiller_model = build_model(ctx.config.llm, fallback_model=None)  # resolved_model handles the fallback
 
     events = _events_from_rows(pending, ctx.config.runtime.materializer_max_event_tokens)
     try:
@@ -63,9 +61,7 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             artifacts={},
         )
 
-    result = deterministic_cartographer(
-        distilled, current_map, cycle_n, ctx.config.cartographer
-    )
+    result = deterministic_cartographer(distilled, current_map, cycle_n, ctx.config.cartographer)
 
     # Emit MapEntryInserted for newly seen entries
     for entry in result.new_map:
@@ -107,10 +103,7 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 
     return SkillResult(
         status="success",
-        content=(
-            f"Materialized {len(pending)} event(s) for {corpus_key}. "
-            f"Map now {token_count} tokens."
-        ),
+        content=(f"Materialized {len(pending)} event(s) for {corpus_key}. Map now {token_count} tokens."),
         artifacts={
             "corpus_key": corpus_key,
             "events_processed": len(pending),
@@ -121,9 +114,7 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     )
 
 
-def _events_from_rows(
-    rows: list[Any], max_event_tokens: int
-) -> list[ContextMapEvent]:
+def _events_from_rows(rows: list[Any], max_event_tokens: int) -> list[ContextMapEvent]:
     """Deserialize pending event rows, respecting a token budget for the Distiller input."""
     import json
     import logging
@@ -144,7 +135,7 @@ def _events_from_rows(
             data = json.loads(serialized)
             result.append(deserialize_event(data))
             used += len(serialized)
-        except (json.JSONDecodeError, Exception):  # noqa: BLE001
+        except json.JSONDecodeError, Exception:  # noqa: BLE001
             logger.debug("Failed to deserialize context map event row", exc_info=True)
             continue
     return result
@@ -156,12 +147,6 @@ def _map_changed(old_map: list[MapEntry], new_map: list[MapEntry]) -> bool:
     def _key(entry: MapEntry) -> str:
         return entry.key
 
-    old_normalized = [
-        entry.model_dump(exclude={"last_updated"})
-        for entry in sorted(old_map, key=_key)
-    ]
-    new_normalized = [
-        entry.model_dump(exclude={"last_updated"})
-        for entry in sorted(new_map, key=_key)
-    ]
+    old_normalized = [entry.model_dump(exclude={"last_updated"}) for entry in sorted(old_map, key=_key)]
+    new_normalized = [entry.model_dump(exclude={"last_updated"}) for entry in sorted(new_map, key=_key)]
     return old_normalized != new_normalized

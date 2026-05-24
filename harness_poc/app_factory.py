@@ -223,9 +223,7 @@ def bootstrap_document_index(config: HarnessConfig, database: BlackboardDatabase
     _run_auto_index(config, database, changed_paths)
 
 
-def _changed_auto_index_paths(
-    config: HarnessConfig, database: BlackboardDatabase, paths: list[str]
-) -> list[str]:
+def _changed_auto_index_paths(config: HarnessConfig, database: BlackboardDatabase, paths: list[str]) -> list[str]:
     """Return only auto-index paths whose file hashes are stale or missing."""
     indexer = DocumentIndexer(
         config=config.retrieval,
@@ -258,9 +256,7 @@ def _resolve_auto_index_paths(config: HarnessConfig) -> list[str] | None:
     return paths if any_exists else None
 
 
-def _run_auto_index(
-    config: HarnessConfig, database: BlackboardDatabase, paths: list[str]
-) -> None:
+def _run_auto_index(config: HarnessConfig, database: BlackboardDatabase, paths: list[str]) -> None:
     """Feed chunks to Vespa and write metadata to the database."""
     vespa = LiveVespaDocumentClient(config.retrieval)
     indexer = DocumentIndexer(
@@ -281,7 +277,7 @@ def _run_auto_index(
             parts.append(f"{result.skipped} skipped")
         if result.failed:
             parts.append(f"{result.failed} failed")
-        print(f"done ({", ".join(parts)})")
+        print(f"done ({', '.join(parts)})")
     except Exception:
         logger.exception("Auto-index failed")
         print("failed")
@@ -373,9 +369,7 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
             cycle_n,
             prompt_mode=config.cartographer.prompt_block,
         )
-        cross_body = _render_cross_corpus(
-            identity, config, corpus_key
-        )
+        cross_body = _render_cross_corpus(identity, config, corpus_key)
         context_map_block = f"--- Context Map ---\n{map_body}{cross_body}\n---"
     else:
         context_map_block = ""
@@ -441,9 +435,7 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
     # inspect it at runtime (e.g., inspect_own_context).
     # PydanticAI stores system prompts as a tuple of strings in
     # _system_prompts — join them to get the full text.
-    tool_runner.system_prompt = "\n\n".join(
-        runtime.pydantic_runtime.agent._system_prompts
-    )
+    tool_runner.system_prompt = "\n\n".join(runtime.pydantic_runtime.agent._system_prompts)
 
     return runtime
 
@@ -480,9 +472,7 @@ def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
             prompt_mode=config.cartographer.prompt_block,
         )
         # Cross-corpus enrichment (Track B §4.3)
-        cross_body = _render_cross_corpus(
-            identity, config, corpus_key
-        )
+        cross_body = _render_cross_corpus(identity, config, corpus_key)
         context_map_block = f"--- Context Map ---\n{map_body}{cross_body}\n---"
     else:
         context_map_block = ""
@@ -530,9 +520,7 @@ def _render_cross_corpus(
     parts: list[str] = ["\n\n# Related Corpora"]
     for corpus_key, entries in maps.items():
         cycle = db.get_cycle(corpus_key)
-        filtered = [
-            e for e in entries if e.priority >= cc.cross_corpus_min_priority
-        ]
+        filtered = [e for e in entries if e.priority >= cc.cross_corpus_min_priority]
         filtered.sort(key=lambda e: -e.priority)
         capped = filtered[: cc.cross_corpus_max_entries]
         if not capped:

@@ -43,9 +43,7 @@ def _setup_extractor_test(
     live: bool = True,
 ) -> MagicMock:
     """Configure monkeypatches and return a mock SkillRunner."""
-    monkeypatch.setattr(
-        pydantic_runtime_mod, "is_live_model", lambda _model: live
-    )
+    monkeypatch.setattr(pydantic_runtime_mod, "is_live_model", lambda _model: live)
 
     def _fake_chat_text(
         messages: object,  # noqa: ARG001

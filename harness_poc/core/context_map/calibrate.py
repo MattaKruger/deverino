@@ -46,9 +46,7 @@ def run_calibration(
 
     In dry_run mode, only computes; in apply mode, writes to harness.yaml.
     """
-    cutoff = (datetime.now(tz=UTC) - timedelta(days=window_days)).isoformat(
-        timespec="seconds"
-    )
+    cutoff = (datetime.now(tz=UTC) - timedelta(days=window_days)).isoformat(timespec="seconds")
 
     ref_events = _count_references(db, corpus_key, cutoff)
     eviction_events = _count_evictions(db, corpus_key, cutoff)
@@ -71,10 +69,7 @@ def run_calibration(
             corpus_key=corpus_key,
             window_days=window_days,
             total_references=total_refs,
-            total_evictions=sum(
-                eviction_events.get(t, {}).get("count", 0)
-                for t in _OBSERVATION_TYPES
-            ),
+            total_evictions=sum(eviction_events.get(t, {}).get("count", 0) for t in _OBSERVATION_TYPES),
             total_insertions=sum(insertion_events.values()),
             weights={},
             message=(
@@ -115,15 +110,11 @@ def run_calibration(
         corpus_key=corpus_key,
         window_days=window_days,
         total_references=total_refs,
-        total_evictions=sum(
-            eviction_events.get(t, {}).get("count", 0) for t in _OBSERVATION_TYPES
-        ),
+        total_evictions=sum(eviction_events.get(t, {}).get("count", 0) for t in _OBSERVATION_TYPES),
         total_insertions=sum(insertion_events.values()),
         weights={
             t: {
-                "current": current_weights.get(
-                    t, _DEFAULT_PRIORITY_WEIGHTS.get(t, 0.5)
-                ),
+                "current": current_weights.get(t, _DEFAULT_PRIORITY_WEIGHTS.get(t, 0.5)),
                 "target": target_weights[t],
                 "delta": deltas[t],
             }
@@ -137,18 +128,13 @@ def run_calibration(
             config_path,
             target_weights,
             total_refs,
-            sum(
-                eviction_events.get(t, {}).get("count", 0)
-                for t in _OBSERVATION_TYPES
-            ),
+            sum(eviction_events.get(t, {}).get("count", 0) for t in _OBSERVATION_TYPES),
         )
 
     return result
 
 
-def _count_references(
-    db: BlackboardDatabase, corpus_key: str, cutoff: str
-) -> dict[str, int]:
+def _count_references(db: BlackboardDatabase, corpus_key: str, cutoff: str) -> dict[str, int]:
     """Count MapEntryReferenced events per observation_type in the window."""
     from harness_poc.core.storage.models import DbContextMapEvent
 
@@ -173,15 +159,12 @@ def _count_references(
     return counts
 
 
-def _count_evictions(
-    db: BlackboardDatabase, corpus_key: str, cutoff: str
-) -> dict[str, dict[str, int]]:
+def _count_evictions(db: BlackboardDatabase, corpus_key: str, cutoff: str) -> dict[str, dict[str, int]]:
     """Count MapEntryEvicted events per observation_type, split by reason type."""
     from harness_poc.core.storage.models import DbContextMapEvent
 
     result: dict[str, dict[str, int]] = {
-        t: {"count": 0, "budget_count": 0, "stale_count": 0, "mat_sum": 0}
-        for t in _OBSERVATION_TYPES
+        t: {"count": 0, "budget_count": 0, "stale_count": 0, "mat_sum": 0} for t in _OBSERVATION_TYPES
     }
 
     with Session(db.engine) as session:
@@ -212,9 +195,7 @@ def _count_evictions(
     return result
 
 
-def _count_insertions(
-    db: BlackboardDatabase, corpus_key: str, cutoff: str
-) -> dict[str, int]:
+def _count_insertions(db: BlackboardDatabase, corpus_key: str, cutoff: str) -> dict[str, int]:
     """Count MapEntryInserted events per observation_type in the window."""
     from harness_poc.core.storage.models import DbContextMapEvent
 
@@ -257,11 +238,7 @@ def _read_current_weights(config_path: str | None) -> dict[str, float]:
                 if isinstance(cartographer_raw, dict):
                     weights_raw = cartographer_raw.get("priority_weights")
                     if isinstance(weights_raw, dict):
-                        return {
-                            k: float(weights_raw[k])
-                            for k in _REQUIRED_WEIGHT_KEYS
-                            if k in weights_raw
-                        }
+                        return {k: float(weights_raw[k]) for k in _REQUIRED_WEIGHT_KEYS if k in weights_raw}
         except Exception:
             logger.debug("Failed to read weights from config, using defaults", exc_info=True)
     return dict(_DEFAULT_PRIORITY_WEIGHTS)
@@ -286,20 +263,13 @@ def _write_weights_to_config(
         raw["cartographer"] = cartographer_section
 
     # Write backup
-    backup_path = path.with_suffix(
-        f".yaml.bak-{datetime.now(tz=UTC).strftime('%Y%m%d-%H%M%S')}"
-    )
+    backup_path = path.with_suffix(f".yaml.bak-{datetime.now(tz=UTC).strftime('%Y%m%d-%H%M%S')}")
     path.rename(backup_path)
 
     today = datetime.now(tz=UTC).date().isoformat()
-    comment_line = (
-        f"# auto-tuned {today} from {total_refs} reference events, "
-        f"{total_evictions} eviction events\n"
-    )
+    comment_line = f"# auto-tuned {today} from {total_refs} reference events, {total_evictions} eviction events\n"
 
-    cartographer_section["priority_weights"] = {
-        k: round(v, 2) for k, v in weights.items()
-    }
+    cartographer_section["priority_weights"] = {k: round(v, 2) for k, v in weights.items()}
 
     buf = io.StringIO()
     yaml.dump(raw, buf, default_flow_style=False, allow_unicode=True, sort_keys=False)

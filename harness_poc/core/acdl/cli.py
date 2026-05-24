@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-
 from rich.markup import escape as _rich_escape
 
 from harness_poc.console import console
