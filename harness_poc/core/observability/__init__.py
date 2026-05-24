@@ -1,4 +1,5 @@
 from harness_poc.core.observability.dashboard import (
+    ContextMapEntrySummary,
     ContextMapHealth,
     DashboardSnapshot,
     DashboardSummary,
@@ -8,7 +9,9 @@ from harness_poc.core.observability.dashboard import (
     SessionTokenUsage,
     SkillPerformance,
     TokenBucket,
+    fetch_context_map_entries,
     fetch_context_map_health,
+    fetch_corpus_keys,
     fetch_dashboard_snapshot,
     fetch_model_token_usage,
     fetch_recent_failures,
@@ -22,6 +25,7 @@ from harness_poc.core.observability.dashboard import (
 from harness_poc.core.observability.logfire_subscriber import configure_logfire, wire_logfire
 
 __all__ = [
+    "ContextMapEntrySummary",
     "ContextMapHealth",
     "DashboardSnapshot",
     "DashboardSummary",
@@ -32,7 +36,9 @@ __all__ = [
     "SkillPerformance",
     "TokenBucket",
     "configure_logfire",
+    "fetch_context_map_entries",
     "fetch_context_map_health",
+    "fetch_corpus_keys",
     "fetch_dashboard_snapshot",
     "fetch_model_token_usage",
     "fetch_recent_failures",

@@ -165,6 +165,35 @@ class SkillRunner:
             normalized_arguments = self._normalize_arguments(resolved_tool_name, arguments)
 
             result = execute(context, normalized_arguments)
+            import inspect
+            if inspect.iscoroutine(result):
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                if loop is not None and loop.is_running():
+                    import threading
+                    from concurrent.futures import Future
+
+                    def run_in_new_loop(coro, fut):
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            val = new_loop.run_until_complete(coro)
+                            fut.set_result(val)
+                        except Exception as e:
+                            fut.set_exception(e)
+                        finally:
+                            new_loop.close()
+
+                    fut = Future()
+                    t = threading.Thread(target=run_in_new_loop, args=(result, fut))
+                    t.start()
+                    t.join()
+                    result = fut.result()
+                else:
+                    result = asyncio.run(result)
         except Exception:
             logger.exception(
                 "Skill execution raised",

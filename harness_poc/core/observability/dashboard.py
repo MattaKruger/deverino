@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
 from sqlalchemy import text
+
+from harness_poc.core.context_map.schema import MapEntry
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +62,18 @@ class ContextMapHealth:
     last_updated: str
     freeze_until: str
     pending_events: int
+
+
+@dataclass(frozen=True, slots=True)
+class ContextMapEntrySummary:
+    entry_id: str
+    key: str
+    section: str
+    observation_type: str
+    priority: float
+    materialization_count: int
+    token_estimate: int
+    summary: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -561,3 +580,107 @@ def snapshot_to_dict(snapshot: DashboardSnapshot) -> dict[str, Any]:
         "model_token_usage": [asdict(row) for row in snapshot.model_token_usage],
         "session_token_usage": [asdict(row) for row in snapshot.session_token_usage],
     }
+
+
+def fetch_corpus_keys(engine: Engine) -> list[str]:
+    """Return distinct corpus_keys that have a stored context map."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("select distinct corpus_key from context_map order by corpus_key")
+        ).all()
+    return [str(row[0]) for row in rows]
+
+
+def fetch_context_map_entries(
+    engine: Engine, corpus_key: str
+) -> list[ContextMapEntrySummary]:
+    """Return entry summaries for a given corpus_key.
+
+    Reads the serialised map_json blob and deserialises it into
+    lightweight dashboard-friendly rows.  Returns an empty list when
+    the corpus_key is unknown or the stored JSON is unparseable.
+    """
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "select map_json, schema_version from context_map "
+                "where corpus_key = :key"
+            ),
+            {"key": corpus_key},
+        ).one_or_none()
+
+    if row is None:
+        _log.warning("fetch_context_map_entries: no row for corpus_key=%r", corpus_key)
+        return []
+
+    try:
+        raw = json.loads(row[0])
+    except json.JSONDecodeError:
+        _log.exception("fetch_context_map_entries: invalid JSON for corpus_key=%r", corpus_key)
+        return []
+
+    schema_version = row[1] or 1
+    if schema_version == 1:
+        _log.info("fetch_context_map_entries: legacy schema_version=1, translating")
+        if not isinstance(raw, dict):
+            _log.warning(
+                "fetch_context_map_entries: expected dict for v1, got %s",
+                type(raw).__name__,
+            )
+            return []
+        from harness_poc.core.storage.database import _legacy_to_entries  # noqa: PLC0415
+
+        entries = _legacy_to_entries(raw, corpus_key)
+        return [
+            ContextMapEntrySummary(
+                entry_id=e.entry_id,
+                key=e.key,
+                section=e.section,
+                observation_type=e.observation_type,
+                priority=e.priority,
+                materialization_count=e.materialization_count,
+                token_estimate=e.token_estimate,
+                summary=e.summary,
+            )
+            for e in entries
+        ]
+
+    if not isinstance(raw, list):
+        _log.warning(
+            "fetch_context_map_entries: expected list, got %s for corpus_key=%r",
+            type(raw).__name__,
+            corpus_key,
+        )
+        return []
+
+    _log.info("fetch_context_map_entries: %d raw entries for corpus_key=%r", len(raw), corpus_key)
+
+    summaries: list[ContextMapEntrySummary] = []
+    for entry_dict in raw:
+        try:
+            e = MapEntry.model_validate(entry_dict)
+        except ValidationError:
+            _log.exception(
+                "fetch_context_map_entries: validation failed for entry key=%r",
+                entry_dict.get("key", "?"),
+            )
+            continue
+        summaries.append(
+            ContextMapEntrySummary(
+                entry_id=e.entry_id,
+                key=e.key,
+                section=e.section,
+                observation_type=e.observation_type,
+                priority=e.priority,
+                materialization_count=e.materialization_count,
+                token_estimate=e.token_estimate,
+                summary=e.summary,
+            )
+        )
+
+    _log.info(
+        "fetch_context_map_entries: %d validated entries for corpus_key=%r",
+        len(summaries),
+        corpus_key,
+    )
+    return summaries

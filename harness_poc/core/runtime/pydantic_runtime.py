@@ -54,6 +54,7 @@ class AgentDeps:
     stream_text: Callable[[str], None] | None = None
     on_tool_event: Callable[[str], None] | None = None
     tool_call_counts: dict[str, int] = field(default_factory=dict)
+    max_consecutive_tool_rounds: int | None = 50
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +62,7 @@ class AgentRunResult:
     content: str
     usage: Usage | None = None
     messages: list[ModelMessage] = field(default_factory=list)
+    stop_reason: str = "completed"  # "completed" | "tool_limit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,7 +150,7 @@ class PydanticAgentRuntime:
         on_text: Callable[[str], None] | None,
         on_tool_event: Callable[[str], None] | None = None,
     ) -> AgentRunResult:
-        max_consecutive_tool_rounds = 10
+        max_consecutive_tool_rounds = self.deps.max_consecutive_tool_rounds
 
         deps = replace(
             self.deps,
@@ -201,7 +203,10 @@ class PydanticAgentRuntime:
 
                 elif Agent.is_call_tools_node(node):
                     consecutive_tool_rounds += 1
-                    if consecutive_tool_rounds > max_consecutive_tool_rounds:
+                    if (
+                        max_consecutive_tool_rounds is not None
+                        and consecutive_tool_rounds > max_consecutive_tool_rounds
+                    ):
                         capped = True
                         logger.warning(
                             "Consecutive tool call limit (%d) reached, stopping agent loop",
@@ -212,8 +217,9 @@ class PydanticAgentRuntime:
 
             if capped and on_text is not None:
                 on_text(
-                    "\n\n[Consecutive tool call limit reached — stopping. "
-                    "Refine your query for better results.]"
+                    f"\n\n[Consecutive tool call limit ({max_consecutive_tool_rounds}) "
+                    "reached — agent stopped mid-loop. "
+                    "Reply to continue, or set max_consecutive_tool_rounds higher.]"
                 )
 
             result_output = agent_run.result.output if agent_run.result else None
@@ -229,6 +235,7 @@ class PydanticAgentRuntime:
             content=str(output),
             usage=usage,
             messages=all_new_messages,
+            stop_reason="tool_limit" if capped else "completed",
         )
 
 
