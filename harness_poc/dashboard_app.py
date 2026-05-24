@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 from dash import Dash, Input, Output, callback, dash_table, dcc, html
 from plotly import graph_objects as go
 
-from harness_poc.core.observability import fetch_dashboard_snapshot, snapshot_to_dict
+from harness_poc.core.observability import (
+    fetch_context_map_entries,
+    fetch_corpus_keys,
+    fetch_dashboard_snapshot,
+    snapshot_to_dict,
+)
 from harness_poc.core.storage import create_db_engine
 
 if TYPE_CHECKING:
@@ -92,6 +98,58 @@ def _layout() -> html.Div:
                     "gap": "12px",
                     "marginBottom": "12px",
                 },
+            ),
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Div(
+                                [
+                                    html.H2(
+                                        "Context Map Entries",
+                                        style={"fontSize": "16px"},
+                                    ),
+                                    dcc.Dropdown(
+                                        id="corpus-selector",
+                                        placeholder="Select a corpus to view entries…",
+                                        style={"marginBottom": "10px"},
+                                    ),
+                                ],
+                                style={
+                                    "display": "flex",
+                                    "justifyContent": "space-between",
+                                    "alignItems": "center",
+                                    "gap": "12px",
+                                    "flexWrap": "wrap",
+                                },
+                            ),
+                            dash_table.DataTable(
+                                id="entry-table",
+                                data=[],
+                                columns=[],
+                                page_size=15,
+                                sort_action="native",
+                                filter_action="native",
+                                style_table={"overflowX": "auto"},
+                                style_cell={
+                                    "fontFamily": "system-ui, sans-serif",
+                                    "fontSize": "13px",
+                                    "padding": "8px",
+                                    "textAlign": "left",
+                                    "maxWidth": "360px",
+                                    "overflow": "hidden",
+                                    "textOverflow": "ellipsis",
+                                },
+                                style_header={
+                                    "fontWeight": "600",
+                                    "backgroundColor": "#f2f5f8",
+                                },
+                            ),
+                        ],
+                        style={**CARD_STYLE, "minWidth": 0},
+                    ),
+                ],
+                style={"marginBottom": "12px"},
             ),
             html.Div(
                 [
@@ -205,11 +263,15 @@ def _register_callbacks(engine: Engine) -> None:
         Output("session-token-table", "data"),
         Output("session-token-table", "columns"),
         Output("last-updated", "children"),
+        Output("corpus-selector", "options"),
         Input("refresh", "n_intervals"),
     )
     def update_dashboard(_: int) -> tuple[Any, ...]:
         snapshot = fetch_dashboard_snapshot(engine)
         data = snapshot_to_dict(snapshot)
+        corpus_options = [
+            {"label": key, "value": key} for key in fetch_corpus_keys(engine)
+        ]
         return (
             _summary_cards(data["summary"]),
             _token_figure(data["token_buckets"]),
@@ -226,7 +288,20 @@ def _register_callbacks(engine: Engine) -> None:
             data["session_token_usage"],
             _columns(data["session_token_usage"]),
             "Refreshes every 10 seconds",
+            corpus_options,
         )
+
+    @callback(
+        Output("entry-table", "data"),
+        Output("entry-table", "columns"),
+        Input("corpus-selector", "value"),
+    )
+    def update_entries(corpus_key: str | None) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+        if not corpus_key:
+            return [], []
+        entries = fetch_context_map_entries(engine, corpus_key)
+        rows = [asdict(e) for e in entries]
+        return rows, _columns(rows)
 
 
 def _summary_cards(summary: dict[str, Any]) -> list[html.Div]:

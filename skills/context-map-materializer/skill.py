@@ -156,18 +156,12 @@ def _map_changed(old_map: list[MapEntry], new_map: list[MapEntry]) -> bool:
     def _key(entry: MapEntry) -> str:
         return entry.key
 
-    old_normalized = sorted(
-        [
-            entry.model_dump(exclude={"last_updated"})
-            for entry in old_map
-        ],
-        key=_key,
-    )
-    new_normalized = sorted(
-        [
-            entry.model_dump(exclude={"last_updated"})
-            for entry in new_map
-        ],
-        key=_key,
-    )
+    old_normalized = [
+        entry.model_dump(exclude={"last_updated"})
+        for entry in sorted(old_map, key=_key)
+    ]
+    new_normalized = [
+        entry.model_dump(exclude={"last_updated"})
+        for entry in sorted(new_map, key=_key)
+    ]
     return old_normalized != new_normalized

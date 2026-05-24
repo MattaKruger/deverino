@@ -250,6 +250,11 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
             on_text=app_state.streaming.on_text,
             on_tool_event=app_state.streaming.on_tool_event,
         )
+        if response.stop_reason == "tool_limit":
+            logger.warning(
+                "Chat turn hit tool limit",
+                extra={"session_id": app_state.session_id},
+            )
         fallback_messages = _pydantic_chat_exchange(user_input, response.content)
         accounting = account_for_model_run(
             response.usage,

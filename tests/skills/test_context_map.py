@@ -120,17 +120,35 @@ def test_write_map_and_mark_processed_updates_map_and_events() -> None:
     )
     db.append_context_map_event(event)
 
+    from datetime import UTC, datetime
+    from harness_poc.core.context_map.schema import MapEntry
+
+    entries = [
+        MapEntry(
+            entry_id="12345678",
+            key="skill_runner",
+            section="context_understanding",
+            observation_type="entity",
+            summary="Loads skills.",
+            priority=0.7,
+            source_event_ids=[event.event_id],
+            first_seen=datetime.now(tz=UTC),
+            last_updated=datetime.now(tz=UTC),
+            first_seen_cycle=1,
+            last_seen_cycle=1,
+            token_estimate=12,
+        )
+    ]
+
     db.write_map_and_mark_processed(
         "deverino:codebase",
-        {"context_understanding": {"skill_runner": {"content": "Loads skills."}}},
+        entries,
         token_count=12,
         event_ids=[event.event_id],
     )
 
     assert db.get_pending_context_map_events("deverino:codebase") == []
-    assert db.get_context_map("deverino:codebase") == {
-        "context_understanding": {"skill_runner": {"content": "Loads skills."}}
-    }
+    assert db.get_context_map("deverino:codebase") == entries
     with Session(db.engine) as session:
         row = session.get(DbContextMapEvent, event.event_id)
         assert row is not None
@@ -191,9 +209,29 @@ def test_get_context_map_returns_none_or_parsed_dict() -> None:
     db = _db()
     assert db.get_context_map("missing") is None
 
-    db.write_map_and_mark_processed("deverino:codebase", {"a": {"b": "c"}}, 3, [])
+    from datetime import UTC, datetime
+    from harness_poc.core.context_map.schema import MapEntry
 
-    assert db.get_context_map("deverino:codebase") == {"a": {"b": "c"}}
+    entries = [
+        MapEntry(
+            entry_id="abc123ef",
+            key="test",
+            section="context_understanding",
+            observation_type="entity",
+            summary="test content",
+            priority=0.5,
+            source_event_ids=[],
+            first_seen=datetime.now(tz=UTC),
+            last_updated=datetime.now(tz=UTC),
+            first_seen_cycle=1,
+            last_seen_cycle=1,
+            token_estimate=3,
+        )
+    ]
+
+    db.write_map_and_mark_processed("deverino:codebase", entries, 3, [])
+
+    assert db.get_context_map("deverino:codebase") == entries
 
 
 def test_append_event_skill_rejects_unknown_event_type(tmp_path: Path) -> None:
@@ -232,179 +270,6 @@ def test_append_event_skill_accepts_entity_referenced_payload(tmp_path: Path) ->
     assert rows[0].event_type == "entity_referenced"
 
 
-def test_apply_edits_add_delete_replace_operations() -> None:
-    materializer = _materializer_module()
-    current = {
-        "context_understanding": {
-            "old": {"entry_id": "11111111", "content": "old", "priority_score": 0.8},
-            "remove": {"entry_id": "22222222", "content": "remove", "priority_score": 0.1},
-        }
-    }
-
-    result, applied_count = materializer._apply_edits(
-        current,
-        [
-            {
-                "op": "ADD",
-                "section": "context_roadmap",
-                "entry_key": "new",
-                "content": "new content",
-                "priority_score": 0.7,
-            },
-            {
-                "op": "DELETE",
-                "section": "context_understanding",
-                "entry_key": "remove",
-            },
-            {
-                "op": "REPLACE",
-                "section": "context_understanding",
-                "entry_key": "old",
-                "content": "replacement",
-                "priority_score": 0.9,
-            },
-        ],
-    )
-
-    assert result["context_roadmap"]["new"]["content"] == "new content"
-    assert _is_hex_id(result["context_roadmap"]["new"]["entry_id"])
-    assert "remove" not in result["context_understanding"]
-    assert result["context_understanding"]["old"]["content"] == "replacement"
-    assert result["context_understanding"]["old"]["entry_id"] == "11111111"
-    assert applied_count == 3
-
-
-def test_apply_edits_add_assigns_entry_id() -> None:
-    materializer = _materializer_module()
-
-    result, applied_count = materializer._apply_edits(
-        {},
-        [
-            {
-                "op": "ADD",
-                "section": "context_roadmap",
-                "entry_key": "new",
-                "content": "new content",
-                "priority_score": 0.7,
-            }
-        ],
-    )
-
-    assert _is_hex_id(result["context_roadmap"]["new"]["entry_id"])
-    assert applied_count == 1
-
-
-def test_apply_edits_replace_retains_entry_id() -> None:
-    materializer = _materializer_module()
-    current = {
-        "context_understanding": {
-            "existing": {"entry_id": "abc123ef", "content": "old", "priority_score": 0.8}
-        }
-    }
-
-    result, applied_count = materializer._apply_edits(
-        current,
-        [
-            {
-                "op": "REPLACE",
-                "section": "context_understanding",
-                "entry_key": "existing",
-                "content": "new",
-                "priority_score": 0.9,
-            }
-        ],
-    )
-
-    assert result["context_understanding"]["existing"]["entry_id"] == "abc123ef"
-    assert applied_count == 1
-
-
-def test_ensure_entry_ids_handles_old_format_entries() -> None:
-    materializer = _materializer_module()
-
-    result = materializer._ensure_entry_ids(
-        {"context_understanding": {"old": {"content": "old", "priority_score": 0.6}}}
-    )
-
-    assert _is_hex_id(result["context_understanding"]["old"]["entry_id"])
-
-
-def test_apply_edits_reports_no_change_for_missing_delete() -> None:
-    materializer = _materializer_module()
-
-    _result, applied_count = materializer._apply_edits(
-        {},
-        [{"op": "DELETE", "section": "context_understanding", "entry_key": "missing"}],
-    )
-
-    assert applied_count == 0
-
-
-def test_enforce_budget_evicts_lowest_priority_entries() -> None:
-    materializer = _materializer_module()
-    map_data = {
-        "parsing_schema": {
-            "low": {"content": "x" * 500, "priority_score": 0.1},
-            "high": {"content": "y" * 10, "priority_score": 0.9},
-        }
-    }
-
-    result, evictions = materializer._enforce_budget(map_data, token_budget=80)
-
-    assert "low" not in result["parsing_schema"]
-    assert evictions[0]["entry_key"] == "low"
-    assert len(json.dumps(result, sort_keys=True)) <= 80 * 4
-
-
-def test_enforce_budget_returns_evictions() -> None:
-    materializer = _materializer_module()
-    map_data = {
-        "context_roadmap": {
-            "low": {
-                "entry_id": "12345678",
-                "content": "x" * 500,
-                "priority_score": 0.1,
-            }
-        }
-    }
-
-    _result, evictions = materializer._enforce_budget(map_data, token_budget=20)
-
-    assert evictions == [
-        {
-            "entry_id": "12345678",
-            "entry_key": "low",
-            "section": "context_roadmap",
-            "priority_score": 0.1,
-        }
-    ]
-
-
-def test_detect_promotions_detects_upward_moves() -> None:
-    materializer = _materializer_module()
-    old = {
-        "context_roadmap": {
-            "entry": {"entry_id": "12345678", "content": "old", "priority_score": 0.5}
-        }
-    }
-    new = {
-        "domain_constants": {
-            "entry": {"entry_id": "12345678", "content": "new", "priority_score": 0.8}
-        }
-    }
-
-    promotions = materializer._detect_promotions(old, new)
-
-    assert promotions == [
-        {
-            "entry_id": "12345678",
-            "entry_key": "entry",
-            "from_section": "context_roadmap",
-            "to_section": "domain_constants",
-        }
-    ]
-
-
 def test_execute_reports_map_changed_false_for_noop_edits(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -419,28 +284,42 @@ def test_execute_reports_map_changed_false_for_noop_edits(
         context="Loads skills.",
     )
     db.append_context_map_event(event)
+
+    from datetime import UTC, datetime
+    from harness_poc.core.context_map.schema import MapEntry
+
+    # The base priority weight for 'entity' is 0.6. Use it to prevent priority recalculation delta.
+    entries = [
+        MapEntry(
+            entry_id="12345678",
+            key="skill_runner",
+            section="context_understanding",
+            observation_type="entity",
+            summary="Loads skills.",
+            priority=0.6,
+            source_event_ids=[event.event_id],
+            first_seen=datetime.now(tz=UTC),
+            last_updated=datetime.now(tz=UTC),
+            first_seen_cycle=1,
+            last_seen_cycle=1,
+            token_estimate=12,
+        )
+    ]
     db.write_map_and_mark_processed(
         "deverino:codebase",
-        {
-            "context_understanding": {
-                "skill_runner": {
-                    "entry_id": "12345678",
-                    "content": "Loads skills.",
-                    "priority_score": 0.7,
-                }
-            }
-        },
+        entries,
         token_count=12,
         event_ids=[],
     )
     materializer = _materializer_module()
-    responses = iter(['{"diagnosis": "", "tags": {}, "observations": []}', '{"edits": []}'])
-    monkeypatch.setattr(materializer, "chat_text", lambda *_args, **_kwargs: next(responses))
+    
+    async def mock_run_distiller(*args, **kwargs):
+        return []
+    monkeypatch.setattr(materializer, "run_distiller", mock_run_distiller)
 
-    result = materializer.execute(ctx, {"corpus_key": "deverino:codebase"})
+    result = asyncio.run(materializer.execute(ctx, {"corpus_key": "deverino:codebase"}))
 
     assert result.status == "success"
-    assert result.artifacts["edits_applied"] == 0
     assert result.artifacts["map_changed"] is False
 
 
@@ -459,29 +338,33 @@ def test_materializer_emits_derivation_events(
     )
     db.append_context_map_event(event)
     materializer = _materializer_module()
-    responses = iter(
-        [
-            '{"diagnosis": "", "tags": {}, "observations": []}',
-            json.dumps(
-                {
-                    "edits": [
-                        {
-                            "op": "ADD",
-                            "section": "context_roadmap",
-                            "entry_key": "large",
-                            "content": "x" * 500,
-                            "priority_score": 0.1,
-                        }
-                    ]
-                }
-            ),
-        ]
-    )
-    monkeypatch.setattr(materializer, "chat_text", lambda *_args, **_kwargs: next(responses))
 
-    result = materializer.execute(
+    from harness_poc.core.context_map.schema import DistillerEntry
+    async def mock_run_distiller(*args, **kwargs):
+        return [
+            DistillerEntry(
+                key="large",
+                observation_type="insight",
+                summary="x" * 500,
+                source_event_ids=[event.event_id],
+            )
+        ]
+    monkeypatch.setattr(materializer, "run_distiller", mock_run_distiller)
+
+    from dataclasses import replace
+    ctx = replace(
         ctx,
-        {"corpus_key": "deverino:codebase", "token_budget": 20, "session_id": ctx.session_id},
+        config=replace(
+            ctx.config,
+            cartographer=replace(ctx.config.cartographer, token_budget=20)
+        )
+    )
+
+    result = asyncio.run(
+        materializer.execute(
+            ctx,
+            {"corpus_key": "deverino:codebase", "session_id": ctx.session_id},
+        )
     )
 
     assert result.status == "success"
@@ -567,9 +450,4 @@ def test_materializer_freezes_after_three_no_change_cycles(tmp_path: Path) -> No
     assert db.is_map_frozen("deverino:codebase") is True
 
 
-def test_parse_json_strips_markdown_fences() -> None:
-    materializer = _materializer_module()
-
-    result = materializer._parse_json('```json\n{"edits": []}\n```')
-
-    assert result == {"edits": []}
+# Deleted obsolete tests for parse_json.

@@ -74,9 +74,28 @@ def test_dashboard_snapshot_rolls_up_agent_events(db_engine: Engine) -> None:
             context="dashboard reads event rows",
         )
     )
+    from datetime import UTC, datetime
+    from harness_poc.core.context_map.schema import MapEntry
+
     database.write_map_and_mark_processed(
         corpus_key="deverino:default",
-        map_json={"context_understanding": []},
+        map_entries=[
+            MapEntry(
+                entry_id="e1",
+                key="test-key",
+                section="context_understanding",
+                observation_type="entity",
+                summary="test summary",
+                priority=0.5,
+                source_event_ids=[],
+                first_seen=datetime.now(tz=UTC),
+                last_updated=datetime.now(tz=UTC),
+                materialization_count=1,
+                first_seen_cycle=1,
+                last_seen_cycle=1,
+                token_estimate=5,
+            )
+        ],
         token_count=5,
         event_ids=[],
     )
