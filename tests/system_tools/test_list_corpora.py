@@ -1,0 +1,89 @@
+"""Tests for list_corpora system tool — Gap 1c."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from sqlalchemy import Engine
+
+from harness_poc.core.context_map.schema import MapEntry
+from harness_poc.core.storage import BlackboardDatabase
+from harness_poc.system_tools.corpus_tools import _list_corpora
+
+
+def _entry(key: str, section: str) -> MapEntry:
+    now = datetime.now(tz=UTC)
+    return MapEntry(
+        entry_id=f"{key}-id",
+        key=key,
+        section=section,
+        observation_type="schema",
+        summary="x",
+        priority=0.8,
+        source_event_ids=[],
+        first_seen=now,
+        last_updated=now,
+        materialization_count=0,
+        first_seen_cycle=1,
+        last_seen_cycle=1,
+        token_estimate=5,
+    )
+
+
+def test_list_corpora_returns_structured_inventory(
+    db_engine: Engine,
+) -> None:
+    db = BlackboardDatabase(db_engine)
+    db.create_tables()
+    db.write_map_and_mark_processed(
+        "deverino:codebase",
+        map_entries=[_entry(key="x", section="entities")],
+        token_count=10, event_ids=[],
+    )
+    result = _list_corpora(database=db)
+
+    assert result == {
+        "corpora": [
+            {
+                "key": "deverino:codebase",
+                "materialized": True,
+                "entry_count": 1,
+                "cycle": 0,
+                "has_pending_events": False,
+            },
+        ],
+    }
+
+
+def test_list_corpora_empty_database(db_engine: Engine) -> None:
+    db = BlackboardDatabase(db_engine)
+    db.create_tables()
+    result = _list_corpora(database=db)
+    assert result == {"corpora": []}
+
+
+def test_list_corpora_reports_pending_events(db_engine: Engine) -> None:
+    from harness_poc.core.events import MapEntryReferenced
+
+    db = BlackboardDatabase(db_engine)
+    db.create_tables()
+    db.write_map_and_mark_processed(
+        "deverino:codebase",
+        map_entries=[_entry(key="x", section="entities")],
+        token_count=10, event_ids=[],
+    )
+    db.append_context_map_event(
+        MapEntryReferenced(
+            session_id="s", corpus_key="deverino:dashboard",
+            entry_id="a" * 32, entry_key="y",
+            section="insights", cycle_n=0, citation_context="ctx",
+        ),
+    )
+
+    result = _list_corpora(database=db)
+    corpora = {c["key"]: c for c in result["corpora"]}
+
+    assert corpora["deverino:codebase"]["has_pending_events"] is False
+    assert corpora["deverino:dashboard"]["materialized"] is False
+    assert corpora["deverino:dashboard"]["entry_count"] == 0
+    assert corpora["deverino:dashboard"]["has_pending_events"] is True

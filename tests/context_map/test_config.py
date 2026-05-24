@@ -65,3 +65,65 @@ def test_harness_config_loads_cartographer_and_distiller(tmp_path: Path) -> None
     cfg = HarnessConfig.load(config_path)
     assert cfg.distiller.model == "anthropic/claude-haiku-4-5"
     assert cfg.cartographer.token_budget == 2048
+
+
+_CROSS_CORPUS_YAML_QUOTED = """
+cross_corpus:
+  enabled: true
+  related_corpora:
+    "deverino:codebase":
+      - "deverino:dashboard"
+      - "deverino:benchmarks"
+  max_cross_entries: 16
+  min_priority: 0.7
+"""
+
+
+def test_cartographer_parses_cross_corpus_quoted_keys() -> None:
+    raw = yaml.safe_load(_CROSS_CORPUS_YAML_QUOTED)
+    cfg = load_cartographer_config(raw)
+    assert cfg.cross_corpus_enabled is True
+    assert cfg.cross_corpus_related_corpora == {
+        "deverino:codebase": ["deverino:dashboard", "deverino:benchmarks"],
+    }
+    assert cfg.cross_corpus_max_entries == 16
+    assert cfg.cross_corpus_min_priority == pytest.approx(0.7)
+
+
+_CROSS_CORPUS_YAML_UNQUOTED = """
+cross_corpus:
+  enabled: true
+  related_corpora:
+    deverino:codebase:
+      - deverino:dashboard
+  max_cross_entries: 16
+  min_priority: 0.7
+"""
+
+
+def test_cartographer_cross_corpus_unquoted_keys_also_work() -> None:
+    """Unquoted colon-keys parse correctly with PyYAML 6.x in block style.
+
+    The plan flagged a risk that `deverino:codebase` might be interpreted
+    as a nested mapping. In practice, PyYAML handles this fine. Quoting is
+    still recommended as a defensive measure for other YAML parsers.
+    """
+    raw = yaml.safe_load(_CROSS_CORPUS_YAML_UNQUOTED)
+    cfg = load_cartographer_config(raw)
+    assert cfg.cross_corpus_enabled is True
+    assert cfg.cross_corpus_related_corpora == {
+        "deverino:codebase": ["deverino:dashboard"],
+    }
+    assert cfg.cross_corpus_max_entries == 16
+    assert cfg.cross_corpus_min_priority == pytest.approx(0.7)
+
+
+def test_cartographer_cross_corpus_auto_discover_defaults_true() -> None:
+    """cross_corpus_auto_discover defaults to True at config parse time."""
+    cfg = load_cartographer_config({})
+    assert cfg.cross_corpus_auto_discover is True
+
+
+def test_cartographer_cross_corpus_auto_discover_false() -> None:
+    cfg = load_cartographer_config({"cross_corpus_auto_discover": False})
+    assert cfg.cross_corpus_auto_discover is False

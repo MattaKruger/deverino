@@ -265,3 +265,139 @@ def test_active_corpus_wins_on_id_collision(db: BlackboardDatabase) -> None:
     assert len(refs) == 1
     assert refs[0].corpus_key == active
     assert refs[0].entry_key == "active-key"
+
+
+# ---------------------------------------------------------------------------
+# Gap 2b: session corpus in reference extraction
+# ---------------------------------------------------------------------------
+
+
+def test_extract_references_uses_session_corpus(db: BlackboardDatabase) -> None:
+    sid = db.start_session("obj", active_corpus_key="deverino:dashboard")
+    entry_id = uuid4().hex
+    db.write_map_and_mark_processed(
+        "deverino:dashboard", [_make_entry(entry_id)], 5, [],
+    )
+
+    config = _make_config()
+    refs = _extract_references(
+        content=f"see [entry:{entry_id}]",
+        session_id=sid,
+        database=db,
+        config=config,
+    )
+    assert len(refs) == 1
+    assert refs[0].corpus_key == "deverino:dashboard"
+
+
+# ---------------------------------------------------------------------------
+# Gap 3: auto-discover references
+# ---------------------------------------------------------------------------
+
+
+def test_auto_discover_indexes_all_corpora(db: BlackboardDatabase) -> None:
+    cb_id = uuid4().hex
+    dash_id = uuid4().hex
+    db.write_map_and_mark_processed(
+        "deverino:codebase", [_make_entry(cb_id, key="cb-1")], 5, [],
+    )
+    db.write_map_and_mark_processed(
+        "deverino:dashboard", [_make_entry(dash_id, key="dash-1")], 5, [],
+    )
+    sid = db.start_session("obj")  # primary defaults to :codebase
+
+    config = _make_config(cross_corpus_enabled=True)
+    refs = _extract_references(
+        content=(
+            f"cb [entry:{cb_id}] "
+            f"dash [entry:{dash_id}]"
+        ),
+        session_id=sid, database=db, config=config,
+    )
+    assert {r.corpus_key for r in refs} == {
+        "deverino:codebase", "deverino:dashboard",
+    }
+
+
+def test_whitelist_filter_still_applies_under_auto_discover(
+    db: BlackboardDatabase,
+) -> None:
+    excluded_id = uuid4().hex
+    db.write_map_and_mark_processed(
+        "deverino:noise", [_make_entry(excluded_id, key="n-1")], 5, [],
+    )
+    db.write_map_and_mark_processed(
+        "deverino:codebase", [], 0, [],
+    )
+    sid = db.start_session("obj")
+    config = _make_config(
+        cross_corpus_enabled=True,
+        related={
+            "deverino:codebase": ["deverino:dashboard"],  # excludes :noise
+        },
+    )
+    refs = _extract_references(
+        content=f"[entry:{excluded_id}]",
+        session_id=sid, database=db, config=config,
+    )
+    assert refs == []
+
+
+def test_auto_discover_disabled_falls_back_to_static_list(
+    db: BlackboardDatabase,
+) -> None:
+    """auto_discover=False must reproduce pre-Gap-3 behaviour exactly."""
+    related_id = uuid4().hex
+    auto_id = uuid4().hex
+
+    db.write_map_and_mark_processed(
+        "deverino:codebase", [], 0, [],
+    )
+    db.write_map_and_mark_processed(
+        "deverino:dashboard", [_make_entry(related_id, key="dash-1")], 5, [],
+    )
+    db.write_map_and_mark_processed(
+        "deverino:benchmarks", [_make_entry(auto_id, key="bench-1")], 5, [],
+    )
+    sid = db.start_session("obj")
+
+    # Cross-corpus enabled, auto_discover OFF, only dashboard in static list
+    from harness_poc.core.context_map.config import CartographerConfig
+
+    cc = CartographerConfig(
+        cross_corpus_enabled=True,
+        cross_corpus_auto_discover=False,
+        cross_corpus_related_corpora={
+            "deverino:codebase": ["deverino:dashboard"],
+        },
+    )
+    stub_config = SimpleNamespace(
+        project_id="deverino",
+        cartographer=cc,
+    )
+
+    refs = _extract_references(
+        content=(
+            f"related [entry:{related_id}] "
+            f"auto [entry:{auto_id}]"
+        ),
+        session_id=sid, database=db, config=stub_config,
+    )
+    # Only the static-list entry should resolve
+    assert len(refs) == 1
+    assert refs[0].corpus_key == "deverino:dashboard"
+
+
+def test_unresolved_marker_emits_warning(
+    db: BlackboardDatabase, caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    db.write_map_and_mark_processed("deverino:codebase", [], 0, [])
+    sid = db.start_session("obj")
+    with caplog.at_level(logging.WARNING):
+        _extract_references(
+            content="see [entry:" + "0" * 32 + "]",
+            session_id=sid, database=db, config=_make_config(),
+        )
+    assert any("Unresolved" in rec.message for rec in caplog.records)
