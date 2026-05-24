@@ -115,6 +115,14 @@ class BlackboardAccessProxy:
         self._require_read()
         return self._db.get_context_maps(corpus_keys)
 
+    def get_all_corpus_keys(self) -> list[str]:
+        self._require_read()
+        return self._db.get_all_corpus_keys()
+
+    def get_cycles(self, corpus_keys: list[str]) -> dict[str, int]:
+        self._require_read()
+        return self._db.get_cycles(corpus_keys)
+
     def read_session_state(self, session_id: str) -> StatePayload | None:
         self._require_read()
         return self._db.read_session_state(session_id)

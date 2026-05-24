@@ -633,6 +633,18 @@ class BlackboardDatabase:
             row = session.get(DbContextMapCycle, corpus_key)
         return row.cycle_n if row is not None else 0
 
+    def get_cycles(self, corpus_keys: list[str]) -> dict[str, int]:
+        """Bulk read-only cycle_n lookup. Keys not found default to 0."""
+        if not corpus_keys:
+            return {}
+        with Session(self._engine) as session:
+            rows = session.exec(
+                select(DbContextMapCycle).where(
+                    col(DbContextMapCycle.corpus_key).in_(corpus_keys)
+                )
+            ).all()
+        return {row.corpus_key: row.cycle_n for row in rows}
+
     def get_context_maps(self, corpus_keys: list[str]) -> dict[str, list[MapEntry]]:
         """Bulk read context maps for multiple corpora (cross-corpus enrichment)."""
         if not corpus_keys:

@@ -3,12 +3,27 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import Engine
 
 from harness_poc.core.context_map.schema import MapEntry
+from harness_poc.core.events import MapEntryReferenced
+from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.storage import BlackboardDatabase
+from harness_poc.core.storage.blackboard_proxy import BlackboardAccessProxy
+from harness_poc.core.tools import ToolContext
 from harness_poc.system_tools.corpus_tools import _list_corpora
+
+
+def _make_context(db: BlackboardDatabase) -> ToolContext:
+    """Construct a ToolContext matching what ToolRunner injects."""
+    proxy = BlackboardAccessProxy(db, SkillPermissions(blackboard="read"))
+    return ToolContext(
+        session_id="test-session",
+        project_root=Path.cwd(),
+        database=proxy,
+    )
 
 
 def _entry(key: str, section: str) -> MapEntry:
@@ -40,7 +55,8 @@ def test_list_corpora_returns_structured_inventory(
         map_entries=[_entry(key="x", section="entities")],
         token_count=10, event_ids=[],
     )
-    result = _list_corpora(database=db)
+    ctx = _make_context(db)
+    result = _list_corpora(ctx=ctx)
 
     assert result == {
         "corpora": [
@@ -58,13 +74,12 @@ def test_list_corpora_returns_structured_inventory(
 def test_list_corpora_empty_database(db_engine: Engine) -> None:
     db = BlackboardDatabase(db_engine)
     db.create_tables()
-    result = _list_corpora(database=db)
+    ctx = _make_context(db)
+    result = _list_corpora(ctx=ctx)
     assert result == {"corpora": []}
 
 
 def test_list_corpora_reports_pending_events(db_engine: Engine) -> None:
-    from harness_poc.core.events import MapEntryReferenced
-
     db = BlackboardDatabase(db_engine)
     db.create_tables()
     db.write_map_and_mark_processed(
@@ -80,7 +95,8 @@ def test_list_corpora_reports_pending_events(db_engine: Engine) -> None:
         ),
     )
 
-    result = _list_corpora(database=db)
+    ctx = _make_context(db)
+    result = _list_corpora(ctx=ctx)
     corpora = {c["key"]: c for c in result["corpora"]}
 
     assert corpora["deverino:codebase"]["has_pending_events"] is False
