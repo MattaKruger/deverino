@@ -18,6 +18,22 @@ from harness_poc.core.skills import CancellationToken, SkillResult
 BACKENDS = ("podman", "docker")
 DEFAULT_TIMEOUT_SECONDS = 120
 MAX_TIMEOUT_SECONDS = 300
+
+# Binaries that hang the terminal, mutate host state, or open interactive subprocesses.
+# Blocked globally across all sessions — these are never safe for non-interactive agents.
+_BLOCKED_BINARIES: frozenset[str] = frozenset({
+    "sudo",
+    "ssh",
+    "nano",
+    "vim",
+    "vi",
+    "top",
+    "htop",
+    "watch",
+    "less",
+    "more",
+})
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,6 +60,18 @@ def container_exec(  # noqa: PLR0911, PLR0913
         return SkillResult(
             status="failed",
             content="container_exec requires a container name or ID",
+        )
+
+    binary = command.split()[0] if command.split() else ""
+    if binary in _BLOCKED_BINARIES:
+        logger.warning(
+            "Blocked interactive binary",
+            extra={"binary": binary, "container": container},
+        )
+        return SkillResult(
+            status="blocked",
+            content=f"Interactive binary '{binary}' is globally blocked by the harness.",
+            artifacts={"binary": binary, "container": container},
         )
 
     resolved_backend = _resolve_backend(backend_arg)
