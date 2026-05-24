@@ -61,20 +61,45 @@ uv run harness-poc pipeline run research_and_write --input topic="black holes"
 Main configuration lives in `harness.yaml`.
 
 ```yaml
+version: 1.1
+
 project:
   id: deverino
 
 llm:
-  provider: deepseek # deepseek | openai | anthropic
+  provider: deepseek  # deepseek | openai | anthropic
   model: deepseek-v4-pro
+
+paths:
+  soul: harness_poc/system_prompts/SOUL.md
+  system_tools: harness_poc/system_tools
+  system_skills: harness_poc/system_skills
+  project_skills: skills
+  personas: personas
+  workflows: workflows
+  pipelines: pipelines
 
 runtime:
   database_url: postgresql://deverino:deverino@localhost/deverino
+  default_container_image: deverino-python:latest
+  container_ttl_seconds: 14400
+  max_harness_containers: 5
+  chat_history_max_tokens: 24000
+  chat_history_recent_turns: 6
+  tool_result_max_chars: 12000
   materializer_poll_interval: 30
   materializer_max_event_tokens: 8000
   materializer_token_budget: 1024
   materializer_freeze_threshold: 3
   materializer_freeze_seconds: 300
+
+observability:
+  logfire: true
+  logfire_include_content: false
+
+tui:
+  vim_enabled: true
+  vim_initial_mode: insert
 
 retrieval:
   enabled: true
@@ -84,7 +109,42 @@ retrieval:
   schema: doc_chunk
   default_hits: 8
   default_mode: hybrid
+  chunk_size_chars: 1800
+  chunk_overlap_chars: 200
+  max_feed_workers: 8
+  max_file_bytes: 52428800
+  query_timeout_seconds: 5
+  auto_index_paths:
+    - docs/
+  auto_index_ignore_paths:
+    - docs/acdl
+
+distiller:
+  model: anthropic/claude-haiku-4-5
+  max_retries: 3
+  prompt_template: distiller_v1
+
+cartographer:
+  token_budget: 1024
+  tokenizer_name: cl100k_base
+  recency_bonus: 0.01
+  recency_cap: 0.5
+  staleness_penalty: 0.05
+  staleness_floor: 0.2
+  priority_weights:
+    dispute: 1.0
+    schema: 0.9
+    insight: 0.8
+    boundary: 0.7
+    entity: 0.6
+    result: 0.5
+    constant: 0.4
 ```
+
+The `distiller:` and `cartographer:` blocks configure the two-stage context-map
+pipeline. Distiller is an LLM pass that extracts observations from event
+batches; Cartographer is a deterministic Python scorer that ranks and evicts
+entries against a token budget.
 
 API keys are read from environment variables or a project-root `.env` file:
 
@@ -163,23 +223,39 @@ foreground chat loop:
 ```text
 agent/tool activity
   -> typed context-map events in PostgreSQL
-  -> context-map-materializer skill
-  -> Distiller -> Cartographer -> Evictor
-  -> compact context_map row
+  -> Distiller (LLM)  — extracts observations from event batches
+  -> Cartographer (deterministic) — priority queue with budget enforcement
+  -> Evictor (deterministic) — removes lowest-priority entries on overflow
+  -> compact context_map row, materialized via background poller
   -> next app/session prompt includes the stored map
 ```
 
 Current context-map components:
 
-- typed Pydantic event models in `harness_poc/core/context_map_events.py`
+- typed Pydantic event models in `harness_poc/core/events/context_map_events.py`
+- pipeline schema in `harness_poc/core/context_map/schema.py`
+  (`DistillerEntry`, `DistilledBatch`, `MapEntry`, `EvictionRecord`,
+  `CartographerResult`)
 - PostgreSQL tables `context_map_events` and `context_map`
-- `append_event` system skill for manually appending typed events
-- `context-map-materializer` project skill for Distiller, Cartographer, and
-  budget enforcement passes
+- LLM-driven `Distiller` in `harness_poc/core/context_map/distiller.py`
+  with retry/repair and structured output
+- deterministic `Cartographer` in `harness_poc/core/context_map/cartographer.py`
+  that scores entries by `priority_weight × recency × (1 − staleness)`
+- deterministic Evictor (in the same module) that drops the lowest-priority
+  entries when the token budget is exceeded
+- `context-map-materializer` project skill that orchestrates one full
+  Distiller → Cartographer → Evictor pass for a corpus key
 - `MaterializerRunner`, started by the TUI and main async runtime, which polls
-  pending corpus keys and materializes them in the background
-- automatic `document_retrieved` and `search_failed` events from
-  `search_documents`
+  pending corpus keys
+- `append_event` system skill for manually appending typed events
+- `observe` project skill — emits structured observations with 7 types
+  (entity, schema, insight, dispute, boundary, constant, result)
+- **automatic post-turn observation extraction**: signal-tool turns
+  (e.g. `semble_search`, `read_file`, `search_documents`,
+  `consolidate_state`) are summarized by a background classifier and fed
+  through `observe` without the agent having to ask. See
+  `pydantic_runtime.py:extract_observations_from_turn`.
+- `search_documents` and `search_failed` events from retrieval skills
 - prompt injection of the stored context map during app-state creation
 
 The materializer avoids repeated LLM calls when a corpus is stable. Each skill
@@ -189,17 +265,31 @@ sets `context_map.freeze_until` for `runtime.materializer_freeze_seconds`.
 Pending events are left unprocessed during the freeze and are picked up after it
 expires.
 
-Map entries also carry stable 8-character `entry_id` values in addition to their
-human-readable slug keys. `ADD` creates a new ID, `REPLACE` keeps the existing ID,
-and old map rows are normalized on the next materializer pass. Budget evictions
-and upward section promotions append `map_entry_evicted` and
-`map_entry_promoted` derivation events, including the affected `entry_id` when
-available, so map evolution remains auditable.
+Map entries (`MapEntry` in `core/context_map/schema.py`) carry stable
+8-character `entry_id` values, observation type, summary, source event IDs,
+materialization count, cycle bounds, and a token estimate. Priority is
+recomputed each cycle from configurable `priority_weights`, recency bonus, and
+staleness penalty (see `cartographer:` in `harness.yaml`). Evictions are
+auditable — `EvictionRecord` entries record the structured reason.
 
 Context maps are keyed by corpus, using the configured project id. App startup
 currently injects the `deverino:default` map when present; `search_documents`
-emits document-retrieval events under `deverino:codebase`. The manual event
-skill accepts explicit corpus keys:
+emits document-retrieval events under `deverino:codebase`.
+
+Priority weights can be calibrated from observed reference/eviction rates. The
+`cartographer calibrate` CLI command reads `MapEntryReferenced`,
+`MapEntryEvicted`, and `MapEntryInserted` events from the event log over a
+configurable window and computes target weights deterministically.
+
+```bash
+# Dry run — print the target weights and deltas
+uv run harness-poc cartographer calibrate --window-days 14
+
+# Apply — write new weights to harness.yaml
+uv run harness-poc cartographer calibrate --apply
+```
+
+The manual event skill accepts explicit corpus keys:
 
 ```text
 /skill append_event {
@@ -261,6 +351,13 @@ uv run harness-poc pipeline run research_and_write --input topic="black holes"
 # Dashboards
 uv run harness-poc dashboard summary
 uv run harness-poc dashboard serve
+
+# Cartographer calibration
+uv run harness-poc cartographer calibrate --window-days 14
+uv run harness-poc cartographer calibrate --apply
+
+# ACDL inspection (parse .acdl spec files)
+uv run harness-poc acdl inspect path/to/spec.acdl
 ```
 
 ## TUI Commands
@@ -305,6 +402,16 @@ harness_poc/
 │   │   ├── event_store.py  # Durable event persistence
 │   │   ├── event_log_observer.py # Event log tailing
 │   │   └── context_map_events.py # PEEK-style context-map event models
+│   ├── acdl/               # ACDL parser and CLI app
+│   │   └── cli.py          # `harness-poc acdl …` sub-commands
+│   ├── context_map/        # Deterministic cartographer pipeline
+│   │   ├── schema.py       # DistillerEntry, MapEntry, EvictionRecord
+│   │   ├── distiller.py    # LLM extraction with retry/repair
+│   │   ├── cartographer.py # Deterministic priority queue + evictor
+│   │   ├── calibrate.py    # priority_weights calibration
+│   │   ├── render.py       # Map → prompt-fragment rendering
+│   │   ├── sections.py     # Section layout helpers
+│   │   └── prompts/        # Distiller prompt templates
 │   ├── execution/          # Declarative execution engines
 │   │   ├── pipeline_runner.py    # Wave-based DAG execution
 │   │   ├── workflow_runner.py    # YAML workflow execution
@@ -346,6 +453,13 @@ harness_poc/
 │       ├── tool_context.py # ToolContext type
 │       └── tool_result.py  # ToolResult type
 ├── system_tools/           # Built-in LLM-callable primitives
+│   ├── file_tools.py       # read_file, write_file, patch, search_files
+│   ├── container_spawn.py, container_exec.py, container_destroy.py
+│   ├── execute_python.py
+│   ├── read_memory.py
+│   ├── knowledge_tools.py
+│   ├── acdl_tools.py       # acdl_inspect
+│   └── inspect_context.py  # inspect_own_context
 ├── system_skills/          # System agent skills
 └── system_prompts/         # SOUL.md primary system prompt
 
@@ -371,13 +485,16 @@ Events are Pydantic models persisted through `EventStore` and published through
 `EventBus`. Reducers derive session snapshots from durable events so workers can
 rebuild state without holding private cross-loop mutable state.
 
-The context-map subsystem uses its own event log in the blackboard. Tool and
-skill activity appends typed orientation events, and the background materializer
-turns unprocessed events into a compact map that is loaded into future system
-prompts. This map is a cache, not a source of truth; if materialization fails,
-events remain unprocessed and are retried on a later poll.
-Stable maps can be temporarily frozen to save materializer LLM calls, while new
-events continue accumulating in the event log.
+The context-map subsystem uses its own event log in the blackboard.
+Tool and skill activity (plus the auto-observe post-turn hook) appends
+typed orientation events. The background materializer runs a two-stage
+pipeline: an LLM Distiller extracts observations into `DistillerEntry`
+records, then a deterministic Python Cartographer scores and evicts
+entries against a token budget. The materialized map is loaded into
+future system prompts. This map is a cache, not a source of truth; if
+materialization fails, events remain unprocessed and are retried on
+the next poll. Stable maps can be temporarily frozen to save Distiller
+LLM calls.
 
 The TUI and pipeline agent nodes still use the tested `GoalRunner` path for some
 flows while the migration settles. `GoalRunner` includes semantic retry
@@ -408,11 +525,13 @@ Selected built-in tools and project tools:
 | `semble_search`                                          | Semantic code search                               |
 | `skills_list`, `skill_view`, `skill_manage`              | Discover and manage knowledge skills               |
 | `append_event`                                           | Append typed context-map events                    |
-| `observe`                                                | Record structural observations for the context map |
+| `observe`                                                | Record structural observations (7 types: entity, schema, insight, dispute, boundary, constant, result) for the context map |
 | `context-map-materializer`                               | Materialize context-map events into a prompt cache |
 | `index_documents`                                        | Feed project documents into Vespa                  |
 | `search_documents`                                       | Search indexed Vespa chunks                        |
 | `review_work`                                            | Review the current working tree                    |
+| `inspect_own_context`                                    | Return the agent's own assembled system prompt for self-inspection |
+| `acdl_inspect`                                           | Parse an ACDL spec file and return a structured summary |
 
 Selected agent and knowledge skills:
 
@@ -428,6 +547,9 @@ Selected agent and knowledge skills:
 | `paper-claim-verification` | Verify design-doc paper citations against indexed papers |
 | `developer-pedagogy` | Project knowledge about developer preferences and constraints |
 | `deverino-react-acdl` | ACDL description of the Deverino ReAct loop       |
+| `acdl-syntax`        | ACDL grammar quickstart and gotchas               |
+| `acdl-tooling`       | How to use `acdl_inspect` from inside the agent loop |
+| `deterministic-cartographer` | Design rationale for the deterministic Cartographer migration |
 
 ## Workflows And Pipelines
 
@@ -508,6 +630,10 @@ Three layers. Each has one job. Each runs independently.
 | `tests/unit/` | `just test-unit` | Pure functions, parsing, events, database operations |
 | `tests/agent/` | `just test-agent` | GoalRunner loop behaviour with a mock LLM |
 | `tests/bench/` | `just test-bench` | Agent output quality against rubrics with a real LLM |
+
+Within each layer, tests are grouped by domain — e.g. `tests/` includes
+subdirectories for `context_map/`, `retrieval/`, `runtime/`, `skills/`,
+`processors/`, `repl/`, `event/`, `infra/`.
 
 All fast tests in one go:
 
