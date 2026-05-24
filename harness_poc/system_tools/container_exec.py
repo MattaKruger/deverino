@@ -62,7 +62,7 @@ def container_exec(  # noqa: PLR0911, PLR0913
             content="container_exec requires a container name or ID",
         )
 
-    binary = command.split()[0] if command.split() else ""
+    binary = command.split(maxsplit=1)[0] if command.split() else ""
     if binary in _BLOCKED_BINARIES:
         logger.warning(
             "Blocked interactive binary",

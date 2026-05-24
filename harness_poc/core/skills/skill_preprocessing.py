@@ -25,6 +25,23 @@ _INLINE_SHELL_RE = re.compile(r"!`([^`\n]+)`")
 # Cap inline-shell output.
 _INLINE_SHELL_MAX_OUTPUT = 4000
 
+# Mirror of container_exec._BLOCKED_BINARIES — keep the two frozensets in sync.
+# Shell snippets in SKILL.md files are developer-authored, not LLM-generated,
+# but a misplaced interactive binary (e.g. `!`vim file``) would still hang
+# skill preprocessing. Block early, fail clearly.
+_BLOCKED_INLINE_SHELL_BINARIES: frozenset[str] = frozenset({
+    "sudo",
+    "ssh",
+    "nano",
+    "vim",
+    "vi",
+    "top",
+    "htop",
+    "watch",
+    "less",
+    "more",
+})
+
 
 def substitute_template_vars(
     content: str,
@@ -66,6 +83,10 @@ def _run_inline_shell(
 
     Failures return an ``[inline-shell error: ...]`` marker.
     """
+    binary = command.split(maxsplit=1)[0] if command.split() else ""
+    if binary in _BLOCKED_INLINE_SHELL_BINARIES:
+        return f"[inline-shell blocked: interactive binary '{binary}' is not allowed]"
+
     try:
         completed = subprocess.run(
             ["bash", "-c", command],
