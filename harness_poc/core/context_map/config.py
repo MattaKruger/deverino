@@ -99,6 +99,9 @@ def load_cartographer_config(raw: dict[str, Any]) -> CartographerConfig:
             raise ValueError(msg)
         weights = {k: float(weights_raw[k]) for k in _REQUIRED_WEIGHT_KEYS}
 
+    cc = raw.get("cross_corpus")
+    cc_dict = cc if isinstance(cc, dict) else {}
+
     return CartographerConfig(
         token_budget=int(raw.get("token_budget", 1024)),
         tokenizer_name=str(raw.get("tokenizer_name", "cl100k_base")),
@@ -108,44 +111,19 @@ def load_cartographer_config(raw: dict[str, Any]) -> CartographerConfig:
         staleness_floor=float(raw.get("staleness_floor", 0.2)),
         priority_weights=weights,
         prompt_block=str(raw.get("prompt_block", "structured")),
-        cross_corpus_enabled=_parse_cross_corpus_bool(raw),
-        cross_corpus_related_corpora=_parse_cross_corpus_corpora(raw),
-        cross_corpus_max_entries=_parse_cross_corpus_int(raw, "max_cross_entries", 16),
-        cross_corpus_min_priority=_parse_cross_corpus_float(raw, "min_priority", 0.7),
-        cross_corpus_auto_discover=bool(
-            raw.get("cross_corpus_auto_discover", True),
-        ),
+        cross_corpus_enabled=bool(cc_dict.get("enabled", False)),
+        cross_corpus_related_corpora=_parse_cross_corpus_corpora(cc_dict),
+        cross_corpus_max_entries=int(cc_dict.get("max_cross_entries", 16)),
+        cross_corpus_min_priority=float(cc_dict.get("min_priority", 0.7)),
+        cross_corpus_auto_discover=bool(raw.get("cross_corpus_auto_discover", True)),
     )
 
 
-def _parse_cross_corpus_bool(raw: dict[str, Any]) -> bool:
-    cc = raw.get("cross_corpus")
-    if isinstance(cc, dict):
-        return bool(cc.get("enabled", False))
-    return False
-
-
-def _parse_cross_corpus_corpora(raw: dict[str, Any]) -> dict[str, list[str]]:
-    cc = raw.get("cross_corpus")
-    if isinstance(cc, dict):
-        related_raw = cc.get("related_corpora")
-        if isinstance(related_raw, dict):
-            return {
-                str(k): [str(vv) for vv in v] if isinstance(v, list) else []
-                for k, v in related_raw.items()
-            }
+def _parse_cross_corpus_corpora(cc: dict[str, Any]) -> dict[str, list[str]]:
+    related_raw = cc.get("related_corpora")
+    if isinstance(related_raw, dict):
+        return {
+            str(k): [str(vv) for vv in v] if isinstance(v, list) else []
+            for k, v in related_raw.items()
+        }
     return {}
-
-
-def _parse_cross_corpus_int(raw: dict[str, Any], key: str, default: int) -> int:
-    cc = raw.get("cross_corpus")
-    if isinstance(cc, dict):
-        return int(cc.get(key, default))
-    return default
-
-
-def _parse_cross_corpus_float(raw: dict[str, Any], key: str, default: float) -> float:
-    cc = raw.get("cross_corpus")
-    if isinstance(cc, dict):
-        return float(cc.get(key, default))
-    return default

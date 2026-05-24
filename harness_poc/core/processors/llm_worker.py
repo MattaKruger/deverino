@@ -78,7 +78,6 @@ async def run_llm_worker(  # noqa: PLR0913
         if requested_skill is not None:
             await bus.publish_async(SkillRequested(session_id=session_id, **requested_skill))
         elif result.content:
-            # Extract and emit MapEntryReferenced events (Track B §4.2)
             for ref in _extract_references(
                 result.content, session_id, database, config
             ):
@@ -126,9 +125,8 @@ def _extract_references(
 ) -> list[MapEntryReferenced]:
     """Scan assistant output for [entry:<id>] markers and emit MapEntryReferenced events.
 
-    Track B §4.2: Inline regex post-processor that runs immediately before
-    LLMTextEmitted is published. Cross-corpus citations are attributed to the
-    source corpus per §4.3, not the active one.
+    Runs immediately before LLMTextEmitted is published. Cross-corpus citations
+    are attributed to the source corpus, not the active one.
     """
     active_corpus_key = database.get_session_corpus_key(
         session_id,

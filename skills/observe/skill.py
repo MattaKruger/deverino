@@ -208,29 +208,18 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     )
 
 
+_ENTITY_TYPE_KEYWORDS = (
+    "class", "function", "module", "package", "config", "api",
+    "endpoint", "database", "table", "skill", "tool", "workflow",
+    "pipeline", "pattern", "convention",
+)
+
+
 def _guess_entity_type(summary: str) -> str:
-    """Heuristic: extract a short entity type from the summary."""
     summary_lower = summary.lower()
-    hints = [
-        ("class", "class"),
-        ("function", "function"),
-        ("module", "module"),
-        ("package", "package"),
-        ("config", "config"),
-        ("api", "api"),
-        ("endpoint", "endpoint"),
-        ("database", "database"),
-        ("table", "table"),
-        ("skill", "skill"),
-        ("tool", "tool"),
-        ("workflow", "workflow"),
-        ("pipeline", "pipeline"),
-        ("pattern", "pattern"),
-        ("convention", "convention"),
-    ]
-    for keyword, entity_type in hints:
+    for keyword in _ENTITY_TYPE_KEYWORDS:
         if keyword in summary_lower:
-            return entity_type
+            return keyword
     return "concept"
 
 

@@ -491,7 +491,6 @@ def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
             cycle_n,
             prompt_mode=config.cartographer.prompt_block,
         )
-        # Cross-corpus enrichment (Track B §4.3)
         cross_body = _render_cross_corpus(identity, config, corpus_key)
         inventory = _render_corpus_inventory(identity, corpus_key)
         context_map_block = (
