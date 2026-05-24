@@ -123,11 +123,26 @@ def main_callback(
         bool,
         typer.Option("--resume-last", help="Resume the most recent session."),
     ] = False,
+    corpus: Annotated[
+        str | None,
+        typer.Option(
+            "--corpus", "-c",
+            help=(
+                "Active corpus key for new sessions (default: "
+                "<project_id>:codebase). Must contain ':'. Unknown keys "
+                "warn but are allowed so the agent can bootstrap them."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Interactive LLM harness proof of concept."""
     if ctx.invoked_subcommand is not None:
         return
-    app_state = _new_app_state(session_id=_resolve_resume(resume, resume_last))
+    resolved_corpus = _validate_corpus(corpus)
+    app_state = _new_app_state(
+        session_id=_resolve_resume(resume, resume_last),
+        corpus_key=resolved_corpus,
+    )
     run_repl(app_state)
     raise typer.Exit
 
@@ -142,9 +157,24 @@ def repl(
         bool,
         typer.Option("--resume-last", help="Resume the most recent session."),
     ] = False,
+    corpus: Annotated[
+        str | None,
+        typer.Option(
+            "--corpus", "-c",
+            help=(
+                "Active corpus key for new sessions (default: "
+                "<project_id>:codebase). Must contain ':'. Unknown keys "
+                "warn but are allowed so the agent can bootstrap them."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Start the interactive REPL."""
-    app_state = _new_app_state(session_id=_resolve_resume(resume, resume_last))
+    resolved_corpus = _validate_corpus(corpus)
+    app_state = _new_app_state(
+        session_id=_resolve_resume(resume, resume_last),
+        corpus_key=resolved_corpus,
+    )
     run_repl(app_state)
 
 
@@ -163,6 +193,31 @@ def _resolve_resume(resume: str | None, resume_last: bool) -> str | None:  # noq
             raise typer.Exit(code=1)
         return last
     return None
+
+
+def _validate_corpus(corpus: str | None) -> str | None:
+    if corpus is None:
+        return None
+    corpus = corpus.strip()
+    if ":" not in corpus:
+        print_error(
+            f"--corpus value {corpus!r} must follow 'project:name' form.",
+        )
+        raise typer.Exit(1)
+
+    # Soft warning, not a hard fail — unknown keys are allowed so the agent
+    # can bootstrap a new corpus by observing into it.
+    config = HarnessConfig.load()
+    from harness_poc.core.storage import create_db_engine  # noqa: PLC0415
+
+    db = BlackboardDatabase(create_db_engine(config.runtime.database_url))
+    db.create_tables()
+    if corpus not in set(db.get_all_corpus_keys()):
+        console.print(
+            f"[yellow]Note:[/yellow] corpus {corpus!r} not found in the "
+            f"blackboard yet — it will materialize after the first observe.",
+        )
+    return corpus
 
 
 @workflow_app.command("run")
@@ -751,9 +806,13 @@ def _index_documents(
         raise typer.Exit(1)
 
 
-def _new_app_state(session_id: str | None = None) -> AppState:
+def _new_app_state(
+    session_id: str | None = None,
+    *,
+    corpus_key: str | None = None,
+) -> AppState:
     try:
-        return build_app_state(session_id=session_id)
+        return build_app_state(session_id=session_id, corpus_key=corpus_key)
     except STARTUP_ERRORS as exc:
         logger.exception("Harness startup failed")
         print_error(f"Could not start harness: {exc}")

@@ -323,13 +323,21 @@ def _ensure_history_consistent(messages: list[ModelMessage]) -> list[ModelMessag
     return [*messages, repair]
 
 
-def _resolve_or_create_session(database: BlackboardDatabase, session_id: str | None) -> str:
+def _resolve_or_create_session(
+    database: BlackboardDatabase,
+    session_id: str | None,
+    *,
+    corpus_key: str | None = None,
+) -> str:
     if session_id is not None:
         if not database.session_exists(session_id):
             msg = f"Session {session_id} not found"
             raise ValueError(msg)
         return session_id
-    return database.start_session("Interactive proof of concept session.")
+    return database.start_session(
+        "Interactive proof of concept session.",
+        active_corpus_key=corpus_key,
+    )
 
 
 def build_identity(
@@ -337,6 +345,7 @@ def build_identity(
     session_id: str | None,
     *,
     database_url: str | None = None,
+    corpus_key: str | None = None,
 ) -> Identity:
     effective_url = database_url or config.runtime.database_url
     engine = create_db_engine(effective_url)
@@ -344,7 +353,9 @@ def build_identity(
     database.create_tables()
     event_store = EventStore(engine)
     event_bus = EventBus(event_store)
-    effective_session_id = _resolve_or_create_session(database, session_id)
+    effective_session_id = _resolve_or_create_session(
+        database, session_id, corpus_key=corpus_key,
+    )
     return Identity(
         session_id=effective_session_id,
         database=database,
@@ -360,7 +371,10 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
     system_prompt = config.paths.soul.read_text(encoding="utf-8")
     project_state = identity.database.ensure_project_state()
     session_state = identity.database.ensure_session_state(identity.session_id)
-    corpus_key = f"{identity.config_project_id}:codebase"
+    corpus_key = identity.database.get_session_corpus_key(
+        identity.session_id,
+        default=f"{identity.config_project_id}:codebase",
+    )
     context_map = identity.database.get_context_map(corpus_key)
     cycle_n = identity.database.get_cycle(corpus_key)
     if context_map and config.cartographer.prompt_block != "none":
@@ -370,7 +384,10 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
             prompt_mode=config.cartographer.prompt_block,
         )
         cross_body = _render_cross_corpus(identity, config, corpus_key)
-        context_map_block = f"--- Context Map ---\n{map_body}{cross_body}\n---"
+        inventory = _render_corpus_inventory(identity, corpus_key)
+        context_map_block = (
+            f"--- Context Map ---\n{map_body}{cross_body}\n---{inventory}"
+        )
     else:
         context_map_block = ""
     state_context = build_state_context(project_state, session_state)
@@ -462,7 +479,10 @@ def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
     project_state = identity.database.ensure_project_state()
     session_state = identity.database.ensure_session_state(identity.session_id)
     state_context = build_state_context(project_state, session_state)
-    corpus_key = f"{identity.config_project_id}:codebase"
+    corpus_key = identity.database.get_session_corpus_key(
+        identity.session_id,
+        default=f"{identity.config_project_id}:codebase",
+    )
     context_map = identity.database.get_context_map(corpus_key)
     cycle_n = identity.database.get_cycle(corpus_key)
     if context_map and config.cartographer.prompt_block != "none":
@@ -473,7 +493,10 @@ def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
         )
         # Cross-corpus enrichment (Track B §4.3)
         cross_body = _render_cross_corpus(identity, config, corpus_key)
-        context_map_block = f"--- Context Map ---\n{map_body}{cross_body}\n---"
+        inventory = _render_corpus_inventory(identity, corpus_key)
+        context_map_block = (
+            f"--- Context Map ---\n{map_body}{cross_body}\n---{inventory}"
+        )
     else:
         context_map_block = ""
     return {
@@ -538,6 +561,25 @@ def _render_cross_corpus(
     return "\n".join(parts)
 
 
+def _render_corpus_inventory(
+    identity: Identity,
+    active_corpus_key: str,
+) -> str:
+    """Render a one-line-per-corpus inventory, or '' when redundant.
+
+    Suppressed for single-corpus deployments — there's nothing to choose
+    between, and the active corpus is already implicit in the map block.
+    """
+    keys = identity.database.get_all_corpus_keys()
+    if len(keys) <= 1:
+        return ""
+    lines = ["\n--- Available Corpora ---"]
+    for ck in keys:
+        marker = " (primary)" if ck == active_corpus_key else ""
+        lines.append(f"{ck}{marker}")
+    return "\n".join(lines)
+
+
 def _build_app_state_with(
     *,
     identity: Identity,
@@ -570,10 +612,13 @@ def build_app_state(
     session_id: str | None = None,
     *,
     database_url: str | None = None,
+    corpus_key: str | None = None,
 ) -> AppState:
     config = HarnessConfig.load()
     configure_logging(config.project_root)
-    identity = build_identity(config, session_id, database_url=database_url)
+    identity = build_identity(
+        config, session_id, database_url=database_url, corpus_key=corpus_key,
+    )
     runtime = build_runtime_layer(identity, config)
     long_lived = build_long_lived(identity, runtime)
 
