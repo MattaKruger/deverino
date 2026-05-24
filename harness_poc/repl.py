@@ -36,6 +36,7 @@ from harness_poc.core.runtime import (
     extract_observations_from_turn,
     prune_message_history,
     sanitize_new_messages,
+    split_chat_turns,
 )
 from harness_poc.core.storage import StateSection, build_state_context
 
@@ -387,9 +388,16 @@ def _bounded_pydantic_messages(app_state: AppState) -> list[ModelMessage]:
         max_tokens=app_state.config.runtime.chat_history_max_tokens,
         recent_turns=app_state.config.runtime.chat_history_recent_turns,
     )
-    if len(pruned) > MAX_PYDANTIC_MESSAGES:
-        excess = len(pruned) - MAX_PYDANTIC_MESSAGES
-        return pruned[excess:]
+    # Drop complete turns from the beginning if still over the message count
+    # limit.  Raw slicing (pruned[excess:]) can break tool_call/tool_result
+    # pairing, leaving orphaned tool-return messages that DeepSeek rejects
+    # with: "Messages with role 'tool' must be a response to a preceding
+    #        message with 'tool_calls'"
+    while len(pruned) > MAX_PYDANTIC_MESSAGES:
+        turns = split_chat_turns(pruned)
+        if len(turns) <= 1:
+            break
+        pruned = [msg for turn in turns[1:] for msg in turn]
     return pruned
 
 

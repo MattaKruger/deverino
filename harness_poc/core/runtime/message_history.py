@@ -54,11 +54,13 @@ def prune_message_history(
     """Drop oldest complete chat turns until history is under the token budget."""
     if max_tokens <= 0 or not messages:
         return []
-    message_list = list(messages)
+    message_list = _strip_leading_orphan_tool_returns(list(messages))
+    if not message_list:
+        return []
     if estimate_message_tokens(message_list) <= max_tokens:
         return message_list
 
-    turns = _split_chat_turns(message_list)
+    turns = split_chat_turns(message_list)
     min_turns = max(1, recent_turns)
     pruned_turns = list(turns)
 
@@ -119,7 +121,8 @@ def _serialize_tool_content(content: object) -> str:
         return str(content)
 
 
-def _split_chat_turns(messages: list[ModelMessage]) -> list[list[ModelMessage]]:
+def split_chat_turns(messages: list[ModelMessage]) -> list[list[ModelMessage]]:
+    """Split message list into chat turns, each starting when a user message appears."""
     turns: list[list[ModelMessage]] = []
     current: list[ModelMessage] = []
 
@@ -133,6 +136,38 @@ def _split_chat_turns(messages: list[ModelMessage]) -> list[list[ModelMessage]]:
     if current:
         turns.append(current)
     return turns
+
+
+def _strip_leading_orphan_tool_returns(
+    messages: list[ModelMessage],
+) -> list[ModelMessage]:
+    """Remove leading messages that would create orphaned tool returns.
+
+    DeepSeek (and other providers) require every 'tool' role message to be
+    preceded by an 'assistant' message with 'tool_calls'.  If the history
+    starts with a ModelRequest containing only ToolReturnParts — which can
+    happen after a raw message-count slice drops the preceding ModelResponse —
+    we strip those orphaned tool returns to keep the conversation valid.
+    """
+    idx = 0
+    for msg in messages:
+        if _is_tool_return_only_request(msg):
+            idx += 1
+        else:
+            break
+    if idx == 0:
+        return messages
+    return messages[idx:]
+
+
+def _is_tool_return_only_request(message: ModelMessage) -> bool:
+    """Return True when the message is a ModelRequest that contains only ToolReturnParts."""
+    if not isinstance(message, ModelRequest):
+        return False
+    parts = list(message.parts)
+    if not parts:
+        return False
+    return all(isinstance(p, ToolReturnPart) for p in parts)
 
 
 def _is_user_prompt_request(message: ModelMessage) -> bool:

@@ -10,6 +10,7 @@ from harness_poc.core.runtime.message_history import (
     estimate_message_tokens,
     prune_message_history,
     sanitize_new_messages,
+    split_chat_turns,
 )
 from harness_poc.core.runtime.pydantic_runtime import (
     MAX_SEMBLE_SEARCH_CALLS_PER_RUN,
@@ -60,4 +61,5 @@ __all__ = [
     "is_live_model",
     "prune_message_history",
     "sanitize_new_messages",
+    "split_chat_turns",
 ]
