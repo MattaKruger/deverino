@@ -4,6 +4,7 @@ import json
 import logging
 import shlex
 import sqlite3
+import threading
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -13,6 +14,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     TextPart,
+    ToolReturnPart,
     UserPromptPart,
 )
 
@@ -24,11 +26,14 @@ from harness_poc.core.events import (
     LLMTextEmitted,
 )
 from harness_poc.core.runtime import (
+    AgentRunResult,
     GoalRunner,
     GoalRunResult,
     TokenAccounting,
     account_for_model_run,
+    build_model,
     estimate_message_tokens,
+    extract_observations_from_turn,
     prune_message_history,
     sanitize_new_messages,
 )
@@ -45,6 +50,15 @@ if TYPE_CHECKING:
 MIN_WORKFLOW_PARTS = 2
 WORKFLOW_OBJECTIVE_PARTS = 2
 MIN_PIPELINE_PARTS = 2
+
+# Tools whose results carry structural signal worth extracting as observations.
+_SIGNAL_TOOLS: frozenset[str] = frozenset({
+    "semble_search",
+    "read_file",
+    "search_files",
+    "search_documents",
+    "consolidate_state",
+})
 
 
 def _track_tokens(accounting: TokenAccounting, app_state: AppState) -> None:
@@ -232,6 +246,69 @@ def handle_pipeline_command(app_state: AppState, user_input: str) -> None:
 MAX_PYDANTIC_MESSAGES = 50
 
 
+def _turn_has_signal_tools(messages: list[ModelMessage]) -> bool:
+    """Return True if the turn contains any ToolReturnPart from a signal tool."""
+    for msg in messages:
+        if not isinstance(msg, ModelRequest):
+            continue
+        for part in msg.parts:
+            if isinstance(part, ToolReturnPart) and part.tool_name in _SIGNAL_TOOLS:
+                return True
+    return False
+
+
+def _build_turn_content(
+    messages: list[ModelMessage],
+    final_text: str,
+) -> str:
+    """Build a compact text representation of a turn for the classifier."""
+    parts: list[str] = []
+    for msg in messages:
+        if not isinstance(msg, ModelRequest):
+            continue
+        for part in msg.parts:
+            if isinstance(part, ToolReturnPart):
+                tool_name = part.tool_name or "unknown_tool"
+                content = str(part.content)[:4000]
+                parts.append(f"[tool: {tool_name}]\n{content}")
+            elif isinstance(part, TextPart):
+                if part.content:
+                    parts.append(f"[agent] {part.content[:2000]}")
+    if final_text:
+        parts.append(f"[agent final] {final_text[:2000]}")
+    return "\n\n".join(parts) if parts else "(empty turn)"
+
+
+def _fire_observations_async(app_state: AppState, response: object) -> None:
+    """Fire observation extraction in a background thread.
+
+    Captures the turn content and model config, then offloads the
+    LLM call so the user isn't blocked.
+    """
+    if not isinstance(response, AgentRunResult):
+        return
+
+    turn_content = _build_turn_content(response.messages, response.content)
+    if not turn_content or turn_content == "(empty turn)":
+        return
+
+    session_id = app_state.session_id
+    skill_runner = app_state.skill_runner
+    config = app_state.config
+
+    def _run() -> None:
+        model = build_model(config.llm)
+        extract_observations_from_turn(
+            turn_content,
+            model=model,
+            skill_runner=skill_runner,
+            session_id=session_id,
+        )
+
+    thread = threading.Thread(target=_run, daemon=True, name="observe-extractor")
+    thread.start()
+
+
 def handle_chat_input(app_state: AppState, user_input: str) -> None:
     app_state.messages.append({"role": "user", "content": user_input})
     app_state.event_bus.publish(
@@ -294,6 +371,10 @@ def handle_chat_input(app_state: AppState, user_input: str) -> None:
                 )
             )
         app_state.streaming.on_finish(response.content)
+
+        # --- Post-turn automatic observation extraction ---
+        if response.messages and _turn_has_signal_tools(response.messages):
+            _fire_observations_async(app_state, response)
     except sqlite3.OperationalError as exc:
         print_error(f"Database operation failed: {exc}")
     except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:

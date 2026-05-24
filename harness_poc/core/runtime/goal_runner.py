@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -21,7 +22,10 @@ from harness_poc.core.events import (
     SkillCalled,
     SkillCompleted,
 )
-from harness_poc.core.runtime.pydantic_runtime import build_model
+from harness_poc.core.runtime.pydantic_runtime import (
+    build_model,
+    extract_observations_from_turn,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -483,6 +487,30 @@ class GoalRunner:
         total_tokens = 0
         previous_context_tokens = 0
         events: list[dict[str, Any]] = []
+        tool_results: list[str] = []
+
+        def _fire_goal_observations_async() -> None:
+            """Fire one classifier call with all collected tool results, in background."""
+            if not tool_results:
+                return
+            turn_content = f"Goal: {goal}\n\n" + "\n\n".join(tool_results)
+            session_id = app_state.session_id
+            skill_runner = app_state.skill_runner
+            config = app_state.config
+
+            def _run() -> None:
+                model = build_model(config.llm)
+                extract_observations_from_turn(
+                    turn_content,
+                    model=model,
+                    skill_runner=skill_runner,
+                    session_id=session_id,
+                )
+
+            thread = threading.Thread(
+                target=_run, daemon=True, name="goal-observe-extractor"
+            )
+            thread.start()
 
         app_state.event_bus.publish(AgentStarted(session_id=app_state.session_id, goal=goal))
 
@@ -500,6 +528,7 @@ class GoalRunner:
                             "elapsed": elapsed,
                         },
                     )
+                    _fire_goal_observations_async()
                     return GoalRunResult(
                         status="budget_exhausted",
                         content=(
@@ -543,6 +572,7 @@ class GoalRunner:
                         "next_context_tokens": context_delta_tokens,
                     },
                 )
+                _fire_goal_observations_async()
                 return GoalRunResult(
                     status="budget_exhausted",
                     content=(
@@ -666,6 +696,7 @@ class GoalRunner:
                             "total_tokens": total_tokens,
                         },
                     )
+                    _fire_goal_observations_async()
                     return GoalRunResult(
                         status="completed",
                         content=content,
@@ -715,6 +746,9 @@ class GoalRunner:
                         artifacts=result.artifacts,
                     )
                 )
+                # Collect successful tool results for post-run observation extraction
+                if result.status == "success" and result.content:
+                    tool_results.append(f"[tool: {tool_name}]\n{result.content[:4000]}")
                 # Track failed actions for semantic stuck detection
                 if result.status in ("failed", "error", "blocked"):
                     self._failed_action_keys.append(_semantic_key(tool_name, arguments))
@@ -766,6 +800,7 @@ class GoalRunner:
                 "total_tokens": total_tokens,
             },
         )
+        _fire_goal_observations_async()
         return GoalRunResult(
             status="budget_exhausted",
             content=(

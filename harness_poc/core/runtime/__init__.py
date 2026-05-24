@@ -24,6 +24,7 @@ from harness_poc.core.runtime.pydantic_runtime import (
     build_skill_tools,
     chat_text,
     execute_skill_as_tool,
+    extract_observations_from_turn,
     is_live_model,
 )
 from harness_poc.core.runtime.reducers import derive_session_state
@@ -55,6 +56,7 @@ __all__ = [
     "derive_session_state",
     "estimate_message_tokens",
     "execute_skill_as_tool",
+    "extract_observations_from_turn",
     "is_live_model",
     "prune_message_history",
     "sanitize_new_messages",

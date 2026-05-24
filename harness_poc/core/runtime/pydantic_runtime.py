@@ -726,6 +726,108 @@ def chat_text(
     return str(result.output)
 
 
+def extract_observations_from_turn(
+    turn_content: str,
+    *,
+    model: Model,
+    skill_runner: SkillRunner,
+    session_id: str,
+) -> None:
+    """Run a classifier LLM call to extract observations from a turn.
+
+    Builds a compact prompt, calls chat_text(), parses the returned
+    DistilledBatch, and feeds each entry to the observe skill.
+
+    Errors are logged but never raised — this is a best-effort
+    background operation.
+    """
+    from harness_poc.core.context_map.schema import DistilledBatch  # noqa: PLC0415
+
+    if not is_live_model(model):
+        logger.debug("Skipping observation extraction: model is not live")
+        return
+
+    messages: list[Message] = [
+        {
+            "role": "system",
+            "content": (
+                "You are a post-turn observation extractor. Scan the conversation "
+                "turn below and extract structural observations worth adding to "
+                "the project context map.\n\n"
+                "Return ONLY a JSON object matching this schema:\n"
+                '{"entries": [{"key": "...", "observation_type": "...", '
+                '"summary": "...", "source_event_ids": ["auto-observe"], '
+                '"tags": ["novel"]}]}\n\n'
+                "Rules:\n"
+                "- Only extract NEW discoveries about the codebase\n"
+                "- Be specific: include file paths, class names, function names\n"
+                "- Skip trivial things — every file read does NOT need an observation\n"
+                '- Return {"entries": []} if nothing worth recording was found\n'
+                "- observation_type must be one of: entity, schema, insight, "
+                "dispute, boundary, constant, result\n"
+                "- entity: key class, function, module, or concept\n"
+                "- schema: data format, config shape, or API contract\n"
+                "- insight: non-obvious relationship between components\n"
+                "- dispute: stale or incorrect existing knowledge\n"
+                "- boundary: something definitively NOT in the codebase\n"
+                "- constant: stable domain constant (config value, magic number)\n"
+                "- result: reusable computation or analysis result\n"
+            ),
+        },
+        {"role": "user", "content": turn_content},
+    ]
+
+    try:
+        raw = chat_text(messages, model=model)
+    except Exception:
+        logger.exception("Observation classifier LLM call failed")
+        return
+
+    # Strip markdown code fences if present
+    raw = raw.strip()
+    if raw.startswith("```"):
+        lines = raw.split("\n")
+        lines = lines[1:] if lines else []
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        raw = "\n".join(lines).strip()
+
+    try:
+        batch = DistilledBatch.model_validate_json(raw)
+    except Exception:
+        logger.exception("Failed to parse observation classifier output")
+        return
+
+    if not batch.entries:
+        logger.debug("Observation classifier returned no entries")
+        return
+
+    for entry in batch.entries:
+        try:
+            skill_runner.execute_skill(
+                tool_name="observe",
+                arguments={
+                    "observation_type": entry.observation_type,
+                    "summary": entry.summary[:200],
+                    "detail": entry.summary,
+                },
+                session_id=session_id,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record observation: %s",
+                entry.key,
+            )
+
+    logger.debug(
+        "Observation extraction completed",
+        extra={
+            "session_id": session_id,
+            "entries_found": len(batch.entries),
+        },
+    )
+
+
 def is_live_model(model: Model) -> bool:
     """Return True if the model is not a TestModel fallback."""
     return not isinstance(model, TestModel)

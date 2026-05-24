@@ -1,7 +1,8 @@
 # Plan: Automatic observation via post-turn harness hook
 
 **Date**: 2026-05-24
-**Status**: draft — under review / brainstorm
+**Status**: resolved — ready for implementation
+**Approach**: B (per-turn classifier LLM call) with async execution and tool-type turn filter
 
 ## Problem
 
@@ -201,58 +202,88 @@ more LLM cost for earlier availability of the same information.
 If the cartographer only runs manually (as it currently does), a per-turn
 hook would meaningfully change how fast the context map grows.
 
-## Open design questions
+## Design decisions (resolved 2026-05-24)
 
-1. **Synchronous vs. async hook**: Should the hook block the user (fire
-   synchronously after `on_finish`) or run in a background thread? Blocking
-   gives immediate context map updates but adds visible latency. Background
-   gives no latency but observations lag one turn.
+### 1. Async execution (background, not blocking)
 
-2. **Deduplication**: The hook will fire every turn. Multiple turns may
-   observe the same entity. The `observe` skill and the cartographer both
-   need a deduplication strategy (by key, by content hash, or by
-   suppressing if entry already exists in the current map).
+The observation extractor fires in a background thread after `on_finish`
+completes. Observations lag by 1 turn. No user-facing latency is added.
+Rationale: the benefit of same-turn recency does not justify making every
+user interaction wait on a classifier LLM call.
 
-3. **Which turns trigger observation**: Every turn? Only turns where at
-   least one search/read tool was called? Only turns where `response.content`
-   exceeds a token threshold? A turn filter reduces noise and cost for
-   approach B.
+### 2. Deduplication strategy
 
-4. **Model for approach B**: The classifier call should use a cheaper model
-   than the main runtime (e.g., Haiku vs. Sonnet/Opus). The `harness.yaml`
-   config doesn't currently have a `classifier_llm` field. Either reuse the
-   main LLM config or add a separate config key.
+Two-layer dedup:
 
-5. **Goal loop granularity**: Should the goal loop fire the hook after every
-   skill, or once per goal run completion? Per-skill is noisier but faster;
-   per-run is cheaper and cleaner.
+- **Content-hash dedup at the `observe` skill level** — cheap, deterministic,
+  rejects exact duplicates before they reach the map.
+- **Semantic dedup at the cartographer level** — already paying an LLM call
+  there; near-duplicate observations are merged during batch distillation.
 
-6. **Callback hook in SkillRunner vs. call site**: Adding
-   `on_skill_completed` to `SkillRunner` is cleaner than duplicating the
-   hook at each call site (chat path + goal loop). But it adds coupling to
-   the runner. Alternatively, the `execute_skill_as_tool` wrapper in
-   `pydantic_runtime.py` and the `run_async` loop are the two call sites —
-   two places to patch vs. one.
+The per-turn hook itself does not own deduplication. It feeds events and
+lets the existing pipeline handle duplicates.
 
-## Files that would be touched (approach B, synchronous)
+### 3. Turn filter: signal-producing tools only
+
+The hook fires only when the turn contains at least one `ToolReturnPart`
+from a signal-producing tool. The locked list:
+
+| Tool | Rationale |
+|---|---|
+| `semble_search` | File paths + line refs in result chunks |
+| File reads (via `file_tools`) | Module/class/function names from path |
+| `search_documents` | Document URI + chunk title |
+| `consolidate_state` | State keys that were promoted |
+
+Pure chat turns and non-signal tool calls (e.g., `read_memory`) skip the
+hook entirely. The filter is pure Python — zero cost, runs before any LLM
+call is made.
+
+### 4. Classifier model: reuse main LLM config
+
+The classifier reuses the main LLM configuration with a tight prompt that
+forces brevity. No new `classifier_model` config key is added yet. If cost
+or latency demands a separate model (e.g., Haiku for classification while
+main runtime uses Sonnet), the key can be added later without migration
+churn.
+
+### 5. Goal loop granularity: per-run
+
+The GoalRunner collects all tool results across the entire goal run and
+fires one classifier call at completion. Per-skill granularity would
+produce near-duplicate observations for multi-step goals (e.g., "search →
+read → search → read" on the same set of files). Per-run is cheaper and
+cleaner.
+
+### 6. Hook location: `on_skill_completed` callback in SkillRunner
+
+An `on_skill_completed: Callable | None` parameter is added to
+`SkillRunner.execute_skill`. This single extension point covers both the
+chat path (via `execute_skill_as_tool`) and the goal loop (via `run_async`).
+It is also reusable by approach C or future interception patterns without
+further changes to the runner.
+
+## Files that will be touched
 
 | File | Change |
 |---|---|
-| `harness_poc/repl.py` | Call `_extract_turn_observations()` in `handle_chat_input` after `on_finish` |
-| `harness_poc/core/runtime/goal_runner.py` | Call extractor after each successful `SkillCompleted` in `run_async` |
-| `harness_poc/core/runtime/pydantic_runtime.py` | Add `chat_text`-based `extract_observations(content, tool_results)` helper |
-| `harness_poc/core/context_map/schema.py` | Already has `DistilledBatch` — no change needed |
-| `harness_poc/core/skills/skill_runner.py` | No change needed (called directly) |
-| `harness.yaml` | Optionally: add `classifier_llm` config key |
+| `harness_poc/repl.py` | In `handle_chat_input`, after `on_finish`, check for signal-producing tool results; if found, fire `_extract_turn_observations()` in a background thread |
+| `harness_poc/core/runtime/goal_runner.py` | In `run_async`, collect all skill results during the run; fire one classifier call at goal completion |
+| `harness_poc/core/runtime/pydantic_runtime.py` | Add `extract_observations()` helper using `chat_text()` against the main model, returning `DistilledBatch` |
+| `harness_poc/core/skills/skill_runner.py` | Add `on_skill_completed: Callable | None` parameter to `execute_skill` — single extension point for both call sites |
+| `harness_poc/core/context_map/schema.py` | No change — `DistilledBatch` already exists |
 
-## Files that would be touched (approach C, per-tool callback)
+## Signal-producing tool registry (locked list)
 
-| File | Change |
-|---|---|
-| `harness_poc/core/skills/skill_runner.py` | Add `on_skill_completed` callback param to `execute_skill` |
-| `harness_poc/core/runtime/pydantic_runtime.py` | Register callback in `execute_skill_as_tool` |
-| `harness_poc/core/runtime/goal_runner.py` | Register callback in `run_async` |
-| New module: `harness_poc/core/skills/observation_extractor.py` | Per-tool structural extraction logic + tool registry |
+| Tool | `observe` type | Extractable signal |
+|---|---|---|
+| `semble_search` | `entity` | File paths + line refs from result chunks |
+| File reads (via `file_tools`) | `entity` | Module/class/function names from path |
+| `search_documents` | `entity` or `schema` | Document URI + chunk title |
+| `consolidate_state` | `result` | State keys that were promoted |
+
+This list is hardcoded for the initial implementation. It can be promoted
+to a configurable registry later if the pattern proves stable.
 
 ## Not in scope
 
