@@ -736,12 +736,39 @@ def extract_observations_from_turn(
     """Run a classifier LLM call to extract observations from a turn.
 
     Builds a compact prompt, calls chat_text(), parses the returned
-    DistilledBatch, and feeds each entry to the observe skill.
+    AutoObserveBatch, and feeds each entry to the observe skill.
 
     Errors are logged but never raised — this is a best-effort
     background operation.
     """
-    from harness_poc.core.context_map.schema import DistilledBatch  # noqa: PLC0415
+    from pydantic import BaseModel, ConfigDict, Field  # noqa: PLC0415
+
+    class AutoObserveEntry(BaseModel):
+        model_config = ConfigDict(extra="forbid", frozen=True)
+
+        key: str = Field(..., description="Stable slug identifier")
+        observation_type: str = Field(
+            ...,
+            description=(
+                "One of: entity, schema, insight, dispute, boundary, constant, result"
+            ),
+        )
+        summary: str = Field(
+            ..., description="One-line summary of the observation, be specific"
+        )
+        detail: str = Field(
+            ...,
+            description=(
+                "2-3 sentences explaining why this observation matters — "
+                "what would the agent do differently knowing this, or "
+                "what would go wrong without it"
+            ),
+        )
+
+    class AutoObserveBatch(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        entries: list[AutoObserveEntry]
 
     if not is_live_model(model):
         logger.debug("Skipping observation extraction: model is not live")
@@ -755,9 +782,12 @@ def extract_observations_from_turn(
                 "turn below and extract structural observations worth adding to "
                 "the project context map.\n\n"
                 "Return ONLY a JSON object matching this schema:\n"
-                '{"entries": [{"key": "...", "observation_type": "...", '
-                '"summary": "...", "source_event_ids": ["auto-observe"], '
-                '"tags": ["novel"]}]}\n\n'
+                '{"entries": [{"key": "stable-slug", '
+                '"observation_type": "entity|schema|insight|dispute|boundary|constant|result", '
+                '"summary": "one-line summary", '
+                '"detail": "2-3 sentences explaining why this matters — '
+                'what would the agent do differently knowing this, '
+                'or what would go wrong without it"}]}\n\n'
                 "Rules:\n"
                 "- Only extract NEW discoveries about the codebase\n"
                 "- Be specific: include file paths, class names, function names\n"
@@ -772,6 +802,9 @@ def extract_observations_from_turn(
                 "- boundary: something definitively NOT in the codebase\n"
                 "- constant: stable domain constant (config value, magic number)\n"
                 "- result: reusable computation or analysis result\n"
+                "- summary must be a one-line factual statement\n"
+                "- detail must explain impact: why does this matter? "
+                "what changes because of it?\n"
             ),
         },
         {"role": "user", "content": turn_content},
@@ -793,7 +826,7 @@ def extract_observations_from_turn(
         raw = "\n".join(lines).strip()
 
     try:
-        batch = DistilledBatch.model_validate_json(raw)
+        batch = AutoObserveBatch.model_validate_json(raw)
     except Exception:
         logger.exception("Failed to parse observation classifier output")
         return
@@ -809,7 +842,7 @@ def extract_observations_from_turn(
                 arguments={
                     "observation_type": entry.observation_type,
                     "summary": entry.summary[:200],
-                    "detail": entry.summary,
+                    "detail": entry.detail,
                 },
                 session_id=session_id,
             )

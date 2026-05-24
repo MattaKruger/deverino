@@ -132,7 +132,6 @@ class SkillRunner:
         on_tool_event: Callable[[str], None] | None = None,
         call_id: str | None = None,
         cancellation: CancellationToken | None = None,
-        on_skill_completed: Callable[[str, dict[str, Any], SkillResult], None] | None = None,
     ) -> SkillResult:
         resolved_tool_name = self._resolve_alias(tool_name)
         token = cancellation or CancellationToken()
@@ -229,18 +228,6 @@ class SkillRunner:
                     "artifacts": result.artifacts,
                 },
             )
-
-        if on_skill_completed is not None:
-            try:
-                on_skill_completed(resolved_tool_name, normalized_arguments, result)
-            except Exception:
-                logger.exception(
-                    "on_skill_completed callback raised",
-                    extra={
-                        "tool_name": resolved_tool_name,
-                        "session_id": session_id,
-                    },
-                )
 
         return result
 
