@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.events import (
+    ArchitectureInvariantObserved,
     BoundaryIdentified,
     ConstantDocumented,
     ContextMapEvent,
@@ -127,6 +128,20 @@ def _build_result(
     )
 
 
+def _build_architecture(
+    ctx: SkillContext,
+    corpus_key: str,
+    summary: str,
+    detail: str,
+) -> ContextMapEvent:
+    return ArchitectureInvariantObserved(
+        session_id=ctx.session_id,
+        corpus_key=corpus_key,
+        invariant_summary=summary,
+        detail=detail,
+    )
+
+
 _Builder = "Callable[[SkillContext, str, str, str], ContextMapEvent]"
 
 _BUILDERS: dict[str, _Builder] = {
@@ -137,6 +152,7 @@ _BUILDERS: dict[str, _Builder] = {
     "boundary": _build_boundary,
     "constant": _build_constant,
     "result": _build_result,
+    "architecture": _build_architecture,
 }
 
 

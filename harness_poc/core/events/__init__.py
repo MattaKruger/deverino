@@ -1,5 +1,6 @@
 from harness_poc.core.events.context_map_events import (
     CONTEXT_MAP_EVENT_REGISTRY,
+    ArchitectureInvariantObserved,
     BoundaryIdentified,
     ConstantDocumented,
     ContextMapEvent,
@@ -50,6 +51,7 @@ from harness_poc.core.events.events import (
 __all__ = [
     "CONTEXT_MAP_EVENT_REGISTRY",
     "EVENT_REGISTRY",
+    "ArchitectureInvariantObserved",
     "AgentInputAdded",
     "AgentStarted",
     "AgentTurnRecorded",

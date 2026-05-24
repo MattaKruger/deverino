@@ -31,6 +31,11 @@ parameters:
           magic number, fixed name).
         - "result": You recorded a reusable computation or analysis result
           that need not be re-derived.
+        - "architecture": You identified a cross-cutting structural invariant
+          (a constraint, layering rule, or design commitment that shapes many
+          decisions). Use sparingly — only for facts that would cause category
+          errors if unknown. If the fact is about a single component, use
+          "entity"; if it's about how two components interact, use "insight".
       enum:
         - entity
         - schema
@@ -39,6 +44,7 @@ parameters:
         - boundary
         - constant
         - result
+        - architecture
     summary:
       type: string
       description: >-
@@ -91,3 +97,4 @@ designed to keep the signal-to-noise ratio high.
 | boundary         | BoundaryIdentified          |
 | constant         | ConstantDocumented          |
 | result           | ResultRecorded              |
+| architecture     | ArchitectureInvariantObserved |

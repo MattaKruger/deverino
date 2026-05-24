@@ -22,7 +22,21 @@ def _entries() -> list[DistillerEntry]:
 
 
 def _config() -> CartographerConfig:
-    return CartographerConfig(token_budget=200)
+    """Config with per-type values that avoid stochastic eviction/re-creation.
+
+    The default per-type staleness_floor for constant (0.60) exceeds its
+    base weight (0.40), causing constant entries to be evicted and
+    re-created with new random UUIDs on every cycle — breaking determinism.
+    We pin staleness_floor to 0.0 so no entries are evicted by staleness.
+    """
+    scored = [
+        "dispute", "schema", "insight", "architecture",
+        "boundary", "entity", "result", "constant",
+    ]
+    return CartographerConfig(
+        token_budget=200,
+        staleness_floor={t: 0.0 for t in scored},
+    )
 
 
 def _seed_map() -> tuple[list[MapEntry], datetime]:

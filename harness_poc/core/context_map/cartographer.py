@@ -27,21 +27,62 @@ def deterministic_cartographer(
     *,
     now: datetime | None = None,
 ) -> CartographerResult:
-    """Run dedup → priority → staleness → budget. Pure function.
+    """Run stage-0 → dedup → priority → staleness → budget. Pure function.
 
     Pure: identical (distilled, current_map, cycle_n, config) → identical result,
     given identical now (or a stable clock supplied by the caller).
     """
     timestamp = now or datetime.now(tz=UTC)
-    working = _dedup_and_merge(distilled, current_map, cycle_n, config, timestamp)
+
+    # Stage 0: process obsolete entries before dedup/merge
+    distilled_no_obsoletes = [d for d in distilled if d.observation_type != "obsolete"]
+    working, obsolete_evictions = _stage_0_explicit_removals(
+        distilled, current_map, cycle_n
+    )
+
+    working = _dedup_and_merge(distilled_no_obsoletes, working, cycle_n, config, timestamp)
     working = [_apply_priority(e, cycle_n, config) for e in working]
     working, stale_evictions = _evict_stale(working, cycle_n, config)
     working, budget_evictions = _enforce_budget(working, cycle_n, config)
     return CartographerResult(
         new_map=working,
-        evictions=[*stale_evictions, *budget_evictions],
+        evictions=[*obsolete_evictions, *stale_evictions, *budget_evictions],
         cycle_n=cycle_n,
     )
+
+
+def _stage_0_explicit_removals(
+    distilled: Sequence[DistillerEntry],
+    current_map: Sequence[MapEntry],
+    cycle_n: int,
+) -> tuple[list[MapEntry], list[EvictionRecord]]:
+    """Process obsolete entries before dedup/merge.
+
+    Obsolete entries declare that an existing key is no longer true.
+    Matching is by exact string equality on MapEntry.key — no fuzzy matching.
+    A miss (key not found) is a silent no-op per spec §9.1 decision A.
+    """
+    obsolete_keys = {d.key for d in distilled if d.observation_type == "obsolete"}
+    if not obsolete_keys:
+        return list(current_map), []
+
+    survivors: list[MapEntry] = []
+    evictions: list[EvictionRecord] = []
+    for entry in current_map:
+        if entry.key in obsolete_keys:
+            evictions.append(
+                EvictionRecord(
+                    entry_id=entry.entry_id,
+                    key=entry.key,
+                    section=entry.section,
+                    observation_type=entry.observation_type,
+                    materialization_count=entry.materialization_count,
+                    reason=f"obsolete@cycle={cycle_n}",
+                )
+            )
+        else:
+            survivors.append(entry)
+    return survivors, evictions
 
 
 def _dedup_and_merge(
@@ -126,10 +167,10 @@ def _apply_priority(
 ) -> MapEntry:
     base = config.priority_weights[entry.observation_type]
     age = max(0, cycle_n - entry.first_seen_cycle)
-    raw_recency = age * config.recency_bonus
-    recency = min(raw_recency, config.recency_cap)
+    raw_recency = age * config.recency_bonus[entry.observation_type]
+    recency = min(raw_recency, config.recency_cap[entry.observation_type])
     missed = max(0, cycle_n - entry.last_seen_cycle)
-    penalty = missed * config.staleness_penalty
+    penalty = missed * config.staleness_penalty[entry.observation_type]
     priority = base + recency - penalty
     return entry.model_copy(update={"priority": priority})
 
@@ -142,7 +183,7 @@ def _evict_stale(
     survivors: list[MapEntry] = []
     evictions: list[EvictionRecord] = []
     for entry in entries:
-        if entry.priority < config.staleness_floor:
+        if entry.priority < config.staleness_floor[entry.observation_type]:
             age = cycle_n - entry.last_seen_cycle
             evictions.append(
                 EvictionRecord(
@@ -164,20 +205,68 @@ def _enforce_budget(
     cycle_n: int,
     config: CartographerConfig,
 ) -> tuple[list[MapEntry], list[EvictionRecord]]:
-    # Sort desc by priority, then desc by last_updated, then asc by entry_id.
-    ordered = sorted(
-        entries,
-        key=lambda e: (-e.priority, -e.last_updated.timestamp(), e.entry_id),
-    )
+    """Two-pass budget enforcement with per-section reservations.
+
+    Pass 1: each section fills its reserved share (by priority).
+    Pass 2: remaining budget allocated across all sections by global priority.
+
+    Edge cases per spec §5:
+    - Unfilled share flows to the global pool (Pass 2).
+    - Entries evicted in Pass 1 are NOT rescued in Pass 2 (§5.4.1).
+    - A single entry exceeding its section's share is evicted (§5.4.1).
+    """
+    # Group by section
+    by_section: dict[str, list[MapEntry]] = {}
+    for e in entries:
+        by_section.setdefault(e.section, []).append(e)
+
+    # Sort each section by priority desc, then last_updated desc, then entry_id asc
+    for section_entries in by_section.values():
+        section_entries.sort(
+            key=lambda e: (-e.priority, -e.last_updated.timestamp(), e.entry_id)
+        )
+
     survivors: list[MapEntry] = []
-    evicted: list[EvictionRecord] = []
-    used = 0
-    for entry in ordered:
-        if used + entry.token_estimate <= config.token_budget:
-            survivors.append(entry)
-            used += entry.token_estimate
-        else:
-            evicted.append(
+    evictions: list[EvictionRecord] = []
+    remaining_budget = config.token_budget
+
+    # Pass 1: fill each section's reserved share
+    for section, share in config.section_budget_share.items():
+        section_budget = int(config.token_budget * share)
+        section_entries = by_section.pop(section, [])
+        used = 0
+        for entry in section_entries:
+            if used + entry.token_estimate <= section_budget:
+                survivors.append(entry)
+                used += entry.token_estimate
+            else:
+                evictions.append(
+                    EvictionRecord(
+                        entry_id=entry.entry_id,
+                        key=entry.key,
+                        section=entry.section,
+                        observation_type=entry.observation_type,
+                        materialization_count=entry.materialization_count,
+                        reason=(
+                            f"budget@cycle={cycle_n},"
+                            f"priority={entry.priority:.3f},"
+                            f"section={section}"
+                        ),
+                    )
+                )
+        remaining_budget -= used
+
+    # Pass 2: fill remaining budget from all sections by global priority
+    all_remaining: list[MapEntry] = []
+    for section_entries in by_section.values():
+        all_remaining.extend(section_entries)
+    all_remaining.sort(
+        key=lambda e: (-e.priority, -e.last_updated.timestamp(), e.entry_id)
+    )
+
+    for entry in all_remaining:
+        if remaining_budget <= 0:
+            evictions.append(
                 EvictionRecord(
                     entry_id=entry.entry_id,
                     key=entry.key,
@@ -187,4 +276,20 @@ def _enforce_budget(
                     reason=f"budget@cycle={cycle_n},priority={entry.priority:.3f}",
                 )
             )
-    return survivors, evicted
+            continue
+        if entry.token_estimate <= remaining_budget:
+            survivors.append(entry)
+            remaining_budget -= entry.token_estimate
+        else:
+            evictions.append(
+                EvictionRecord(
+                    entry_id=entry.entry_id,
+                    key=entry.key,
+                    section=entry.section,
+                    observation_type=entry.observation_type,
+                    materialization_count=entry.materialization_count,
+                    reason=f"budget@cycle={cycle_n},priority={entry.priority:.3f}",
+                )
+            )
+
+    return survivors, evictions

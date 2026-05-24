@@ -6,6 +6,11 @@ from harness_poc.core.context_map.cartographer import deterministic_cartographer
 from harness_poc.core.context_map.config import CartographerConfig
 from harness_poc.core.context_map.schema import DistillerEntry
 
+_SCORED = [
+    "dispute", "schema", "insight", "architecture",
+    "boundary", "entity", "result", "constant",
+]
+
 
 def _entry(key: str, obs_type: str) -> DistillerEntry:
     return DistillerEntry(
@@ -17,15 +22,23 @@ def _entry(key: str, obs_type: str) -> DistillerEntry:
 
 
 def _config(**overrides: object) -> CartographerConfig:
-    defaults = {
+    """Build a CartographerConfig with sensible test defaults.
+
+    Convenience: scalar floats for decay params are broadcast to all scored types.
+    """
+    raw: dict[str, object] = {
         "token_budget": 10_000,
         "recency_bonus": 0.01,
         "recency_cap": 0.5,
         "staleness_penalty": 0.05,
         "staleness_floor": 0.0,  # disable eviction in priority-only tests
     }
-    defaults.update(overrides)
-    return CartographerConfig(**defaults)  # type: ignore[arg-type]
+    raw.update(overrides)
+    for key in ("recency_bonus", "recency_cap", "staleness_penalty", "staleness_floor"):
+        val = raw[key]
+        if isinstance(val, (int, float)):
+            raw[key] = {t: float(val) for t in _SCORED}
+    return CartographerConfig(**raw)  # type: ignore[arg-type]
 
 
 def test_priority_for_fresh_entry_equals_base_weight() -> None:

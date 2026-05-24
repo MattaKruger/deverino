@@ -62,23 +62,71 @@ retrieval:
 distiller:
   model: deepseek/deepseek-chat
   max_retries: 3
-  prompt_template: distiller_v1
+  prompt_template: distiller_v2          # updated: includes architecture + obsolete
 
 cartographer:
   token_budget: 1024
   tokenizer_name: cl100k_base
-  recency_bonus: 0.01
-  recency_cap: 0.5
-  staleness_penalty: 0.05
-  staleness_floor: 0.2
+
+  # Per-type decay (replaces global recency_bonus/recency_cap/staleness_penalty/staleness_floor)
+  staleness_penalty:
+    dispute: 0.02
+    schema: 0.03
+    insight: 0.05
+    architecture: 0.01
+    boundary: 0.02
+    entity: 0.05
+    result: 0.10
+    constant: 0.01
+
+  staleness_floor:
+    dispute: 0.50
+    schema: 0.40
+    insight: 0.20
+    architecture: 0.60
+    boundary: 0.30
+    entity: 0.20
+    result: 0.05
+    constant: 0.60
+
+  recency_bonus:
+    dispute: 0.01
+    schema: 0.01
+    insight: 0.01
+    architecture: 0.01
+    boundary: 0.01
+    entity: 0.01
+    result: 0.00
+    constant: 0.01
+
+  recency_cap:
+    dispute: 0.50
+    schema: 0.50
+    insight: 0.40
+    architecture: 0.80
+    boundary: 0.30
+    entity: 0.50
+    result: 0.10
+    constant: 0.30
+
   priority_weights:
     dispute: 1.0
     schema: 0.9
+    architecture: 0.85
     insight: 0.8
     boundary: 0.7
     entity: 0.6
     result: 0.5
     constant: 0.4
+
+  section_budget_share:
+    context_architecture: 0.25
+    parsing_schema: 0.20
+    context_understanding: 0.25
+    context_roadmap: 0.15
+    domain_constants: 0.10
+    reusable_results: 0.05
+
   cross_corpus:
     enabled: true
     related_corpora:

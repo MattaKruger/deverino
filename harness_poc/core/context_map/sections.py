@@ -10,6 +10,8 @@ SECTION_MAP: dict[str, str] = {
     "dispute": "context_roadmap",
     "constant": "domain_constants",
     "result": "reusable_results",
+    "architecture": "context_architecture",
+    # "obsolete" is never assigned a section — it's removed in stage 0
 }
 
 

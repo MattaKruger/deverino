@@ -85,6 +85,14 @@ class ResultRecorded(ContextMapEvent):
     detail: str
 
 
+class ArchitectureInvariantObserved(ContextMapEvent):
+    event_type: Literal["architecture_invariant_observed"] = (
+        "architecture_invariant_observed"
+    )
+    invariant_summary: str
+    detail: str
+
+
 class MapEntryInserted(ContextMapEvent):
     """Emitted when a MapEntry appears for the first time (first_seen_cycle == cycle_n).
 
@@ -152,6 +160,7 @@ CONTEXT_MAP_EVENT_REGISTRY: dict[str, type[ContextMapEvent]] = {
     "boundary_identified": BoundaryIdentified,
     "constant_documented": ConstantDocumented,
     "result_recorded": ResultRecorded,
+    "architecture_invariant_observed": ArchitectureInvariantObserved,
     "map_entry_inserted": MapEntryInserted,
     "map_entry_promoted": MapEntryPromoted,  # deprecated — kept for historical deserialization
     "map_entry_evicted": MapEntryEvicted,

@@ -28,12 +28,18 @@ def test_cartographer_config_defaults() -> None:
     cfg = load_cartographer_config({})
     assert cfg.token_budget == 1024
     assert cfg.tokenizer_name == "cl100k_base"
-    assert cfg.recency_bonus == pytest.approx(0.01)
-    assert cfg.recency_cap == pytest.approx(0.5)
-    assert cfg.staleness_penalty == pytest.approx(0.05)
-    assert cfg.staleness_floor == pytest.approx(0.2)
+    # Per-type decay dicts (defaults)
+    assert cfg.staleness_penalty["dispute"] == pytest.approx(0.02)
+    assert cfg.staleness_penalty["constant"] == pytest.approx(0.01)
+    assert cfg.staleness_floor["architecture"] == pytest.approx(0.60)
+    assert cfg.recency_bonus["result"] == pytest.approx(0.00)
+    assert cfg.recency_cap["architecture"] == pytest.approx(0.80)
     assert cfg.priority_weights["dispute"] == pytest.approx(1.0)
     assert cfg.priority_weights["constant"] == pytest.approx(0.4)
+    assert cfg.priority_weights["architecture"] == pytest.approx(0.85)
+    # Section budget share defaults
+    assert cfg.section_budget_share["context_architecture"] == pytest.approx(0.25)
+    assert cfg.section_budget_share["reusable_results"] == pytest.approx(0.05)
 
 
 def test_cartographer_config_rejects_unknown_keys() -> None:
@@ -41,9 +47,15 @@ def test_cartographer_config_rejects_unknown_keys() -> None:
         load_cartographer_config({"mystery": 1})
 
 
-def test_cartographer_config_requires_all_seven_weights() -> None:
+def test_cartographer_config_requires_all_eight_weights() -> None:
     with pytest.raises(ValueError, match="priority_weights missing"):
         load_cartographer_config({"priority_weights": {"dispute": 1.0}})
+
+
+def test_cartographer_config_rejects_old_scalar_decay() -> None:
+    """Old global-scalar recency_bonus/cap/staleness should fail with clear error."""
+    with pytest.raises(ValueError, match="deprecated global scalar"):
+        load_cartographer_config({"recency_bonus": 0.05})
 
 
 def test_harness_config_loads_cartographer_and_distiller(tmp_path: Path) -> None:

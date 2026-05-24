@@ -15,6 +15,8 @@ ObservationType = Literal[
     "boundary",
     "constant",
     "result",
+    "architecture",
+    "obsolete",
 ]
 Tag = Literal["confirmed", "novel", "correcting"]
 

@@ -99,7 +99,14 @@ def run_calibration(
             survival = 1.0
 
         base = current_weights.get(t, _DEFAULT_PRIORITY_WEIGHTS.get(t, 0.5))
-        target = base * (0.5 + ref_rate) * (0.5 + survival)
+
+        # Zero-signal guard: if no references and no materializations beyond
+        # the floor, keep the base weight unchanged (don't drift to 0.25).
+        target = (
+            base
+            if (refs == 0 and mat_sum <= 1)
+            else base * (0.5 + ref_rate) * (0.5 + survival)
+        )
         target = max(0.1, min(1.0, target))
 
         target_weights[t] = round(target, 2)

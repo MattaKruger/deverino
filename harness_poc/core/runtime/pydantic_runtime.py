@@ -750,7 +750,8 @@ def extract_observations_from_turn(
         observation_type: str = Field(
             ...,
             description=(
-                "One of: entity, schema, insight, dispute, boundary, constant, result"
+                "One of: entity, schema, insight, dispute, boundary, constant, "
+                "result, architecture"
             ),
         )
         summary: str = Field(
@@ -794,7 +795,7 @@ def extract_observations_from_turn(
                 "- Skip trivial things — every file read does NOT need an observation\n"
                 '- Return {"entries": []} if nothing worth recording was found\n'
                 "- observation_type must be one of: entity, schema, insight, "
-                "dispute, boundary, constant, result\n"
+                "dispute, boundary, constant, result, architecture\n"
                 "- entity: key class, function, module, or concept\n"
                 "- schema: data format, config shape, or API contract\n"
                 "- insight: non-obvious relationship between components\n"
@@ -802,6 +803,8 @@ def extract_observations_from_turn(
                 "- boundary: something definitively NOT in the codebase\n"
                 "- constant: stable domain constant (config value, magic number)\n"
                 "- result: reusable computation or analysis result\n"
+                "- architecture: cross-cutting structural invariant about "
+                "system organization\n"
                 "- summary must be a one-line factual statement\n"
                 "- detail must explain impact: why does this matter? "
                 "what changes because of it?\n"

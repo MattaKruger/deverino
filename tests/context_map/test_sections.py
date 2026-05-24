@@ -5,7 +5,7 @@ import pytest
 from harness_poc.core.context_map.sections import SECTION_MAP, assign_section
 
 
-def test_section_map_covers_all_seven_observation_types() -> None:
+def test_section_map_covers_all_eight_assignable_types() -> None:
     assert set(SECTION_MAP.keys()) == {
         "entity",
         "schema",
@@ -14,6 +14,7 @@ def test_section_map_covers_all_seven_observation_types() -> None:
         "boundary",
         "constant",
         "result",
+        "architecture",
     }
 
 

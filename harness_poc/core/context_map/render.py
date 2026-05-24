@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 # Part 1 §4 priority order for sections (highest first)
 _SECTION_DISPLAY_ORDER = [
     "parsing_schema",
+    "context_architecture",
     "reusable_results",
     "domain_constants",
     "context_understanding",

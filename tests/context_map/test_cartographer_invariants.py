@@ -6,7 +6,7 @@ from harness_poc.core.context_map.cartographer import deterministic_cartographer
 from harness_poc.core.context_map.config import CartographerConfig
 from harness_poc.core.context_map.schema import DistillerEntry
 
-_TYPES = ("entity", "schema", "insight", "dispute", "boundary", "constant", "result")
+_TYPES = ("entity", "schema", "insight", "dispute", "boundary", "constant", "result", "architecture")
 
 
 def _distilled(n: int) -> list[DistillerEntry]:
@@ -33,13 +33,22 @@ def test_invariant_budget_never_exceeded() -> None:
     assert total <= config.token_budget
 
 
+def _broadcast_scalar(value: float) -> dict[str, float]:
+    """Broadcast a scalar to all scored observation types for per-type dicts."""
+    scored = [
+        "dispute", "schema", "insight", "architecture",
+        "boundary", "entity", "result", "constant",
+    ]
+    return {t: value for t in scored}
+
+
 def test_invariant_no_survivor_below_staleness_floor() -> None:
     config = CartographerConfig(
         token_budget=10_000,
-        recency_bonus=0.0,
-        recency_cap=0.0,
-        staleness_penalty=0.5,
-        staleness_floor=0.5,
+        recency_bonus=_broadcast_scalar(0.0),
+        recency_cap=_broadcast_scalar(0.0),
+        staleness_penalty=_broadcast_scalar(0.5),
+        staleness_floor=_broadcast_scalar(0.5),
     )
     seed = deterministic_cartographer(
         distilled=_distilled(7),
@@ -54,7 +63,7 @@ def test_invariant_no_survivor_below_staleness_floor() -> None:
         config=config,
     )
     for entry in result.new_map:
-        assert entry.priority >= config.staleness_floor
+        assert entry.priority >= config.staleness_floor[entry.observation_type]
 
 
 def test_invariant_every_eviction_corresponds_to_known_entry() -> None:
