@@ -2,8 +2,7 @@
 
 Exports the contracts (protocols), engines (ContextEngine + ExecutionEngine),
 and workflow orchestrator.
-
-This is the implementation surface for planning_specv2.md.
+This is the v2 event-sourced layering engine.
 """
 
 from harness_poc.v2.context_engine import (
@@ -38,14 +37,6 @@ from harness_poc.v2.contracts import (
     DbContextMap,
     DelegatedTaskOutput,
     DelegatedTaskResult,
-    EventBus,
-    EventHandler,
-    EventStore,
-    EventStoreError,
-    Goal,
-    GoalExecutionError,
-    GoalResult,
-    GoalRunner,
     MaterializationError,
     SoulConstitution,
     SoulIntegrityError,
@@ -102,10 +93,6 @@ __all__ = [
     "DelegatedTaskOutput",
     "DelegatedTaskResult",
 
-    "EventBus",
-    "EventHandler",
-    "EventStore",
-    "EventStoreError",
     # Engines — Execution
     "ExecutionEngine",
     "ExecutionEngineError",
@@ -113,10 +100,6 @@ __all__ = [
     "GateFailureError",
     "GateRejectedError",
     "GateResult",
-    "Goal",
-    "GoalExecutionError",
-    "GoalResult",
-    "GoalRunner",
     "MaterializationError",
     "PedagogyNotFoundError",
     "PersonaNotFoundError",

@@ -303,34 +303,89 @@ def _build_materializer_adapter(  # noqa: ANN202
     return _HarnessMaterializer()
 
 
-def _build_spawner_adapter(_config: HarnessConfig):  # noqa: ANN202
-    """Build a SubAgentSpawner adapter from the harness skill runner.
+def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
+    """Build a SubAgentSpawner adapter that runs real sub-agents via the LLM.
 
-    Uses the context-map-materializer skill pattern to execute sub-agents.
-    For now, returns a stub that delegates through the existing
-    delegate_task handler interface.
+    Reads persona templates from ``config.paths.personas``, builds a
+    pydantic_ai Agent with the persona as system prompt, and runs the
+    sub-agent synchronously. Returns DelegatedTaskResult with binary
+    success/failed status.
     """
+    import uuid
+
+    from pydantic_ai import Agent
+    from pydantic_ai.models.test import TestModel
+
+    from harness_poc.core.runtime import build_model
     from harness_poc.v2.contracts.sub_agent_spawner import (
+        DELEGATED_STATUS_FAILED,
         DELEGATED_STATUS_SUCCESS,
         DelegatedTaskResult,
     )
 
+    def _fallback_model() -> TestModel:
+        return TestModel()
+
     class _HarnessSpawner:
         def spawn(self, task_spec: dict) -> DelegatedTaskResult:
-            # Stub: returns success for non-streaming spawn.
-            # Real implementation would invoke the LLM loop for the sub-agent.
-            import uuid
-
             task_id = task_spec.get("task_id", str(uuid.uuid4()))
-            return DelegatedTaskResult(
-                task_id=task_id,
-                status=DELEGATED_STATUS_SUCCESS,
-                raw_output={
-                    "persona": task_spec.get("persona"),
-                    "objective": task_spec.get("objective"),
-                    "note": "Sub-agent spawned via harness adapter (stub)",
-                },
-            )
+            persona = str(task_spec.get("persona", ""))
+            objective = str(task_spec.get("objective", ""))
+            context = str(task_spec.get("context") or "")
+
+            if not persona or not objective:
+                return DelegatedTaskResult(
+                    task_id=task_id,
+                    status=DELEGATED_STATUS_FAILED,
+                    error=f"task_spec requires 'persona' and 'objective'. Got persona={persona!r}, objective={objective!r}",
+                )
+
+            # Load persona template
+            try:
+                persona_path = config.paths.personas / f"{persona}.md"
+                if persona_path.exists():
+                    system_prompt = persona_path.read_text(encoding="utf-8")
+                else:
+                    system_prompt = (
+                        f"You are a {persona} agent. Complete the assigned task "
+                        f"concisely and accurately."
+                    )
+            except OSError as exc:
+                return DelegatedTaskResult(
+                    task_id=task_id,
+                    status=DELEGATED_STATUS_FAILED,
+                    error=f"Failed to load persona '{persona}': {exc}",
+                )
+
+            # Build and run the sub-agent
+            try:
+                model = build_model(config.llm, fallback_model=_fallback_model())
+                agent = Agent(model, system_prompt=system_prompt)
+                prompt = f"Objective: {objective}"
+                if context:
+                    prompt += f"\n\nContext: {context}"
+
+                result = agent.run_sync(prompt)
+                output_text = (
+                    result.output if isinstance(result.output, str)
+                    else str(result.output)
+                )
+
+                return DelegatedTaskResult(
+                    task_id=task_id,
+                    status=DELEGATED_STATUS_SUCCESS,
+                    raw_output={
+                        "persona": persona,
+                        "objective": objective,
+                        "output": output_text,
+                    },
+                )
+            except Exception as exc:
+                return DelegatedTaskResult(
+                    task_id=task_id,
+                    status=DELEGATED_STATUS_FAILED,
+                    error=f"Sub-agent execution failed: {exc}",
+                )
 
     return _HarnessSpawner()
 

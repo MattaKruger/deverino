@@ -1,8 +1,8 @@
 """ExecutionEngine — sub-agent spawning, background pools, and review gates.
 
-Implements planning_specv2.md §4 core interfaces:
+Implements v2 architecture core interfaces:
   - spawn_sub_agent()          — foreground and background sub-agent dispatch
-  - execute_deterministic_gate() — test suite validation boundary
+  - execute_deterministic_gate() — test suite validation boundary.
 
 Wraps the v2/handlers delegate_task pipeline with execution-mode awareness
 and provides the Step #3 deterministic review gate that enforces "only

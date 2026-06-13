@@ -1,9 +1,9 @@
 """WorkflowOrchestrator — Two-Mode Workflow: Exploration → Execution → Review.
 
-Implements planning_specv2.md §3 lifecycle:
+Implements the v2 three-step lifecycle:
   Step #1: Fail-Fast Probe  — sandbox execution → failure → warm context map
   Step #2: Spec Execution   — spawn sub-agents (foreground + background)
-  Step #3: Review Gate      — deterministic test suite → context refresh
+  Step #3: Review Gate      — deterministic test suite → context refresh.
 
 The orchestrator wires ContextEngine and ExecutionEngine into a single
 state-machine pipeline. On gate pass, the materialized context map is
@@ -125,7 +125,7 @@ class WorkflowOrchestrator:
 
     Wires ContextEngine (context materialization) and ExecutionEngine
     (sub-agent dispatch + validation gate) into the three-step pipeline
-    defined in planning_specv2.md §3.
+    defined in docs/architecture/v2-architecture.md.
     """
 
     def __init__(

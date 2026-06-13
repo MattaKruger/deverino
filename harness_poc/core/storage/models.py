@@ -176,7 +176,7 @@ class DbContextMap(SQLModel, table=True):
 
 
 class DbContextEvent(SQLModel, table=True):
-    """V2 context event stream table — maps to planning_specv2.md §4 schema."""
+    """V2 context event stream table."""
 
     __tablename__ = "context_events_v2"  # type: ignore[assignment]
     __table_args__ = (
@@ -192,7 +192,7 @@ class DbContextEvent(SQLModel, table=True):
 
 
 class DbMaterializedContextMap(SQLModel, table=True):
-    """V2 materialized context map snapshot — planning_specv2.md §4 schema."""
+    """V2 materialized context map snapshot."""
 
     __tablename__ = "materialized_context_maps_v2"  # type: ignore[assignment]
 

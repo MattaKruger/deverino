@@ -1,6 +1,5 @@
 """ContextEngine — materializes prompt context through persona+pedagogy lens.
 
-Implements planning_specv2.md §4 core interfaces:
   - materialize_context_map()  — builds filtered context window
   - warm_up_context_from_failure() — extracts sandbox constraints
 
