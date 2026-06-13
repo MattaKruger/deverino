@@ -85,7 +85,7 @@ class ToolPanel(Static):
         return bool(self._events)
     def add(self, message: str, status: str = "running") -> None:
         self._events.append((message, status))
-        self._render()
+        self._refresh_display()
 
     def finish(self) -> str:
         """Collapse to summary line. Returns the summary text."""
@@ -109,7 +109,7 @@ class ToolPanel(Static):
         self.update("")
         self.remove_class("finished")
 
-    def _render(self) -> None:
+    def _refresh_display(self) -> None:
         lines: list[str] = []
         for msg, status in self._events[-self.MAX_VISIBLE :]:
             icon = {"running": "\u2026", "success": "\u2713", "error": "\u2717"}.get(status, "\u2026")
