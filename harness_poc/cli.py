@@ -1332,6 +1332,7 @@ def _run_v2_mode(
             objective=objective,
             persona=persona,
             spec_file=spec_file,
+            session_id=app_state.session_id,
         )
     elif mode == "react":
         asyncio.run(
@@ -1354,6 +1355,7 @@ def _run_v2_pipeline_mode(
     objective: str,
     persona: str,
     spec_file: str | None,
+    session_id: str,
 ) -> None:
     """Run the v2 pipeline mode with progress output."""
     import yaml
@@ -1379,11 +1381,10 @@ def _run_v2_pipeline_mode(
 
     # Subscribe progress handlers so the user sees step-by-step output.
     # The pipeline runs synchronously within bus.publish(), so these
-    # fire inline as each step completes.
-    steps_seen: list[str] = []
+    # fire inline as each step completes. The gate handler prints the
+    # final summary since it's always the last step to fire.
 
     def on_probe(_et: str, payload: dict) -> None:
-        steps_seen.append("probe")
         success = payload.get("success", True)
         constraints = payload.get("constraints", [])
         if probe_code is None:
@@ -1391,10 +1392,11 @@ def _run_v2_pipeline_mode(
         elif success:
             print_text("  Probe: PASSED")
         else:
-            print_text(f"  Probe: FAILED — {len(constraints)} constraint(s) discovered")
+            print_text(
+                f"  Probe: FAILED — {len(constraints)} constraint(s) discovered"
+            )
 
     def on_execution(_et: str, payload: dict) -> None:
-        steps_seen.append("execution")
         agents = payload.get("sub_agents", [])
         all_passed = payload.get("all_passed", True)
         if not agents:
@@ -1402,11 +1404,12 @@ def _run_v2_pipeline_mode(
         elif all_passed:
             print_text(f"  Execution: PASSED — {len(agents)} agent(s)")
         else:
-            failed = sum(1 for a in agents if a.get("output_label") != "completed")
+            failed = sum(
+                1 for a in agents if a.get("output_label") != "completed"
+            )
             print_text(f"  Execution: FAILED — {failed}/{len(agents)} agent(s)")
 
     def on_gate(_et: str, payload: dict) -> None:
-        steps_seen.append("gate")
         passed = payload.get("passed", True)
         test_count = payload.get("test_count", 0)
         if workspace_path is None:
@@ -1415,6 +1418,8 @@ def _run_v2_pipeline_mode(
             print_text(f"  Gate: PASSED — {test_count} test(s)")
         else:
             print_text(f"  Gate: FAILED — {test_count} test(s)")
+        # Gate is always the last step — print completion marker here
+        print_text("  Done.")
 
     bus.subscribe("PROBE_COMPLETED", on_probe)
     bus.subscribe("EXECUTION_COMPLETED", on_execution)
@@ -1428,11 +1433,8 @@ def _run_v2_pipeline_mode(
         persona_id=persona,
         probe_code=probe_code,
         workspace_path=workspace_path,
+        session_id=session_id,
     )
-
-    # Summary
-    completed = ", ".join(steps_seen) if steps_seen else "(no steps)"
-    print_text(f"  Completed: [{completed}]")
 
 
 async def _run_v2_react_mode(

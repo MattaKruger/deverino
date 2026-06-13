@@ -109,7 +109,7 @@ class BlackboardSpy:
     def __init__(self) -> None:
         self.writes: list[tuple[str, DelegatedTaskOutput]] = []
 
-    def write(self, task_id: str, output: DelegatedTaskOutput) -> None:
+    def write(self, task_id: str, output: DelegatedTaskOutput, session_id: str) -> None:
         self.writes.append((task_id, output))
 
 

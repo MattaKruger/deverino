@@ -62,22 +62,26 @@ def build_execution_engine(
     *,
     project_id: str = "deverino",
     max_background_agents: int = 5,
+    event_bus: Any = None,
 ) -> ExecutionEngine:
     """Build an ExecutionEngine from existing harness infrastructure.
 
     Wires the v2 delegate_task handler with real spawner, event bus,
     and blackboard writer.
+
+    If event_bus is provided, it is reused (shared with other engines).
+    Otherwise a new one is created.
     """
     from harness_poc.v2.execution_engine import ExecutionEngine  # noqa: PLC0415
 
     spawner = _build_spawner_adapter(config)
-    event_bus = _build_event_bus_adapter(db)
+    bus = event_bus if event_bus is not None else _build_event_bus_adapter(db)
     blackboard = _build_blackboard_adapter(db)
 
     return ExecutionEngine(
         db=db,
         spawner=spawner,
-        event_bus=event_bus,
+        event_bus=bus,
         blackboard=blackboard,
         project_id=project_id,
         max_background_agents=max_background_agents,
@@ -148,7 +152,7 @@ def build_v2_runtime(
             db, config, project_id=project_id, event_bus=bus
         )
         exec_engine = build_execution_engine(
-            db, config, project_id=project_id
+            db, config, project_id=project_id, event_bus=bus
         )
         orch = build_workflow_orchestrator(
             ctx_engine, exec_engine, project_id=project_id
@@ -456,20 +460,16 @@ def _build_blackboard_adapter(db: BlackboardDatabase):
     """Build a BlackboardWriter adapter over the harness database."""
 
     class _HarnessBlackboard:
-        def write(self, task_id: str, output) -> None:
+        def write(self, task_id: str, output, session_id: str) -> None:
             # Write the delegated output to shared memory
-            import json
-
             db.write_memory(
-                session_id="v2-orchestrator",
+                session_id=session_id,
                 key=f"delegated:{task_id}",
-                data=json.dumps(
-                    {
-                        "task_id": output.task_id,
-                        "output_label": output.output_label,
-                        "summary": output.summary,
-                    }
-                ),
+                payload={
+                    "task_id": output.task_id,
+                    "output_label": output.output_label,
+                    "summary": output.summary,
+                },
             )
 
     return _HarnessBlackboard()

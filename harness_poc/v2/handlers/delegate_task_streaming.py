@@ -122,7 +122,7 @@ async def _handle_delegate_task_streaming(
     )
 
     # ---- Step 7: write to blackboard ---------------------------------
-    blackboard.write(task_id=raw.task_id, output=output)
+    blackboard.write(task_id=raw.task_id, output=output, session_id=session_id)
 
     # ---- Step 8: emit event ------------------------------------------
     event_id = str(uuid.uuid4())

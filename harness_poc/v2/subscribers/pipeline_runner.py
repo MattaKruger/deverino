@@ -81,6 +81,8 @@ class PipelineStepRunner:
                 "team_member": "pipeline_runner",
                 "workflow_id": workflow_id,
                 **probe_data,
+                "tasks": payload.get("tasks", []),
+                "workspace_path": payload.get("workspace_path"),
             },
         )
 
@@ -126,6 +128,7 @@ class PipelineStepRunner:
                 "team_member": "pipeline_runner",
                 "workflow_id": workflow_id,
                 **exec_data,
+                "workspace_path": payload.get("workspace_path"),
             },
         )
 

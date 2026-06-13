@@ -36,7 +36,7 @@ class BlackboardWriter(Protocol):
     tests supply an in-memory spy without any database dependency.
     """
 
-    def write(self, task_id: str, output: DelegatedTaskOutput) -> None:
+    def write(self, task_id: str, output: DelegatedTaskOutput, session_id: str) -> None:
         """Persist the output of a delegated task."""
         ...
 
@@ -158,7 +158,7 @@ def _handle_delegate_task(
     )
 
     # ---- Step 6: write to blackboard ---------------------------------
-    blackboard.write(task_id=raw.task_id, output=output)
+    blackboard.write(task_id=raw.task_id, output=output, session_id=session_id)
 
     # ---- Step 7: emit event ------------------------------------------
     event_id = str(uuid.uuid4())

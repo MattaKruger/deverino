@@ -228,6 +228,7 @@ class WorkflowOrchestrator:
         persona_id: str,
         probe_code: str | None = None,
         workspace_path: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         """Run the pipeline via event bus subscriptions (event-driven mode).
 
@@ -242,7 +243,7 @@ class WorkflowOrchestrator:
         )
 
         workflow_id = str(uuid.uuid4())
-        session_id = str(uuid.uuid4())
+        resolved_session = session_id or str(uuid.uuid4())
         tasks = spec.get("tasks", [])
         bus = self._execution._event_bus
 
@@ -257,7 +258,7 @@ class WorkflowOrchestrator:
         bus.publish(
             "WORKFLOW_STARTED",
             {
-                "session_id": session_id,
+                "session_id": resolved_session,
                 "team_member": "orchestrator",
                 "workflow_id": workflow_id,
                 "goal": spec.get("goal", ""),
