@@ -425,9 +425,6 @@ class ChatVimHandler:
             for _ in range(state.consume_count()):
                 chat.scroll_relative(y=-1)
             return True
-        if key == "ctrl+d":
-            chat.scroll_page_down()
-            return True
         if key == "ctrl+u":
             chat.scroll_page_up()
             return True

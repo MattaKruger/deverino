@@ -287,6 +287,70 @@ async def test_vim_chat_i_returns_focus_to_input_in_insert() -> None:
         assert editor.text == "x"
 
 
+async def test_vim_normal_mode_ctrl_d_swallowed() -> None:
+    """ctrl+d must not submit when Vim is in NORMAL mode on input pane."""
+    app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
+    async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
+        editor = pilot.app.query_one("#input", TextArea)
+        # Type text in insert mode, then escape to normal
+        await pilot.press("h", "e", "l", "l", "o")
+        await pilot.press("escape")
+        assert chat_app._vim.mode.value == "normal"
+        # ctrl+d in normal mode must not submit
+        await pilot.press("ctrl+d")
+        assert editor.text == "hello"  # unchanged — not submitted
+
+
+async def test_vim_normal_mode_enter_swallowed() -> None:
+    """Enter must not insert newline when Vim is in NORMAL mode on input pane."""
+    app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
+    async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
+        editor = pilot.app.query_one("#input", TextArea)
+        await pilot.press("h", "i")
+        await pilot.press("escape")
+        assert chat_app._vim.mode.value == "normal"
+        await pilot.press("enter")
+        assert editor.text == "hi"  # unchanged — no newline inserted
+async def test_vim_insert_mode_ctrl_d_submits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ctrl+d must still submit in INSERT mode."""
+    app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
+    async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
+        editor = pilot.app.query_one("#input", TextArea)
+        assert chat_app._vim.mode.value == "insert"
+        await pilot.press("t", "e", "s", "t")
+        monkeypatch.setattr(chat_app, "_submit", MagicMock())
+        await pilot.press("ctrl+d")
+        assert editor.text == ""  # submitted — editor cleared
+
+
+async def test_vim_insert_mode_enter_inserts_newline() -> None:
+    """Enter must insert newline in INSERT mode."""
+    app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
+    async with app.run_test() as pilot:
+        editor = pilot.app.query_one("#input", TextArea)
+        await pilot.press("a", "enter", "b")
+        assert editor.text == "a\nb"
+
+
+async def test_vim_chat_pane_ctrl_d_scrolls() -> None:
+    """ctrl+d in chat pane Vim NORMAL mode scrolls (via action_submit_editor)."""
+    app = ChatApp(_make_app_state(TuiConfig(vim_enabled=True, vim_initial_mode="insert")))
+    async with app.run_test() as pilot:
+        chat_app = _chat_app(pilot.app)
+        # Switch to chat pane
+        await pilot.press("tab")
+        assert chat_app._vim.pane.value == "chat"
+        # ctrl+d must scroll (not submit, not error)
+        # We can't easily assert the scroll, but we can assert no crash and pane unchanged
+        await pilot.press("ctrl+d")
+        assert chat_app._vim.pane.value == "chat"  # still in chat pane
+
+
 def test_spinner_status_combines_independent_icon_phrase_and_dots() -> None:
     status = _format_spinner_status("(งツ)ว", "doing the thing", "...")
 

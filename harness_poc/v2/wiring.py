@@ -7,6 +7,9 @@ app_factory.py and CLI commands without modifying existing harness internals.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
 from typing import TYPE_CHECKING
 
 from harness_poc.v2.runtime import V2Runtime
@@ -175,7 +178,8 @@ def build_v2_runtime(
 
         db = identity.database
         skill_runner = SkillRunner(database=db, config=config)
-
+        from harness_poc.v2.agent_config import set_skill_runner
+        set_skill_runner(skill_runner)
         llm_worker = LlmWorker(
             database=db,
             config=config,
@@ -311,10 +315,15 @@ def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
     sub-agent synchronously. Returns DelegatedTaskResult with binary
     success/failed status.
     """
+    import json as _json
     import uuid
+    from typing import Any
 
     from pydantic_ai import Agent
+    from pydantic_ai.exceptions import UsageLimitExceeded
     from pydantic_ai.models.test import TestModel
+    from pydantic_ai.settings import ModelSettings
+    from pydantic_ai.usage import UsageLimits
 
     from harness_poc.core.runtime import build_model
     from harness_poc.v2.contracts.sub_agent_spawner import (
@@ -323,9 +332,28 @@ def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
         DelegatedTaskResult,
     )
 
+    def _safe_output_text(value: Any) -> str:  # noqa: ANN401
+        """Convert agent output to a bounded, JSON-safe string."""
+        if isinstance(value, str):
+            return value[:100_000]
+        try:
+            serialized = _json.dumps(value, default=str)
+            return serialized[:100_000]
+        except (TypeError, ValueError):
+            return repr(value)[:1000]
+
+
+    max_error_length = 500
+
+    def _format_exception(exc: BaseException) -> str:
+        """Format an exception for the error field, bounded to 500 chars."""
+        msg = str(exc)
+        if len(msg) > max_error_length:
+            msg = msg[:max_error_length] + "..."
+        return f"{type(exc).__name__}: {msg}"
+
     def _fallback_model() -> TestModel:
         return TestModel()
-
     class _HarnessSpawner:
         def spawn(self, task_spec: dict) -> DelegatedTaskResult:
             task_id = task_spec.get("task_id", str(uuid.uuid4()))
@@ -357,19 +385,48 @@ def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
                     error=f"Failed to load persona '{persona}': {exc}",
                 )
 
+            # Load agent configuration (tools, permissions)
+            tools: list = []
+            try:
+                from harness_poc.system_tools import get_registry
+                from harness_poc.v2.agent_config import AgentConfig
+
+                agents_dir = config.project_root / "subagents"
+                agent_cfg = AgentConfig.from_name(
+                    agents_dir, persona, tool_registry=get_registry()
+                )
+                tools = agent_cfg.tools
+            except FileNotFoundError:
+                logger.debug("No agent config for persona '%s' — running with no tools", persona)
+            except Exception:
+                logger.warning(
+                    "Failed to load agent config for persona '%s' — running with no tools",
+                    persona,
+                    exc_info=True,
+                )
+
             # Build and run the sub-agent
             try:
                 model = build_model(config.llm, fallback_model=_fallback_model())
-                agent = Agent(model, system_prompt=system_prompt)
+                agent = Agent(
+                    model,
+                    system_prompt=system_prompt,
+                    tools=tools if tools else None,
+                )
                 prompt = f"Objective: {objective}"
                 if context:
                     prompt += f"\n\nContext: {context}"
-
-                result = agent.run_sync(prompt)
-                output_text = (
-                    result.output if isinstance(result.output, str)
-                    else str(result.output)
+                result = agent.run_sync(
+                    prompt,
+                    model_settings=ModelSettings(max_tokens=8192),
+                    usage_limits=UsageLimits(
+                        request_limit=30,
+                        tool_calls_limit=20,
+                        total_tokens_limit=200_000,
+                        output_tokens_limit=8192,
+                    ),
                 )
+                output_text = _safe_output_text(result.output)
 
                 return DelegatedTaskResult(
                     task_id=task_id,
@@ -380,13 +437,23 @@ def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
                         "output": output_text,
                     },
                 )
+            except UsageLimitExceeded as exc:
+                hint = (
+                    "Token budget exceeded. Break this task into smaller pieces, "
+                    "or narrow the objective to require fewer tool calls. "
+                    f"({_format_exception(exc)})"
+                )
+                return DelegatedTaskResult(
+                    task_id=task_id,
+                    status=DELEGATED_STATUS_FAILED,
+                    error=hint,
+                )
             except Exception as exc:
                 return DelegatedTaskResult(
                     task_id=task_id,
                     status=DELEGATED_STATUS_FAILED,
-                    error=f"Sub-agent execution failed: {exc}",
+                    error=f"Sub-agent execution failed: {_format_exception(exc)}",
                 )
-
     return _HarnessSpawner()
 
 
@@ -398,11 +465,13 @@ def _build_blackboard_adapter(db: BlackboardDatabase):  # noqa: ANN202
             # Write the delegated output to shared memory
             db.write_memory(
                 session_id=session_id,
-                key=f"delegated:{task_id}",
+                key=f"delegate_task:{task_id}",
                 payload={
                     "task_id": output.task_id,
                     "output_label": output.output_label,
                     "summary": output.summary,
+                    "raw_output": output.raw_output,
+                    "metadata": getattr(output, "metadata", {}),
                 },
             )
 

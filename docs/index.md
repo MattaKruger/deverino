@@ -6,6 +6,8 @@
 |----------|------|------|-------------|
 | `architecture/v2-architecture.md` | 2026-06-13 | design | V2 module architecture — module map, dependency graph, contracts, request lifecycle, old-harness touchpoints, and intent-vs-reality gaps |
 | `plans/2026-06-13-eventbus-unification.md` | 2026-06-13 | plan | V2 EventBus unification — real adapter, pipeline-as-subscriber, ReAct subscribers, multi-mode runtime (4 phases) |
+| `guides/tui-keybindings.md` | 2026-06-13 | guide | TUI keybindings reference — global shortcuts, Vim modal layer, completion menu, and known issues |
+| `specs/20260613-agent-status-overhaul.md` | 2026-06-13 | spec | DRAFT — Agent status output overhaul: real activity line, tool panel, status bar |
 
 ---
 

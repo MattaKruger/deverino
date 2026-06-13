@@ -538,12 +538,12 @@ def test_chat_jk_scrolls_one_line() -> None:
     assert chat.calls == [("relative", 1), ("relative", -1)]
 
 
-def test_chat_ctrl_d_u_half_page() -> None:
+def test_chat_ctrl_u_half_page() -> None:
+    """ctrl+u is handled by ChatVimHandler (ctrl+d is handled at the app level)."""
     handler, _ = _chat_handler()
     chat = FakeChat()
-    handler.handle("ctrl+d", chat)
     handler.handle("ctrl+u", chat)
-    assert chat.calls == [("page_down", None), ("page_up", None)]
+    assert chat.calls == [("page_up", None)]
 
 
 def test_chat_gg_jumps_to_top() -> None:
@@ -579,6 +579,15 @@ def test_chat_count_repeats_scroll() -> None:
     handler.handle("3", chat)
     handler.handle("j", chat)
     assert chat.calls == [("relative", 1)] * 3
+
+
+def test_chat_ctrl_d_not_handled_by_vim_handler() -> None:
+    """ctrl+d is handled at the app level (action_submit_editor), not by ChatVimHandler."""
+    handler, _ = _chat_handler()
+    chat = FakeChat()
+    result = handler.handle("ctrl+d", chat)
+    assert result is False  # not consumed by Vim handler
+    assert chat.calls == []  # no scroll via handler
 
 
 def test_chat_v_enters_visual_when_messages_present() -> None:

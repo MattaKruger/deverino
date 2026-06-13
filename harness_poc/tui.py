@@ -380,6 +380,8 @@ class ChatApp(App[None]):
         self.query_one("#spinner", Static).update("")
 
     def action_submit_editor(self) -> None:
+        if self._vim.enabled and self._vim.pane == VimPane.INPUT and self._vim.mode == VimMode.NORMAL:
+            return
         if self._vim.enabled and self._vim.pane == VimPane.CHAT:
             # In chat-pane normal mode, ctrl+d is half-page scroll, not submit.
             self.query_one("#chat", VerticalScroll).scroll_page_down()
@@ -468,6 +470,8 @@ class ChatApp(App[None]):
     def action_accept_completion_or_newline(self) -> None:
         if self._completion_visible:
             self._accept_completion()
+            return
+        if self._vim.enabled and self._vim.pane == VimPane.INPUT and self._vim.mode == VimMode.NORMAL:
             return
         self.query_one("#input", TextArea).insert("\n")
 
