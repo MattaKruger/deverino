@@ -180,10 +180,18 @@ def build_v2_runtime(
         skill_runner = SkillRunner(database=db, config=config)
         from harness_poc.v2.agent_config import set_skill_runner
         set_skill_runner(skill_runner)
+        # Build context map block for system prompt injection
+        context_map_block = build_v2_system_prompt_block(
+            db, config, persona_id="coder", project_id=project_id
+        )
+        soul_text = config.paths.soul.read_text(encoding="utf-8")
+        system_prompt = f"{soul_text}\n\n{context_map_block}" if context_map_block else soul_text
+
         llm_worker = LlmWorker(
             database=db,
             config=config,
             skill_runner=skill_runner,
+            system_prompt=system_prompt,
         )
         tool_worker = ToolWorker(skill_runner=skill_runner)
         circuit_breaker = CircuitBreaker(
@@ -281,7 +289,8 @@ def _build_materializer_adapter(  # noqa: ANN202
 
     class _HarnessMaterializer:
         def materialize(self, corpus_path: str) -> DbContextMap:
-            corpus_key = f"{config.project_id}:codebase"
+            corpus_name = corpus_path.rstrip("/").rsplit("/", 1)[-1] or "codebase"
+            corpus_key = f"{config.project_id}:{corpus_name}"
             current_map = db.get_context_map(corpus_key) or []
             cycle_n = db.get_cycle(corpus_key)
             if not current_map:

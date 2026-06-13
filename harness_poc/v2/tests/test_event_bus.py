@@ -444,3 +444,97 @@ class TestPipelineStepRunnerEventChain:
         )
         assert probe_count == 1
         assert exec_count == 1
+
+    def test_gate_pass_triggers_context_map_refresh(self):
+        """PipelineStepRunner calls _refresh_context_map after a passing gate."""
+        from harness_poc.v2.subscribers.pipeline_runner import PipelineStepRunner
+        from harness_poc.v2.workflow_orchestrator import GateResult
+
+        store = EventStoreSpy()
+        bus = _make_bus(store)
+
+        refresh_calls: list[dict] = []
+
+        class OrchSpy:
+            class ExecSpy:
+                _event_bus = bus
+            _execution = ExecSpy()
+
+            def run_exploration_probe(self, code, session_id):
+                from harness_poc.v2.workflow_orchestrator import ProbeResult
+
+                return ProbeResult(
+                    probe_id="p1", success=True, exit_code=0, stdout="", stderr=""
+                )
+
+            def run_review_gate(self, workspace_path, session_id):
+                return GateResult(gate_id="g1", passed=True, test_count=5)
+
+            def _refresh_context_map(self, *, persona_id: str) -> None:
+                refresh_calls.append({"persona_id": persona_id})
+
+        runner = PipelineStepRunner(OrchSpy(), bus)
+        bus.subscribe(WorkflowStarted, runner.handle_workflow_started)
+        bus.subscribe(ProbeCompleted, runner.handle_probe_completed)
+        bus.subscribe(ExecutionCompleted, runner.handle_execution_completed)
+
+        bus.publish(
+            WorkflowStarted(
+                session_id="sess-refresh",
+                workflow_id="wf-refresh",
+                persona_id="architect",
+                probe_code="print('hello')",
+                tasks=[],
+                workspace_path="/tmp/test-workspace",
+            )
+        )
+
+        # context map should have been refreshed once with the correct persona
+        assert len(refresh_calls) == 1
+        assert refresh_calls[0]["persona_id"] == "architect"
+
+    def test_gate_fail_does_not_refresh_context_map(self):
+        """PipelineStepRunner does NOT call _refresh_context_map on gate failure."""
+        from harness_poc.v2.subscribers.pipeline_runner import PipelineStepRunner
+        from harness_poc.v2.workflow_orchestrator import GateResult
+
+        store = EventStoreSpy()
+        bus = _make_bus(store)
+
+        refresh_calls: list[dict] = []
+
+        class OrchSpy:
+            class ExecSpy:
+                _event_bus = bus
+            _execution = ExecSpy()
+
+            def run_exploration_probe(self, code, session_id):
+                from harness_poc.v2.workflow_orchestrator import ProbeResult
+
+                return ProbeResult(
+                    probe_id="p2", success=True, exit_code=0, stdout="", stderr=""
+                )
+
+            def run_review_gate(self, workspace_path, session_id):
+                return GateResult(gate_id="g2", passed=False, test_count=3)
+
+            def _refresh_context_map(self, *, persona_id: str) -> None:
+                refresh_calls.append({"persona_id": persona_id})
+
+        runner = PipelineStepRunner(OrchSpy(), bus)
+        bus.subscribe(WorkflowStarted, runner.handle_workflow_started)
+        bus.subscribe(ProbeCompleted, runner.handle_probe_completed)
+        bus.subscribe(ExecutionCompleted, runner.handle_execution_completed)
+
+        bus.publish(
+            WorkflowStarted(
+                session_id="sess-fail-refresh",
+                workflow_id="wf-fail-refresh",
+                persona_id="coder",
+                probe_code="print('hello')",
+                tasks=[],
+                workspace_path="/tmp/test-workspace",
+            )
+        )
+
+        assert len(refresh_calls) == 0

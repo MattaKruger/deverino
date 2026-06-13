@@ -51,11 +51,10 @@ class PipelineStepRunner:
     ) -> None:
         self._orch = orchestrator
         self._bus = event_bus
-        # Step counters guard against re-entrancy (max 1 fire per handler)
         self._fired: set[str] = set()
-        # Allow resetting for re-use
+        self._subscription_id: str | None = None
         self._workflow_id: str | None = None
-
+        self._persona_id: str = "coder"
     # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
@@ -70,6 +69,7 @@ class PipelineStepRunner:
         session_id = event.session_id
         workflow_id = event.workflow_id
         self._workflow_id = workflow_id
+        self._persona_id = event.persona_id or "coder"
         probe_code = event.probe_code
 
         if probe_code is not None:
@@ -157,6 +157,8 @@ class PipelineStepRunner:
             )
             gate_id = gate.gate_id
             passed = gate.passed
+            if passed:
+                self._orch._refresh_context_map(persona_id=self._persona_id)  # noqa: SLF001
             test_count = gate.test_count
         else:
             gate_id = None

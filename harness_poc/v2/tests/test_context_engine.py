@@ -514,3 +514,61 @@ class TestWarmUpFromFailure:
         mmap = db.materialized_maps["deverino"]
         assert mmap["active_persona"] == "probe"
         assert "discovered_constraints" in mmap["verified_state"]
+
+
+class TestMaterializerAdapterCorpusKey:
+    """The _HarnessMaterializer derives corpus_key from corpus_path."""
+
+    def test_corpus_key_derived_from_corpus_path(self):
+        """corpus_path='docs/' → corpus_key='deverino:docs'."""
+        from unittest.mock import MagicMock
+
+        db = MagicMock()
+        db.get_context_map.return_value = []
+        db.get_cycle.return_value = 0
+
+        config = MagicMock()
+        config.project_id = "deverino"
+
+        # Import the module to get _build_materializer_adapter
+        from harness_poc.v2.wiring import _build_materializer_adapter
+
+        adapter = _build_materializer_adapter(db, config)
+
+        # materialize with docs/ should use corpus_key 'deverino:docs'
+        adapter.materialize("docs/")
+        db.get_context_map.assert_called_with("deverino:docs")
+
+    def test_corpus_key_trims_trailing_slash(self):
+        """corpus_path='custom/path/' → corpus_key='deverino:path'."""
+        from unittest.mock import MagicMock
+
+        db = MagicMock()
+        db.get_context_map.return_value = []
+        db.get_cycle.return_value = 0
+
+        config = MagicMock()
+        config.project_id = "myproject"
+
+        from harness_poc.v2.wiring import _build_materializer_adapter
+
+        adapter = _build_materializer_adapter(db, config)
+        adapter.materialize("custom/path/")
+        db.get_context_map.assert_called_with("myproject:path")
+
+    def test_corpus_key_empty_path_defaults_to_codebase(self):
+        """Empty corpus_path → corpus_key defaults to 'codebase'."""
+        from unittest.mock import MagicMock
+
+        db = MagicMock()
+        db.get_context_map.return_value = []
+        db.get_cycle.return_value = 0
+
+        config = MagicMock()
+        config.project_id = "deverino"
+
+        from harness_poc.v2.wiring import _build_materializer_adapter
+
+        adapter = _build_materializer_adapter(db, config)
+        adapter.materialize("")
+        db.get_context_map.assert_called_with("deverino:codebase")
