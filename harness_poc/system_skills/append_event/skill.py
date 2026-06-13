@@ -21,11 +21,10 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             artifacts={},
         )
     if not corpus_key:
-        return SkillResult(
-            status="failed",
-            content="Missing required argument: corpus_key",
-            artifacts={},
-        )
+        # Default to project-scoped corpus when not explicitly provided.
+        # Sub-agents should pass their explicit corpus_key; this fallback
+        # prevents errors for callers that forget to pass it.
+        corpus_key = f"{ctx.config.project_id}:codebase"
     if not isinstance(payload, dict):
         return SkillResult(status="failed", content="payload must be a JSON object", artifacts={})
 

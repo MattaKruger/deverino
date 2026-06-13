@@ -1,8 +1,8 @@
-"""ExecutionEngine — sub-agent spawning, background pools, and review gates.
+"""ExecutionEngine -- sub-agent spawning, background pools, and review gates.
 
 Implements v2 architecture core interfaces:
-  - spawn_sub_agent()          — foreground and background sub-agent dispatch
-  - execute_deterministic_gate() — test suite validation boundary.
+  - spawn_sub_agent()          -- foreground and background sub-agent dispatch
+  - execute_deterministic_gate() -- test suite validation boundary.
 
 Wraps the v2/handlers delegate_task pipeline with execution-mode awareness
 and provides the Step #3 deterministic review gate that enforces "only
@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import threading
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -30,6 +31,11 @@ from harness_poc.v2.handlers.delegate_task_handler import _handle_delegate_task
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Error types
+# ---------------------------------------------------------------------------
+
+
 class ExecutionEngineError(RuntimeError):
     """Raised when the ExecutionEngine cannot complete an operation."""
 
@@ -40,6 +46,23 @@ class GateFailureError(ExecutionEngineError):
 
 class SubAgentPoolFullError(ExecutionEngineError):
     """Background sub-agent pool is at capacity."""
+
+
+class TaskNotCompleteError(ExecutionEngineError):
+    """Result requested for a task that is still running."""
+
+
+class TaskCancelledError(ExecutionEngineError):
+    """Result requested for a task that was cancelled."""
+
+
+class TaskNotFoundError(ExecutionEngineError):
+    """No task found with the given task_id."""
+
+
+# ---------------------------------------------------------------------------
+# ExecutionEngine
+# ---------------------------------------------------------------------------
 
 
 class ExecutionEngine:
@@ -61,7 +84,7 @@ class ExecutionEngine:
         blackboard: BlackboardWriter,
         *,
         project_id: str = "deverino",
-        max_background_agents: int = 5,
+        max_background_agents: int = 8,
     ) -> None:
         self._db = db
         self._spawner = spawner
@@ -69,7 +92,9 @@ class ExecutionEngine:
         self._blackboard = blackboard
         self._project_id = project_id
         self._max_background = max_background_agents
-        self._bg_active: dict[str, str] = {}  # task_id → status
+        self._active_tasks: dict[str, threading.Thread] = {}  # task_id -> worker thread
+        self._results_cache: dict[str, dict[str, Any]] = {}  # task_id -> completed result
+        self._cancelled: set[str] = set()
 
     @property
     def event_bus(self) -> EventBus:
@@ -77,53 +102,40 @@ class ExecutionEngine:
         return self._event_bus
 
     # ------------------------------------------------------------------
-    # spawn_sub_agent  (spec §4, ExecutionEngine interface)
+    # spawn_sub_agent
     # ------------------------------------------------------------------
 
-    def spawn_sub_agent(
+    def spawn_sub_agent(  # noqa: PLR0913
         self,
         agent_type: str,
         task_payload: dict[str, Any],
         *,
-        background: bool = False,
+        mode: Literal["foreground", "background"] = "foreground",
         session_id: str | None = None,
-        on_text: Callable[[str], None] | None = None,  # noqa: ARG002
+        on_text: Callable[[str], None] | None = None,
+        isolate_session: bool = False,
     ) -> dict[str, Any]:
         """Spawn a sub-agent for isolated execution.
 
         Args:
             agent_type: The persona to use (e.g. "code_reviewer", "data_validator").
             task_payload: Dict with at least ``objective`` describing the task.
-            background: If True, registers to async task pool and returns
-                immediately with a task_id for polling.
+            mode: "foreground" blocks until completion. "background" runs via
+                a daemon thread and returns immediately with a task_id.
             session_id: The orchestrator session identifier. Auto-generated
                 if not provided.
             on_text: Optional callback for streaming output from the sub-agent.
+            isolate_session: If True, generate a sub_session_id for event isolation.
 
         Returns:
             A dict with task_id, output_label, summary, and metadata.
 
         Raises:
-            SubAgentPoolFullError: If background=True and the pool is full.
-            SpawnerFailureError: If the spawner raises an unexpected exception.
+            SubAgentPoolFullError: If mode="background" and the pool is full.
         """
         resolved_session = session_id or str(uuid.uuid4())
 
-        if background:
-            if len(self._bg_active) >= self._max_background:
-                msg = (
-                    f"Background pool full ({self._max_background} max). "
-                    f"Active tasks: {sorted(self._bg_active)}"
-                )
-                raise SubAgentPoolFullError(
-                    msg
-                )
-            logger.info(
-                "Background sub-agent queued: type=%s",
-                agent_type,
-            )
-
-        # Build arguments for the delegate_task handler
+        # Build arguments for the delegate_task handler (shared by both modes)
         arguments: dict[str, Any] = {
             "persona": agent_type,
             "objective": task_payload.get("objective", task_payload.get("task", "")),
@@ -134,32 +146,247 @@ class ExecutionEngine:
             arguments["tools"] = task_payload["tools"]
         if "metadata" in task_payload:
             arguments["metadata"] = task_payload["metadata"]
+        # Auto-generate corpus_key for per-sub-agent context map isolation
+        arguments["corpus_key"] = task_payload.get("corpus_key") or f"{self._project_id}:subagent:{agent_type}"
+        if isolate_session:
+            arguments["sub_session_id"] = str(uuid.uuid4())
+        if on_text is not None:
+            arguments["on_text"] = on_text
+        if mode == "foreground":
+            # Foreground: call handler synchronously, block until complete.
+            result = _handle_delegate_task(
+                spawner=self._spawner,
+                event_bus=self._event_bus,
+                blackboard=self._blackboard,
+                session_id=resolved_session,
+                arguments=arguments,
+                original_goal_status=task_payload.get("original_goal_status"),
+                db=self._db,
+            )
+            return {
+                "task_id": result.output.task_id,
+                "output_label": result.output.output_label,
+                "summary": result.output.summary,
+                "raw_output": result.output.raw_output,
+                "metadata": result.output.metadata,
+                "session_id": resolved_session,
+                "background": False,
+            }
 
-        # Delegate through the v2 handler
-        result = _handle_delegate_task(
-            spawner=self._spawner,
-            event_bus=self._event_bus,
-            blackboard=self._blackboard,
-            session_id=resolved_session,
-            arguments=arguments,
-            original_goal_status=task_payload.get("original_goal_status"),
+        # Background mode: validate capacity, spawn daemon thread, return immediately.
+        active_count = len(self._active_tasks) + len(self._results_cache)
+        if active_count >= self._max_background:
+            msg = (
+                f"Background pool full ({self._max_background} max). "
+                f"Active tasks: {sorted(set(self._active_tasks) | set(self._results_cache))}"
+            )
+            raise SubAgentPoolFullError(msg)
+
+        task_id = arguments.get("task_id", str(uuid.uuid4()))
+        arguments["task_id"] = task_id
+
+        logger.info(
+            "Background sub-agent queued: type=%s task_id=%s active=%d/%d",
+            agent_type,
+            task_id,
+            active_count + 1,
+            self._max_background,
         )
 
-        if background:
-            self._bg_active[result.output.task_id] = result.output.output_label
+        thread = threading.Thread(
+            target=self._run_background_task,
+            args=(task_id, resolved_session, arguments, task_payload),
+            daemon=True,
+        )
+        self._active_tasks[task_id] = thread
+        thread.start()
 
         return {
-            "task_id": result.output.task_id,
-            "output_label": result.output.output_label,
-            "summary": result.output.summary,
-            "raw_output": result.output.raw_output,
-            "metadata": result.output.metadata,
+            "task_id": task_id,
+            "output_label": "running",
+            "summary": f"Background task queued: {agent_type}",
+            "raw_output": "",
+            "metadata": {"agent_type": agent_type},
             "session_id": resolved_session,
-            "background": background,
+            "background": True,
         }
 
     # ------------------------------------------------------------------
-    # execute_deterministic_gate  (spec §4, ExecutionEngine interface)
+    # Pool management
+    # ------------------------------------------------------------------
+
+    def status(self, task_id: str) -> str:
+        """Return the status of a sub-agent task.
+
+        Returns:
+            "running" | "done" | "cancelled" | "unknown"
+        """
+        if task_id in self._cancelled:
+            return "cancelled"
+        if task_id in self._results_cache:
+            return "done"
+        if task_id in self._active_tasks and self._active_tasks[task_id].is_alive():
+            return "running"
+        return "unknown"
+
+    def result(self, task_id: str) -> dict[str, Any]:
+        """Retrieve the result of a completed sub-agent task.
+
+        Removes the task from the results cache and active tracking on success.
+
+        Raises:
+            TaskNotCompleteError: If the task is still running.
+            TaskCancelledError: If the task was cancelled.
+            TaskNotFoundError: If the task_id is unknown.
+        """
+        current_status = self.status(task_id)
+        if current_status == "unknown":
+            msg = f"No task found with id '{task_id}'"
+            raise TaskNotFoundError(msg)
+        if current_status == "running":
+            msg = f"Task '{task_id}' is still running"
+            raise TaskNotCompleteError(msg)
+        if current_status == "cancelled":
+            msg = f"Task '{task_id}' was cancelled"
+            raise TaskCancelledError(msg)
+
+        result_dict = self._results_cache.pop(task_id)
+        self._active_tasks.pop(task_id, None)
+        return result_dict
+
+    def cancel(self, task_id: str) -> bool:
+        """Cancel a running background sub-agent.
+
+        Marks the task as cancelled. The background thread continues to run
+        but its result will be discarded. Use status() to check state.
+
+        Returns:
+            True if the task was cancelled, False if it was already completed.
+
+        Raises:
+            TaskNotFoundError: If the task_id is unknown.
+        """
+        current_status = self.status(task_id)
+        if current_status == "unknown":
+            msg = f"No task found with id '{task_id}'"
+            raise TaskNotFoundError(msg)
+        if current_status in ("done", "cancelled"):
+            return False
+
+        # Mark as cancelled, remove from active tracking
+        self._cancelled.add(task_id)
+        self._active_tasks.pop(task_id, None)
+        self._results_cache.pop(task_id, None)
+        return True
+
+    def list_tasks(self) -> dict[str, dict[str, str]]:
+        """Return all known background tasks with their status and summary.
+
+        Returns:
+            Dict mapping task_id to {"status": str, "persona": str, "summary": str}.
+        """
+        result: dict[str, dict[str, str]] = {}
+
+        for task_id in self._cancelled:
+            result[task_id] = {"status": "cancelled", "persona": "unknown", "summary": ""}
+
+        for task_id, thread in self._active_tasks.items():
+            status = "running" if thread.is_alive() else "done"
+            result[task_id] = {"status": status, "persona": "unknown", "summary": ""}
+
+        for task_id, cached in self._results_cache.items():
+            result[task_id] = {
+                "status": "done",
+                "persona": cached.get("metadata", {}).get("agent_type", "unknown"),
+                "summary": cached.get("summary", ""),
+            }
+
+        return result
+
+    def _run_background_task(
+        self,
+        task_id: str,
+        resolved_session: str,
+        arguments: dict[str, Any],
+        task_payload: dict[str, Any],
+    ) -> None:
+        """Execute a background sub-agent in a daemon thread.
+
+        On completion, stores the result in ``_results_cache`` and removes
+        the entry from ``_active_tasks``. If the task was cancelled mid-run,
+        the result is discarded.
+        """
+        try:
+            result = _handle_delegate_task(
+                spawner=self._spawner,
+                event_bus=self._event_bus,
+                blackboard=self._blackboard,
+                session_id=resolved_session,
+                arguments=arguments,
+                original_goal_status=task_payload.get("original_goal_status"),
+                db=self._db,
+            )
+            output_dict = {
+                "task_id": result.output.task_id,
+                "output_label": result.output.output_label,
+                "summary": result.output.summary,
+                "raw_output": result.output.raw_output,
+                "metadata": result.output.metadata,
+                "session_id": resolved_session,
+                "background": True,
+            }
+        except Exception:
+            logger.exception("Background sub-agent %s failed", task_id)
+            output_dict = {
+                "task_id": task_id,
+                "output_label": "failed",
+                "summary": f"Background task {task_id} raised an exception",
+                "raw_output": "",
+                "metadata": {"agent_type": arguments.get("persona", "unknown")},
+                "session_id": resolved_session,
+                "background": True,
+            }
+        finally:
+            if task_id in self._cancelled:
+                # Task was cancelled mid-run -- discard result
+                self._active_tasks.pop(task_id, None)
+                logger.info(
+                    "Background task %s completed but was cancelled -- result discarded",
+                    task_id,
+                )
+            else:
+                self._results_cache[task_id] = output_dict
+                self._active_tasks.pop(task_id, None)
+                logger.info(
+                    "Background task %s completed with status=%s",
+                    task_id,
+                    output_dict["output_label"],
+                )
+
+    # ------------------------------------------------------------------
+    # Legacy pool methods (backward compatibility)
+    # ------------------------------------------------------------------
+
+    def background_status(self, task_id: str) -> str | None:
+        """Legacy: poll the status of a background sub-agent.
+
+        Returns the output_label string, or None if unknown.
+        """
+        if task_id in self._cancelled:
+            return "cancelled"
+        if task_id in self._active_tasks:
+            return "running"
+        cached = self._results_cache.get(task_id)
+        if cached is not None:
+            return cached["output_label"]
+        return None
+
+    def background_active_count(self) -> int:
+        """Return the number of currently active background sub-agents."""
+        return len(self._active_tasks) + len(self._results_cache)
+
+    # ------------------------------------------------------------------
+    # execute_deterministic_gate
     # ------------------------------------------------------------------
 
     def execute_deterministic_gate(
@@ -168,7 +395,7 @@ class ExecutionEngine:
         *,
         session_id: str | None = None,
     ) -> bool:
-        """Run the deterministic review gate — test suite as validation boundary.
+        """Run the deterministic review gate -- test suite as validation boundary.
 
         Triggers host-isolated validation commands. On success, persists a
         GATE_PASSED event and updates the materialized context map to reflect
@@ -206,7 +433,7 @@ class ExecutionEngine:
             msg = "Deterministic gate timed out"
             raise GateFailureError(msg) from exc
         except FileNotFoundError:
-            # uv not available — try python -m pytest directly
+            # uv not available -- try python -m pytest directly
             try:
                 result = subprocess.run(
                     ["python", "-m", "pytest", "--tb=short", "-q"],  # noqa: S607
@@ -258,21 +485,6 @@ class ExecutionEngine:
         return False
 
     # ------------------------------------------------------------------
-    # Pool management
-    # ------------------------------------------------------------------
-
-    def background_status(self, task_id: str) -> str | None:
-        """Poll the status of a background sub-agent.
-
-        Returns None if the task_id is unknown.
-        """
-        return self._bg_active.get(task_id)
-
-    def background_active_count(self) -> int:
-        """Return the number of currently active background sub-agents."""
-        return len(self._bg_active)
-
-    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
@@ -298,9 +510,13 @@ class ExecutionEngine:
     @staticmethod
     def _parse_test_count(stdout: str) -> int:
         """Extract the number of tests run from pytest output (best-effort)."""
-        import re
-
-        match = re.search(r"(\d+)\s+passed", stdout)
-        if match:
-            return int(match.group(1))
+        for line in stdout.splitlines():
+            if " passed" in line or " failed" in line:
+                try:
+                    parts = line.strip().split()
+                    for part in parts:
+                        if part.isdigit():
+                            return int(part)
+                except (ValueError, IndexError):
+                    pass
         return 0

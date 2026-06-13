@@ -149,6 +149,33 @@ class MapEntryReferenced(ContextMapEvent):
     citation_context: str  # Snippet of agent output that cited the entry
 
 
+
+class SubAgentTaskStarted(ContextMapEvent):
+    """Emitted when a sub-agent task is dispatched to the spawner.
+
+    Carries the sub-agent's persona, objective, and sub_session_id.
+    Stored in context_map_events scoped to the sub-agent's corpus_key
+    so the MaterializerRunner can incorporate it into the sub-agent's
+    persistent context map.
+    """
+    event_type: Literal["sub_agent_task_started"] = "sub_agent_task_started"
+    sub_session_id: str | None = None
+    persona: str
+    objective: str
+
+
+class SubAgentTaskCompleted(ContextMapEvent):
+    """Emitted when a sub-agent task finishes (success or failure).
+
+    Stored in context_map_events scoped to the sub-agent's corpus_key.
+    The summary provides a concise description of what happened,
+    suitable for inclusion in the sub-agent's context map entries.
+    """
+    event_type: Literal["sub_agent_task_completed"] = "sub_agent_task_completed"
+    task_id: str
+    status: str  # "success" | "failed"
+    summary: str
+
 CONTEXT_MAP_EVENT_REGISTRY: dict[str, type[ContextMapEvent]] = {
     "corpus_ingested": CorpusIngested,
     "document_retrieved": DocumentRetrieved,
@@ -165,6 +192,8 @@ CONTEXT_MAP_EVENT_REGISTRY: dict[str, type[ContextMapEvent]] = {
     "map_entry_promoted": MapEntryPromoted,  # deprecated — kept for historical deserialization
     "map_entry_evicted": MapEntryEvicted,
     "map_entry_referenced": MapEntryReferenced,
+    "sub_agent_task_started": SubAgentTaskStarted,
+    "sub_agent_task_completed": SubAgentTaskCompleted,
 }
 
 # Backward-compatibility alias (used by deserialize_event internally)

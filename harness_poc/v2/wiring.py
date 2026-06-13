@@ -395,23 +395,24 @@ def _build_spawner_adapter(config: HarnessConfig, db: BlackboardDatabase):  # no
 
             # Load context map for sub-agent orientation
             corpus_key = str(task_spec.get("corpus_key") or "")
+            if not corpus_key:
+                corpus_key = f"{config.project_id}:subagent:{persona}"
             context_map_block = ""
-            if corpus_key:
-                try:
-                    current_map = db.get_context_map(corpus_key) or []
-                    if current_map:
-                        from harness_poc.core.context_map.render import render_context_map
+            try:
+                current_map = db.get_context_map(corpus_key) or []
+                if current_map:
+                    from harness_poc.core.context_map.render import render_context_map
 
-                        cycle_n = db.get_cycle(corpus_key)
-                        context_map_block = render_context_map(
-                            current_map, cycle_n, prompt_mode="structured"
-                        )
-                except Exception:
-                    logger.debug(
-                        "Failed to load context map for sub-agent (corpus_key=%s)",
-                        corpus_key,
-                        exc_info=True,
+                    cycle_n = db.get_cycle(corpus_key)
+                    context_map_block = render_context_map(
+                        current_map, cycle_n, prompt_mode="structured"
                     )
+            except Exception:
+                logger.debug(
+                    "Failed to load context map for sub-agent (corpus_key=%s)",
+                    corpus_key,
+                    exc_info=True,
+                )
             if context_map_block:
                 system_prompt += f"\n\n--- Context Map ({corpus_key}) ---\n{context_map_block}\n---"
             # Load agent configuration (tools, permissions)
