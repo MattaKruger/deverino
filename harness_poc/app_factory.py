@@ -18,7 +18,7 @@ from harness_poc.core.events import EventBus, EventStore
 from harness_poc.core.execution import PipelineRunner, WorkflowRunner
 from harness_poc.core.logging import configure_logging
 from harness_poc.core.permissions import SkillPermissions
-from harness_poc.core.retrieval import DocumentIndexer, LiveVespaDocumentClient
+from harness_poc.core.retrieval import DocumentIndexer, LiveVespaDocumentClient, TextEmbedder
 from harness_poc.core.runtime import (
     PydanticAgentRuntime,
     build_runtime,
@@ -259,10 +259,12 @@ def _resolve_auto_index_paths(config: HarnessConfig) -> list[str] | None:
 def _run_auto_index(config: HarnessConfig, database: BlackboardDatabase, paths: list[str]) -> None:
     """Feed chunks to Vespa and write metadata to the database."""
     vespa = LiveVespaDocumentClient(config.retrieval)
+    embedder = TextEmbedder()
     indexer = DocumentIndexer(
         config=config.retrieval,
         database=database,
         vespa_client=vespa,
+        embedder=embedder,
     )
     print("Indexing project documents...", end=" ", flush=True)
     try:

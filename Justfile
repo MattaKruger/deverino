@@ -1,6 +1,9 @@
 # Deverino — common dev commands
 # Run with: just <recipe>
 
+# Auto-detect container compose backend (podman on Linux, docker on macOS)
+compose := `command -v podman >/dev/null 2>&1 && echo "podman compose" || echo "docker compose"`
+
 default:
     @just --list
 
@@ -29,17 +32,37 @@ dashboard port="8050":
 acdl-playground port="8765":
     python3 -m http.server {{port}} --directory docs/acdl
 
+# Start backing services (Postgres + Vespa)
+services-up:
+    {{compose}} up -d postgres vespa
+
+# Stop backing services without deleting data
+services-down:
+    {{compose}} stop
+
+# Deploy Vespa application package
+vespa-deploy:
+    {{compose}} exec vespa vespa deploy /vespa-app
+
+# Start just the main database
+db-up:
+    {{compose}} up -d postgres
+
+# Stop the main database
+db-down:
+    {{compose}} stop postgres
+
 # Run a workflow: just workflow <name> "<objective>"
 workflow name objective:
     uv run harness-poc workflow run {{name}} "{{objective}}"
 
 # Start the dedicated test database
 test-db-up:
-    docker compose up -d postgres_test
+    {{compose}} up -d postgres_test
 
 # Stop the dedicated test database
 test-db-down:
-    docker compose stop postgres_test
+    {{compose}} stop postgres_test
 
 # Run full test suite
 test: test-db-up

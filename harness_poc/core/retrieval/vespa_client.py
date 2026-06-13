@@ -48,7 +48,7 @@ class LiveVespaDocumentClient:
         failed_ids: list[str] = []
         with app.syncio(connections=self._max_workers) as session:
             for chunk in chunks:
-                fields = {
+                fields: dict = {
                     "source_id": chunk.source_id,
                     "uri": chunk.uri,
                     "title": chunk.title,
@@ -59,6 +59,12 @@ class LiveVespaDocumentClient:
                     "content_hash": chunk.content_hash,
                     "updated_at": chunk.updated_at,
                 }
+                # Include pre-computed embedding when present.
+                embedding = chunk.embedding
+                if embedding is not None:
+                    fields["embedding"] = {
+                        "values": embedding,
+                    }
                 response = session.feed_data_point(
                     schema=self._schema,
                     data_id=chunk.chunk_id,
@@ -110,6 +116,17 @@ class LiveVespaDocumentClient:
         return [_normalize_hit(hit) for hit in result.hits]
 
 
+def _format_tensor_values(values: list[float]) -> str:
+    """Format a list of floats as a Vespa tensor literal string.
+
+    For a 1024-dim vector this produces something like::
+
+        "{{x:0}:0.0123,{x:1}:-0.0456,...,{x:1023}:0.0789}"
+    """
+    cells = ",".join(f"{{x:{i}}}:{v}" for i, v in enumerate(values))
+    return "{" + cells + "}"
+
+
 def _build_query_body(request: SearchRequest, schema: str, timeout: int) -> dict:
     filter_clauses: list[str] = []
     extra_params: dict = {}
@@ -134,10 +151,16 @@ def _build_query_body(request: SearchRequest, schema: str, timeout: int) -> dict
         }
     elif request.mode == "semantic":
         where = f"({{targetHits:20}}nearestNeighbor(embedding,q)){filter_str}"
+        if request.query_embedding is None:
+            msg = (
+                "Semantic search requires a pre-computed query embedding. "
+                "Pass query_embedding to SearchRequest."
+            )
+            raise ValueError(msg)
         body = {
             "yql": f"select * from {schema} where {where}",  # noqa: S608
             "query": request.query,
-            "input.query(q)": "embed(@query)",
+            "input.query(q)": _format_tensor_values(request.query_embedding),
             "ranking.profile": "semantic",
             "hits": request.hits,
             "timeout": str(timeout),
@@ -147,10 +170,16 @@ def _build_query_body(request: SearchRequest, schema: str, timeout: int) -> dict
             f"(default contains ({{targetHits:100}}text(@query))"
             f" or ({{targetHits:20}}nearestNeighbor(embedding,q))){filter_str}"
         )
+        if request.query_embedding is None:
+            msg = (
+                "Hybrid search requires a pre-computed query embedding. "
+                "Pass query_embedding to SearchRequest."
+            )
+            raise ValueError(msg)
         body = {
             "yql": f"select * from {schema} where {where}",  # noqa: S608
             "query": request.query,
-            "input.query(q)": "embed(@query)",
+            "input.query(q)": _format_tensor_values(request.query_embedding),
             "ranking.profile": "hybrid",
             "hits": request.hits,
             "timeout": str(timeout),

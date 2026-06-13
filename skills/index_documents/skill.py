@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.retrieval import DocumentIndexer, LiveVespaDocumentClient
+from harness_poc.core.retrieval import DocumentIndexer, LiveVespaDocumentClient, TextEmbedder
 from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
@@ -38,10 +38,12 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     exclude_dirs = [str(path) for path in raw_exclude_dirs]
 
     vespa_client = LiveVespaDocumentClient(ctx.config.retrieval)
+    embedder = TextEmbedder()
     indexer = DocumentIndexer(
         config=ctx.config.retrieval,
         database=ctx.database,
         vespa_client=vespa_client,
+        embedder=embedder,
     )
 
     result = indexer.index_paths(

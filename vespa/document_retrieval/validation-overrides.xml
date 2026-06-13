@@ -1,4 +1,6 @@
 <validation-overrides>
-    <allow until="2026-06-18">field-type-change</allow>
-    <allow until="2026-06-18">hnsw-settings-change</allow>
+    <allow until="2026-06-20">field-type-change</allow>
+    <allow until="2026-06-20">hnsw-settings-change</allow>
+    <allow until="2026-06-20">indexing-change</allow>
+    <allow until="2026-06-20">tensor-type-change</allow>
 </validation-overrides>

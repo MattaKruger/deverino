@@ -89,16 +89,32 @@ def test_build_query_body_keyword() -> None:
 
 
 def test_build_query_body_semantic() -> None:
-    req = SearchRequest(query="how memory works", mode="semantic", hits=8)
+    req = SearchRequest(
+        query="how memory works",
+        mode="semantic",
+        hits=8,
+        query_embedding=[0.1, 0.2, 0.3],
+    )
     body = _build_query_body(req, schema="doc_chunk", timeout=5)
     assert body["ranking.profile"] == "semantic"
     assert "nearestNeighbor" in body["yql"]
-    assert body["input.query(q)"] == "embed(@query)"
+    assert "0.1" in body["input.query(q)"]
     assert "text(@query)" not in body["yql"]
 
 
+def test_build_query_body_semantic_requires_embedding() -> None:
+    req = SearchRequest(query="how memory works", mode="semantic", hits=8)
+    with pytest.raises(ValueError, match="query embedding"):
+        _build_query_body(req, schema="doc_chunk", timeout=5)
+
+
 def test_build_query_body_hybrid() -> None:
-    req = SearchRequest(query="memory", mode="hybrid", hits=8)
+    req = SearchRequest(
+        query="memory",
+        mode="hybrid",
+        hits=8,
+        query_embedding=[0.1, 0.2, 0.3],
+    )
     body = _build_query_body(req, schema="doc_chunk", timeout=5)
     assert body["ranking.profile"] == "hybrid"
     assert "nearestNeighbor" in body["yql"]

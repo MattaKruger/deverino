@@ -11,7 +11,7 @@ dependencies = [
     "pyyaml>=6.0.2",
     "tiktoken>=0.7.0",
     "rich>=15.0.0",
-    "typer>=0.12.5,<0.25.0",  # upper bound required by docling-core
+    "typer>=0.12.5,<0.25.0", # upper bound required by docling-core
     "pydantic-ai>=1.97.0",
     "logfire[pydantic-ai]>=4.33.0",
     "textual>=1.0.0",
@@ -25,6 +25,9 @@ dependencies = [
     "dash>=4.1.0",
     "sentence-transformers>=5.5.1",
     "pgvector>=0.4.2",
+    "tool>=0.8.0",
+    "semble>=0.3.4",
+    "docling-core[chunking]>=2.77.0",
 ]
 
 [dependency-groups]

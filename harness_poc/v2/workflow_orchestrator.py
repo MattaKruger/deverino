@@ -221,6 +221,53 @@ class WorkflowOrchestrator:
 
         return result
 
+    def run_pipeline_via_bus(
+        self,
+        *,
+        spec: dict[str, Any],
+        persona_id: str,
+        probe_code: str | None = None,
+        workspace_path: str | None = None,
+    ) -> None:
+        """Run the pipeline via event bus subscriptions (event-driven mode).
+
+        Constructs a ``PipelineStepRunner``, subscribes it to step boundary
+        events, and publishes ``WORKFLOW_STARTED``. The pipeline then runs
+        itself via event callbacks — zero further calls to the orchestrator.
+
+        This is the Phase 2b event-driven equivalent of ``execute_workflow``.
+        """
+        from harness_poc.v2.subscribers.pipeline_runner import (  # noqa: PLC0415
+            PipelineStepRunner,
+        )
+
+        workflow_id = str(uuid.uuid4())
+        session_id = str(uuid.uuid4())
+        tasks = spec.get("tasks", [])
+        bus = self._execution._event_bus
+
+        runner = PipelineStepRunner(self)
+
+        # Register the runner on the bus for each step boundary event
+        bus.subscribe("WORKFLOW_STARTED", runner.handle_workflow_started)
+        bus.subscribe("PROBE_COMPLETED", runner.handle_probe_completed)
+        bus.subscribe("EXECUTION_COMPLETED", runner.handle_execution_completed)
+
+        # Kick off the pipeline
+        bus.publish(
+            "WORKFLOW_STARTED",
+            {
+                "session_id": session_id,
+                "team_member": "orchestrator",
+                "workflow_id": workflow_id,
+                "goal": spec.get("goal", ""),
+                "persona_id": persona_id,
+                "probe_code": probe_code,
+                "tasks": tasks,
+                "workspace_path": workspace_path,
+            },
+        )
+
     # ------------------------------------------------------------------
     # Step #1: Fail-Fast Probe
     # ------------------------------------------------------------------
@@ -370,12 +417,12 @@ class WorkflowOrchestrator:
             if raw["output_label"] != "completed":
                 failure_count += 1
 
-        # Emit SPEC_COMMITTED event — records spec execution completion
-        self._execution._db.append_context_event(
-            session_id=session_id,
-            team_member="orchestrator",
-            event_type="SPEC_COMMITTED",
-            payload={
+        # Publish SPEC_COMMITTED event via the execution engine's event bus
+        self._execution._event_bus.publish(
+            "SPEC_COMMITTED",
+            {
+                "session_id": session_id,
+                "team_member": "orchestrator",
                 "execution_id": execution_id,
                 "task_count": len(tasks),
                 "failure_count": failure_count,

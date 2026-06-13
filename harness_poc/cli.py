@@ -11,7 +11,7 @@ import typer
 from rich.table import Table
 
 from harness_poc.app_factory import STARTUP_ERRORS, AppState, build_app_state
-from harness_poc.console import console, print_error
+from harness_poc.console import console, print_error, print_text
 from harness_poc.core.acdl.cli import acdl_app
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.events import (
@@ -1121,6 +1121,73 @@ def v2_context(
     _run_command(lambda: _run_v2_context(app_state, persona))
 
 
+@v2_app.command("run")
+def v2_run(
+    objective: Annotated[
+        str,
+        typer.Argument(help="The goal/spec to execute."),
+    ],
+    mode: Annotated[
+        str,
+        typer.Option(
+            "--mode", "-m",
+            help="Execution mode: 'pipeline' (default) or 'react'.",
+        ),
+    ] = "pipeline",
+    persona: Annotated[
+        str,
+        typer.Option("--persona", "-p", help="Persona to use (e.g. coder, reviewer)."),
+    ] = "coder",
+    spec_file: Annotated[
+        str | None,
+        typer.Option("--spec", "-s", help="Path to a YAML spec file (pipeline mode)."),
+    ] = None,
+    max_iterations: Annotated[
+        int,
+        typer.Option(
+            "--max-iterations", "-n",
+            help="Max loop iterations (react mode, default 50).",
+        ),
+    ] = 50,
+    max_seconds: Annotated[
+        float | None,
+        typer.Option(
+            "--max-seconds", "-t",
+            help="Max wall-clock seconds (react mode).",
+        ),
+    ] = None,
+    max_tokens: Annotated[
+        int | None,
+        typer.Option(
+            "--max-tokens", "-k",
+            help="Max cumulative tokens (react mode).",
+        ),
+    ] = None,
+) -> None:
+    """Run a v2 workflow or ReAct loop with mode selection.
+
+    Examples:
+        harness-poc v2 run --mode pipeline "implement a test"
+        harness-poc v2 run --mode react "write a function"
+    """
+    app_state = _new_app_state()
+    _run_command(
+        lambda: _run_v2_mode(
+            app_state,
+            objective=objective,
+            mode=mode,
+            persona=persona,
+            spec_file=spec_file,
+            max_iterations=max_iterations,
+            max_seconds=max_seconds,
+            max_tokens=max_tokens,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# V2 internal runners
+# ---------------------------------------------------------------------------
 def _run_v2_probe(app_state: AppState, code: str) -> None:
     from harness_poc.v2.wiring import (
         build_context_engine,
@@ -1237,3 +1304,238 @@ def _run_v2_context(app_state: AppState, persona: str) -> None:
         print_text(block)
     else:
         print_error(f"Could not materialize context for persona '{persona}'.")
+
+
+def _run_v2_mode(
+    app_state: AppState,
+    *,
+    objective: str,
+    mode: str,
+    persona: str,
+    spec_file: str | None,
+    max_iterations: int,
+    max_seconds: float | None,
+    max_tokens: int | None,
+) -> None:
+    """Run v2 in the selected mode (pipeline or react)."""
+    from harness_poc.v2.wiring import build_v2_runtime
+
+    runtime = build_v2_runtime(
+        app_state.database,
+        app_state.config,
+        mode=mode,
+    )
+
+    if mode == "pipeline":
+        _run_v2_pipeline_mode(
+            runtime,
+            objective=objective,
+            persona=persona,
+            spec_file=spec_file,
+        )
+    elif mode == "react":
+        asyncio.run(
+            _run_v2_react_mode(
+                runtime,
+                app_state=app_state,
+                objective=objective,
+                max_iterations=max_iterations,
+                max_seconds=max_seconds,
+                max_tokens=max_tokens,
+            )
+        )
+    else:
+        print_error(f"Unknown mode: {mode}")
+
+
+def _run_v2_pipeline_mode(
+    runtime: dict,
+    *,
+    objective: str,
+    persona: str,
+    spec_file: str | None,
+) -> None:
+    """Run the v2 pipeline mode with progress output."""
+    import yaml
+    from pathlib import Path
+
+    orch = runtime["orchestrator"]
+    bus = runtime["bus"]
+
+    if spec_file:
+        spec_path = Path(spec_file)
+        if not spec_path.exists():
+            print_error(f"Spec file not found: {spec_file}")
+            return
+        spec = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+        if not isinstance(spec, dict):
+            print_error("Spec file must be a YAML mapping")
+            return
+    else:
+        spec = {"goal": objective, "tasks": []}
+
+    probe_code = spec.get("probe")
+    workspace_path = spec.get("workspace")
+
+    # Subscribe progress handlers so the user sees step-by-step output.
+    # The pipeline runs synchronously within bus.publish(), so these
+    # fire inline as each step completes.
+    steps_seen: list[str] = []
+
+    def on_probe(_et: str, payload: dict) -> None:
+        steps_seen.append("probe")
+        success = payload.get("success", True)
+        constraints = payload.get("constraints", [])
+        if probe_code is None:
+            print_text("  Probe: skipped (no probe code)")
+        elif success:
+            print_text("  Probe: PASSED")
+        else:
+            print_text(f"  Probe: FAILED — {len(constraints)} constraint(s) discovered")
+
+    def on_execution(_et: str, payload: dict) -> None:
+        steps_seen.append("execution")
+        agents = payload.get("sub_agents", [])
+        all_passed = payload.get("all_passed", True)
+        if not agents:
+            print_text("  Execution: skipped (no tasks)")
+        elif all_passed:
+            print_text(f"  Execution: PASSED — {len(agents)} agent(s)")
+        else:
+            failed = sum(1 for a in agents if a.get("output_label") != "completed")
+            print_text(f"  Execution: FAILED — {failed}/{len(agents)} agent(s)")
+
+    def on_gate(_et: str, payload: dict) -> None:
+        steps_seen.append("gate")
+        passed = payload.get("passed", True)
+        test_count = payload.get("test_count", 0)
+        if workspace_path is None:
+            print_text("  Gate: skipped (no workspace)")
+        elif passed:
+            print_text(f"  Gate: PASSED — {test_count} test(s)")
+        else:
+            print_text(f"  Gate: FAILED — {test_count} test(s)")
+
+    bus.subscribe("PROBE_COMPLETED", on_probe)
+    bus.subscribe("EXECUTION_COMPLETED", on_execution)
+    bus.subscribe("GATE_COMPLETED", on_gate)
+
+    print_text(f"Pipeline: {objective}")
+
+    # Start the event-driven pipeline (runs synchronously)
+    orch.run_pipeline_via_bus(
+        spec=spec,
+        persona_id=persona,
+        probe_code=probe_code,
+        workspace_path=workspace_path,
+    )
+
+    # Summary
+    completed = ", ".join(steps_seen) if steps_seen else "(no steps)"
+    print_text(f"  Completed: [{completed}]")
+
+
+async def _run_v2_react_mode(
+    runtime: dict,
+    *,
+    app_state: AppState,
+    objective: str,
+    max_iterations: int,
+    max_seconds: float | None,
+    max_tokens: int | None,
+) -> None:
+    """Run the v2 ReAct mode using the v2 subscribers."""
+    bus = runtime["bus"]
+    session_id = app_state.session_id
+
+    terminal_event = asyncio.Event()
+    output_parts: list[str] = []
+    iteration = 0
+
+    def on_text(event_type: str, payload: dict) -> None:
+        if event_type == "LLM_TEXT_EMITTED":
+            output_parts.append(payload.get("content", ""))
+            terminal_event.set()
+
+    def on_pause(event_type: str, _payload: dict) -> None:
+        if event_type == "STREAM_PAUSED":
+            terminal_event.set()
+
+    def on_goal(event_type: str, _payload: dict) -> None:
+        if event_type == "GOAL_EVALUATED":
+            terminal_event.set()
+
+    # Progress output — surface what the agent is doing
+    def on_llm_action(event_type: str, payload: dict) -> None:
+        nonlocal iteration
+        if event_type == "LLM_ACTION_EMITTED":
+            iteration += 1
+            tokens = payload.get("tokens_used", 0)
+            print_text(f"  [{iteration}] LLM response ({tokens} tokens)")
+
+    def on_tool_request(event_type: str, payload: dict) -> None:
+        if event_type == "TOOL_REQUESTED":
+            skill = payload.get("skill_name", "unknown")
+            print_text(f"  [{iteration}] → calling {skill}()")
+
+    def on_tool_complete(event_type: str, payload: dict) -> None:
+        if event_type == "TOOL_COMPLETED":
+            status = payload.get("status", "unknown")
+            tool = payload.get("tool_name", payload.get("skill_name", "unknown"))
+            marker = "✓" if status == "success" else "✗"
+            print_text(f"  [{iteration}] ← {tool}() {marker} ({status})")
+
+    bus.subscribe("LLM_TEXT_EMITTED", on_text)
+    bus.subscribe("STREAM_PAUSED", on_pause)
+    bus.subscribe("GOAL_EVALUATED", on_goal)
+    bus.subscribe("LLM_ACTION_EMITTED", on_llm_action)
+    bus.subscribe("TOOL_REQUESTED", on_tool_request)
+    bus.subscribe("TOOL_COMPLETED", on_tool_complete)
+
+    tasks = [
+        asyncio.create_task(
+            runtime["circuit_breaker"].run(bus, session_id)
+        ),
+        asyncio.create_task(
+            runtime["llm_worker"].run(bus, session_id)
+        ),
+        asyncio.create_task(
+            runtime["tool_worker"].run(bus, session_id)
+        ),
+        asyncio.create_task(
+            runtime["goal_evaluator"].run(bus, session_id)
+        ),
+    ]
+
+    try:
+        await asyncio.sleep(0)
+        bus.publish(
+            "AGENT_INPUT",
+            {
+                "session_id": session_id,
+                "team_member": "cli",
+                "content": objective,
+            },
+        )
+        await asyncio.wait_for(terminal_event.wait(), timeout=max_seconds)
+    except TimeoutError:
+        output_parts.append(
+            f"Time budget ({max_seconds}s) exhausted before the goal completed."
+        )
+    finally:
+        bus.publish(
+            "STREAM_PAUSED",
+            {
+                "session_id": session_id,
+                "team_member": "cli",
+                "reason": "completed",
+                "threshold_breached": str(max_iterations),
+            },
+        )
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    output = "\n".join(output_parts).strip()
+    if output:
+        print_text(output)
+    else:
+        print_text("ReAct loop completed (no text output).")

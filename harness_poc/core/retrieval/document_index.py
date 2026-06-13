@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from harness_poc.core.config import RetrievalConfig
+    from harness_poc.core.retrieval.embedder import TextEmbedder
     from harness_poc.core.retrieval.retrieval import VespaDocumentClient
     from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
 
@@ -63,10 +64,12 @@ class DocumentIndexer:
         config: RetrievalConfig,
         database: BlackboardDatabase | BlackboardAccessProxy,
         vespa_client: VespaDocumentClient,
+        embedder: TextEmbedder | None = None,
     ) -> None:
         self._config = config
         self._db = database
         self._vespa = vespa_client
+        self._embedder = embedder
         self._print_lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -374,6 +377,27 @@ class DocumentIndexer:
 
         if existing is not None:
             self._vespa.delete_source(source_id)
+
+        # Pre-compute embedding vectors via GPU (or CPU if no embedder configured).
+        if self._embedder is not None:
+            texts = [c.text for c in chunks]
+            embeddings = self._embedder.embed_batch(texts)
+            # Create new chunk objects with embeddings attached (chunks are frozen dataclasses).
+            chunks = [
+                type(c)(
+                    source_id=c.source_id,
+                    uri=c.uri,
+                    title=c.title,
+                    chunk_id=c.chunk_id,
+                    chunk_index=c.chunk_index,
+                    text=c.text,
+                    kind=c.kind,
+                    content_hash=c.content_hash,
+                    updated_at=c.updated_at,
+                    embedding=embeddings[i].tolist() if len(embeddings) > i else None,
+                )
+                for i, c in enumerate(chunks)
+            ]
 
         feed_summary = self._vespa.feed_chunks(chunks)
         if feed_summary.failed > 0:

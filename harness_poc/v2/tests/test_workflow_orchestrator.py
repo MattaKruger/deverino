@@ -81,6 +81,8 @@ class ExecutionEngineSpy:
         self._spawn_counter = 0
         # Simulated DB
         self._db = _FakeDB()
+        # Event bus spy for SPEC_COMMITTED publishes
+        self._event_bus = EventBusSpy()
 
     def spawn_sub_agent(
         self,
@@ -173,6 +175,22 @@ class _FakeDB:
 
     def append_context_event(self, **kwargs: Any) -> int:
         return 1
+
+
+class EventBusSpy:
+    """Records published events for assertion."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    def subscribe(self, event_type: str, handler) -> None:
+        pass
+
+    def unsubscribe(self, event_type: str, handler) -> None:
+        pass
+
+    def publish(self, event_type: str, payload: dict) -> None:
+        self.events.append((event_type, payload))
 
 
 # ---------------------------------------------------------------------------

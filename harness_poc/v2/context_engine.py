@@ -12,12 +12,14 @@ them to filter and format the working context map for model injection.
 from __future__ import annotations
 
 import logging
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from harness_poc.core.storage.database import BlackboardDatabase
     from harness_poc.v2.contracts.context_map_pipeline import ContextMapMaterializer
+    from harness_poc.v2.contracts.event_runtime import EventBus
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +51,14 @@ class ContextEngine:
         personas_dir: Path,
         pedagogy_path: Path,
         project_id: str = "deverino",
+        event_bus: EventBus | None = None,
     ) -> None:
         self._db = db
         self._materializer = materializer
         self._personas_dir = personas_dir
         self._pedagogy_path = pedagogy_path
         self._project_id = project_id
+        self._event_bus = event_bus
 
     # ------------------------------------------------------------------
     # materialize_context_map  (spec §4, ContextEngine interface)
@@ -164,16 +168,17 @@ class ContextEngine:
         # Extract semantic constraints from the error
         constraints = self._extract_constraints(execution_error)
 
-        # Commit PROBE_FAILED event
-        event_id = self._db.append_context_event(
-            session_id=session_id,
-            team_member="orchestrator",
-            event_type="PROBE_FAILED",
-            payload={
-                "execution_error": execution_error,
-                "extracted_constraints": constraints,
-            },
-        )
+        event_id = str(uuid.uuid4())
+
+        # Publish PROBE_FAILED event via the event bus (or fall back to db)
+        probe_payload = {
+            "session_id": session_id,
+            "team_member": "orchestrator",
+            "execution_error": execution_error,
+            "extracted_constraints": constraints,
+            "event_id": event_id,
+        }
+        self._publish_event("PROBE_FAILED", probe_payload)
 
         # Build context delta for the working context
         context_delta = {
@@ -191,25 +196,35 @@ class ContextEngine:
             active_persona="probe",  # failure warm-up is persona-agnostic
             pedagogy_snapshot={},
             verified_state=context_delta,
-            last_event_id=event_id,
+            last_event_id=0,
         )
 
-        # Emit CONTEXT_WARMED event — signals successful context map update
-        self._db.append_context_event(
-            session_id=session_id,
-            team_member="orchestrator",
-            event_type="CONTEXT_WARMED",
-            payload={
-                "constraint_count": len(constraints),
-                "probe_event_id": event_id,
-            },
-        )
+        # Publish CONTEXT_WARMED event — signals successful context map update
+        warmed_payload = {
+            "session_id": session_id,
+            "team_member": "orchestrator",
+            "constraint_count": len(constraints),
+            "probe_event_id": event_id,
+        }
+        self._publish_event("CONTEXT_WARMED", warmed_payload)
 
         return context_delta
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _publish_event(self, event_type: str, payload: dict[str, Any]) -> None:
+        """Publish an event through the bus, or fall back to direct db write."""
+        if self._event_bus is not None:
+            self._event_bus.publish(event_type, payload)
+        else:
+            self._db.append_context_event(
+                session_id=payload.get("session_id", "v2-runtime"),
+                team_member=payload.get("team_member", "orchestrator"),
+                event_type=event_type,
+                payload=payload,
+            )
 
     def _load_persona(self, persona_id: str) -> str:
         """Load a persona markdown file from the personas directory."""

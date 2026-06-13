@@ -430,10 +430,10 @@ class TestDeterministicGate:
             detail="15 passed in 2.34s",
         )
 
-        assert len(db.context_events) == 1
-        event = db.context_events[0]
-        assert event["event_type"] == "GATE_PASSED"
-        assert event["payload"]["passed"] is True
+        assert len(event_bus.events) == 1
+        event_type, payload = event_bus.events[0]
+        assert event_type == "GATE_PASSED"
+        assert payload["passed"] is True
 
     def test_gate_fail_records_event(self):
         spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS, task_id="spawner-77"))
@@ -454,9 +454,9 @@ class TestDeterministicGate:
             detail="2 failed, 13 passed in 3.12s",
         )
 
-        event = db.context_events[0]
-        assert event["event_type"] == "GATE_FAILED"
-        assert event["payload"]["passed"] is False
+        event_type, payload = event_bus.events[0]
+        assert event_type == "GATE_FAILED"
+        assert payload["passed"] is False
 
     def test_gate_pass_updates_materialized_map(self):
         spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS, task_id="spawner-77"))

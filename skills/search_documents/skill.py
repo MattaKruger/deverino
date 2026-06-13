@@ -5,7 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.events import DocumentRetrieved, SearchFailed
-from harness_poc.core.retrieval import LiveVespaDocumentClient, SearchRequest
+from harness_poc.core.retrieval import LiveVespaDocumentClient, SearchRequest, TextEmbedder
 from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
@@ -66,12 +66,18 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     mode = str(arguments.get("mode") or ctx.config.retrieval.default_mode)
     hits = max(1, int(arguments.get("hits") or ctx.config.retrieval.default_hits))
 
+    query_embedding = None
+    if mode in ("semantic", "hybrid"):
+        embedder = TextEmbedder()
+        query_embedding = embedder.embed_single(query)
+
     request = SearchRequest(
         query=query,
         mode=mode,
         hits=hits,
         source_id=_optional_str(arguments.get("source_id")),
         kind=_optional_str(arguments.get("kind")),
+        query_embedding=query_embedding,
     )
 
     vespa = LiveVespaDocumentClient(ctx.config.retrieval)

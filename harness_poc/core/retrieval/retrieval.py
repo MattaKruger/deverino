@@ -22,6 +22,7 @@ class DocumentChunk:
     kind: str
     content_hash: str
     updated_at: int  # milliseconds since epoch
+    embedding: list[float] | None = None  # pre-computed embedding vector
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,7 @@ class SearchRequest:
     hits: int
     source_id: str | None = None
     kind: str | None = None
+    query_embedding: list[float] | None = None  # pre-computed query vector
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,21 +98,26 @@ def make_document_chunks(
     kind: str,
     chunk_size: int,
     chunk_overlap: int,
+    embeddings: list[list[float]] | None = None,
 ) -> list[DocumentChunk]:
     source_id = make_source_id(uri)
     now_ms = int(time.time() * 1000)
     raw_chunks = chunk_text(text, chunk_size, chunk_overlap)
-    return [
-        DocumentChunk(
-            source_id=source_id,
-            uri=uri,
-            title=title,
-            chunk_id=make_chunk_id(source_id, i),
-            chunk_index=i,
-            text=chunk,
-            kind=kind,
-            content_hash=compute_content_hash(chunk),
-            updated_at=now_ms,
+    chunks = []
+    for i, chunk_text_val in enumerate(raw_chunks):
+        emb = embeddings[i] if embeddings is not None and i < len(embeddings) else None
+        chunks.append(
+            DocumentChunk(
+                source_id=source_id,
+                uri=uri,
+                title=title,
+                chunk_id=make_chunk_id(source_id, i),
+                chunk_index=i,
+                text=chunk_text_val,
+                kind=kind,
+                content_hash=compute_content_hash(chunk_text_val),
+                updated_at=now_ms,
+                embedding=emb,
+            )
         )
-        for i, chunk in enumerate(raw_chunks)
-    ]
+    return chunks

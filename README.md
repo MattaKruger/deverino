@@ -14,11 +14,11 @@ injected into the system prompt when available.
 
 ## Quickstart
 
-Start the local backing services:
+Start the local backing services (Postgres + Vespa):
 
 ```bash
-docker compose up -d postgres vespa
-docker compose exec vespa vespa deploy /vespa-app
+just services-up
+just vespa-deploy
 ```
 
 Vespa can take a short time to become ready before deployment succeeds. The
@@ -28,14 +28,24 @@ container at `/vespa-app`.
 Stop the services without deleting indexed state:
 
 ```bash
-docker compose stop
+just services-down
 ```
 
-PostgreSQL and Vespa data live in stable named Docker volumes
+PostgreSQL and Vespa data live in stable named volumes
 `deverino_pgdata` and `deverino_vespadata`. Avoid `docker compose down -v`
-unless you intentionally want to delete the database and Vespa index.
+(or `podman compose down -v`) unless you intentionally want to delete the
+database and Vespa index.
 The Postgres 18 container mounts the named volume at `/var/lib/postgresql` so
 the image can manage its version-specific data subdirectory.
+
+### Container runtime
+
+The harness auto-detects your container backend — **Podman** on Linux,
+**Docker** on macOS. The `Justfile` and `container_*` tools use whichever is
+available. Install either:
+
+- **Fedora:** `sudo dnf install podman podman-compose`
+- **macOS:** `brew install --cask docker` (or Podman Desktop)
 
 Run the harness:
 

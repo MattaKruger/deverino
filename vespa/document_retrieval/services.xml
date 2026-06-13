@@ -5,17 +5,6 @@
     <search/>
     <document-api/>
 
-    <!-- Embedder: mxbai-embed-large-v1 produces 1024-dim vectors matching the schema tensor -->
-    <!-- Requires pooling-strategy=cls and normalize=true (model trained with CLS pooling) -->
-    <component id="embedding" type="hugging-face-embedder">
-      <transformer-model
-        url="https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1/resolve/main/onnx/model.onnx"/>
-      <tokenizer-model
-        url="https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1/resolve/main/tokenizer.json"/>
-      <pooling-strategy>cls</pooling-strategy>
-      <normalize>true</normalize>
-    </component>
-
     <nodes>
       <node hostalias="node1"/>
     </nodes>

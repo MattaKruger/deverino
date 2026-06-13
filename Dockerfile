@@ -1,6 +1,7 @@
 # Deverino Python container
 # Auto-built by container_spawn if missing — or build manually:
 #   docker build -t deverino-python:latest .
+#   podman build -t deverino-python:latest .
 FROM python:3.14-slim
 
 # --- Pre-installed packages ---

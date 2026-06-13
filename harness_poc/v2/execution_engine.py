@@ -270,13 +270,13 @@ class ExecutionEngine:
         passed: bool,
         detail: str,
     ) -> None:
-        """Persist a GATE_PASSED or GATE_FAILED event."""
+        """Publish a GATE_PASSED or GATE_FAILED event via the bus."""
         event_type = "GATE_PASSED" if passed else "GATE_FAILED"
-        self._db.append_context_event(
-            session_id=session_id,
-            team_member="execution_engine",
-            event_type=event_type,
-            payload={
+        self._event_bus.publish(
+            event_type,
+            {
+                "session_id": session_id,
+                "team_member": "execution_engine",
                 "passed": passed,
                 "detail": detail,
                 "project_id": self._project_id,

@@ -62,7 +62,7 @@ Each skill is a self-contained directory with `SKILL.md` (metadata: name, descri
 
 System tools live in `harness_poc/system_tools/` and are registered via an `@register` decorator in `__init__.py`. Unlike skills, they are invoked by the harness directly (not as LLM tool calls) and are not exposed in `skill list`.
 
-- `container_spawn`, `container_exec`, `container_destroy` — Docker container lifecycle
+- `container_spawn`, `container_exec`, `container_destroy` — Docker/Podman container lifecycle
 - `execute_python` — run Python code in a subprocess
 - `file_tools` — file system operations
 - `knowledge_tools` — document source management (wraps Vespa indexing)
@@ -108,7 +108,7 @@ State promotion is a two-step process: a skill proposes a change (`state_proposa
 
 ### Document retrieval (Vespa)
 
-`core/retrieval/vespa_client.py` wraps a Vespa instance (configured in `harness.yaml` under `retrieval`). `index_documents` and `search_documents` project skills use `knowledge_tools` (system tool) to feed documents into Vespa and query them. `docker-compose.yml` runs Vespa locally.
+`core/retrieval/vespa_client.py` wraps a Vespa instance (configured in `harness.yaml` under `retrieval`). `index_documents` and `search_documents` project skills use `knowledge_tools` (system tool) to feed documents into Vespa and query them. The compose file runs Vespa locally.
 
 ### AppState & wiring
 

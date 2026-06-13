@@ -8,7 +8,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql
+      - pgdata:/var/lib/postgresql:Z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U deverino"]
       interval: 5s
@@ -24,7 +24,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - pgdata_test:/var/lib/postgresql
+      - pgdata_test:/var/lib/postgresql:Z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U deverino_test -d deverino_test"]
       interval: 5s
@@ -40,8 +40,8 @@ services:
       # Config server used by `vespa deploy`.
       - "19071:19071"
     volumes:
-      - vespadata:/opt/vespa/var
-      - ./vespa/document_retrieval:/vespa-app:ro
+      - vespadata:/opt/vespa/var:Z
+      - ./vespa/document_retrieval:/vespa-app:ro,z
 
 volumes:
   pgdata:
