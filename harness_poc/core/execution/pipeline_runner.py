@@ -181,7 +181,7 @@ class PipelineRunner:
             else:
                 output = self._run_agent_node(node, inputs, node_results, app_state)
             node_result = PipelineNodeResult(node_id=node_id, status="completed", output=output)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             node_result = PipelineNodeResult(node_id=node_id, status="failed", output=str(exc))
 
         app_state.event_bus.publish(

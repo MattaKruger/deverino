@@ -77,7 +77,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     vespa = LiveVespaDocumentClient(ctx.config.retrieval)
     try:
         results = vespa.search(request)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _append_search_failed_event(ctx, query, mode, exc)
         return SkillResult(
             status="failed",

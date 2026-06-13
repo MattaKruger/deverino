@@ -121,7 +121,7 @@ def _find_related(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 # --------------------------------------------------------------------------- #
 
 
-def _run_semble(  # noqa: PLR0911
+def _run_semble(
     ctx: SkillContext, cmd: list[str], *, query: str
 ) -> SkillResult:
     binary = cmd[0]

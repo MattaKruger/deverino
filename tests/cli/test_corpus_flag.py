@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from typer.testing import CliRunner
 
 from harness_poc.cli import app

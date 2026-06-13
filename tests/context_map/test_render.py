@@ -10,7 +10,7 @@ from harness_poc.core.context_map.render import render_context_map
 from harness_poc.core.context_map.schema import MapEntry
 
 
-def _make_entry(  # noqa: PLR0913
+def _make_entry(
     *,
     section: str = "parsing_schema",
     priority: float = 0.8,

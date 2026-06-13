@@ -2,10 +2,13 @@ from harness_poc.core.storage.blackboard_proxy import BlackboardAccessProxy
 from harness_poc.core.storage.database import BlackboardDatabase
 from harness_poc.core.storage.db_engine import create_db_engine
 from harness_poc.core.storage.models import (
+    DbContextEvent,
     DbContextMap,
+    DbContextMapEmbedding,
     DbContextMapEvent,
     DbDocumentChunk,
     DbDocumentSource,
+    DbMaterializedContextMap,
     DbProjectState,
     DbSession,
     DbSessionMessage,
@@ -27,10 +30,13 @@ from harness_poc.core.storage.state import (
 __all__ = [
     "BlackboardAccessProxy",
     "BlackboardDatabase",
+    "DbContextEvent",
     "DbContextMap",
+    "DbContextMapEmbedding",
     "DbContextMapEvent",
     "DbDocumentChunk",
     "DbDocumentSource",
+    "DbMaterializedContextMap",
     "DbProjectState",
     "DbSession",
     "DbSessionMessage",

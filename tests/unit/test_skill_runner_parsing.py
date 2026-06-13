@@ -19,7 +19,7 @@ from harness_poc.core.skills import SkillRunner
 # ---------------------------------------------------------------------------
 
 
-def _write_skill_file(  # noqa: PLR0913
+def _write_skill_file(
     directory: Path,
     name: str,
     *,

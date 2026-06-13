@@ -49,7 +49,7 @@ def acdl_inspect(
             content=json.dumps(summary, indent=2),
             artifacts={"acdl_summary": summary, "acdl_ast": to_dict(ast)},
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return SkillResult(
             status="failed",
             content=f"Failed to parse {file_path}: {e}",

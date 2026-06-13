@@ -17,11 +17,13 @@ if TYPE_CHECKING:
 from harness_poc.core.context_map.schema import MapEntry
 from harness_poc.core.storage.db_engine import create_db_engine
 from harness_poc.core.storage.models import (
+    DbContextEvent,
     DbContextMap,
     DbContextMapCycle,
     DbContextMapEvent,
     DbDocumentChunk,
     DbDocumentSource,
+    DbMaterializedContextMap,
     DbProjectState,
     DbSession,
     DbSessionMessage,
@@ -55,6 +57,7 @@ class BlackboardDatabase:
         self._ensure_context_map_schema_version_column()
         self._ensure_context_map_cycles_table()
         self._ensure_sessions_active_corpus_column()
+        self.copt_ensure_schema()
 
     def start_session(
         self,
@@ -702,6 +705,202 @@ class BlackboardDatabase:
             conn.execute(
                 text("ALTER TABLE sessions ADD COLUMN active_corpus_key TEXT"),
             )
+
+    # ------------------------------------------------------------------
+    # V2 context events and materialized context maps
+    # ------------------------------------------------------------------
+
+    def append_context_event(
+        self,
+        session_id: str,
+        team_member: str,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> int:
+        """Persist a context event and return its auto-generated id."""
+        with Session(self._engine) as session:
+            row = DbContextEvent(
+                session_id=session_id,
+                team_member=team_member,
+                event_type=event_type,
+                payload=payload,
+                created_at=self._utc_now(),
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row.id or 0
+
+    def get_recent_context_events(
+        self,
+        session_id: str,
+        *,
+        event_type: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Return recent context events for a session, optionally filtered by type."""
+        with Session(self._engine) as session:
+            stmt = (
+                select(DbContextEvent)
+                .where(DbContextEvent.session_id == session_id)
+            )
+            if event_type:
+                stmt = stmt.where(DbContextEvent.event_type == event_type)
+            stmt = stmt.order_by(col(DbContextEvent.id).desc()).limit(limit)
+            rows = session.exec(stmt).all()
+
+        return [
+            {
+                "id": row.id,
+                "session_id": row.session_id,
+                "team_member": row.team_member,
+                "event_type": row.event_type,
+                "payload": row.payload,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ]
+
+    def upsert_materialized_context_map(
+        self,
+        project_id: str,
+        active_persona: str,
+        pedagogy_snapshot: dict[str, Any],
+        verified_state: dict[str, Any],
+        last_event_id: int,
+    ) -> None:
+        """Insert or update a materialized context map snapshot."""
+        with Session(self._engine) as session:
+            existing = session.get(DbMaterializedContextMap, project_id)
+            if existing is not None:
+                existing.active_persona = active_persona
+                existing.pedagogy_snapshot = pedagogy_snapshot
+                existing.verified_state = verified_state
+                existing.last_event_id = last_event_id
+                existing.updated_at = self._utc_now()
+            else:
+                session.add(
+                    DbMaterializedContextMap(
+                        project_id=project_id,
+                        active_persona=active_persona,
+                        pedagogy_snapshot=pedagogy_snapshot,
+                        verified_state=verified_state,
+                        last_event_id=last_event_id,
+                        updated_at=self._utc_now(),
+                    )
+                )
+            session.commit()
+
+    def get_materialized_context_map(
+        self,
+        project_id: str,
+    ) -> dict[str, Any] | None:
+        """Return the latest materialized context map for a project, or None."""
+        with Session(self._engine) as session:
+            row = session.get(DbMaterializedContextMap, project_id)
+            if row is None:
+                return None
+            return {
+                "project_id": row.project_id,
+                "active_persona": row.active_persona,
+                "pedagogy_snapshot": row.pedagogy_snapshot,
+                "verified_state": row.verified_state,
+                "last_event_id": row.last_event_id,
+                "updated_at": row.updated_at,
+            }
+
+    # ------------------------------------------------------------------
+    # CopT Gate -- pgvector embedding dedup (plans/09-copt-gate-plan.md)
+    # ------------------------------------------------------------------
+
+    def copt_is_available(self) -> bool:
+        """Return True if the CopT gate can run (PostgreSQL with pgvector)."""
+        return self._engine.dialect.name == "postgresql"
+
+    def copt_ensure_schema(self) -> None:
+        """Create pgvector extension and embeddings table on PostgreSQL only.
+
+        Gracefully handles PostgreSQL instances without the pgvector extension
+        installed. Uses separate transactions for extension creation and table
+        creation so a missing extension doesn't abort the table setup.
+        """
+        if not self.copt_is_available():
+            return
+        import logging
+
+        _log = logging.getLogger(__name__)
+
+        # Attempt extension creation in its own transaction
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        except Exception:
+            _log.warning(
+                "pgvector extension not available — CopT gate disabled.",
+                exc_info=True,
+            )
+            return
+
+        # Attempt table creation in a separate transaction
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "CREATE TABLE IF NOT EXISTS context_map_embeddings ("
+                        "  corpus_key TEXT NOT NULL,"
+                        "  entry_key TEXT NOT NULL,"
+                        "  embedding vector(384) NOT NULL,"
+                        "  PRIMARY KEY (corpus_key, entry_key)"
+                        ")"
+                    )
+                )
+        except Exception:
+            _log.warning(
+                "pgvector embeddings table creation failed — "
+                "CopT gate disabled.",
+                exc_info=True,
+            )
+
+    def copt_upsert_embeddings(
+        self,
+        corpus_key: str,
+        entries: list[tuple[str, list[float]]],
+    ) -> None:
+        """Upsert embeddings for (entry_key, embedding) pairs."""
+        if not entries or not self.copt_is_available():
+            return
+        with self._engine.begin() as conn:
+            for entry_key, embedding in entries:
+                conn.execute(
+                    text(
+                        "INSERT INTO context_map_embeddings "
+                        "(corpus_key, entry_key, embedding) "
+                        "VALUES (:ck, :ek, :emb) "
+                        "ON CONFLICT (corpus_key, entry_key) "
+                        "DO UPDATE SET embedding = :emb"
+                    ),
+                    {"ck": corpus_key, "ek": entry_key, "emb": str(embedding)},
+                )
+
+    def copt_query_similarity(
+        self,
+        corpus_key: str,
+        embedding: list[float],
+    ) -> float:
+        """Return max cosine similarity for the query embedding in the corpus."""
+        if not self.copt_is_available():
+            return 0.0
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1.0 - (embedding <=> :query) AS similarity "
+                    "FROM context_map_embeddings "
+                    "WHERE corpus_key = :ck "
+                    "ORDER BY embedding <=> :query LIMIT 1"
+                ),
+                {"ck": corpus_key, "query": str(embedding)},
+            ).first()
+        return float(row[0]) if row is not None else 0.0
 
     @staticmethod
     def _utc_now() -> str:

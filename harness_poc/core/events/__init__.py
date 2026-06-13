@@ -51,10 +51,10 @@ from harness_poc.core.events.events import (
 __all__ = [
     "CONTEXT_MAP_EVENT_REGISTRY",
     "EVENT_REGISTRY",
-    "ArchitectureInvariantObserved",
     "AgentInputAdded",
     "AgentStarted",
     "AgentTurnRecorded",
+    "ArchitectureInvariantObserved",
     "BaseEvent",
     "BoundaryIdentified",
     "ConstantDocumented",

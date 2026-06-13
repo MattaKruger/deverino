@@ -71,7 +71,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     )
 
 
-def _run_subagent(  # noqa: PLR0913
+def _run_subagent(
     *,
     persona_template: str,
     objective: str,

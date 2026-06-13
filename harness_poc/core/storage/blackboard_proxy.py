@@ -173,3 +173,25 @@ class BlackboardAccessProxy:
     ) -> None:
         self._require_write()
         await asyncio.to_thread(self._db.write_memory, session_id, key, payload)
+
+    # ---- CopT gate methods (read + write) ----
+
+    def copt_is_available(self) -> bool:
+        self._require_read()
+        return self._db.copt_is_available()
+
+    def copt_query_similarity(
+        self,
+        corpus_key: str,
+        embedding: list[float],
+    ) -> float:
+        self._require_read()
+        return self._db.copt_query_similarity(corpus_key, embedding)
+
+    def copt_upsert_embeddings(
+        self,
+        corpus_key: str,
+        entries: list[tuple[str, list[float]]],
+    ) -> None:
+        self._require_write()
+        self._db.copt_upsert_embeddings(corpus_key, entries)

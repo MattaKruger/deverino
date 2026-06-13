@@ -133,7 +133,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 
     try:
         gates = _extract_gates(description, goal, model)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return SkillResult(
             status="failed",
             content=f"LLM extraction failed: {exc}",

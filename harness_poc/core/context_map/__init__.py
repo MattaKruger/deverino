@@ -10,6 +10,7 @@ from harness_poc.core.context_map.config import (
     load_cartographer_config,
     load_distiller_config,
 )
+from harness_poc.core.context_map.copt_gate import embed_single, embed_summaries
 from harness_poc.core.context_map.distiller import run_distiller
 from harness_poc.core.context_map.render import render_context_map
 from harness_poc.core.context_map.schema import (
@@ -36,6 +37,8 @@ __all__ = [
     "Tag",
     "assign_section",
     "deterministic_cartographer",
+    "embed_single",
+    "embed_summaries",
     "load_cartographer_config",
     "load_distiller_config",
     "render_context_map",

@@ -42,7 +42,7 @@ class LangSearchSettings(BaseSettings):
         return cls(_env_file=env_path)  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
 
 
-def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noqa: PLR0911
+def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     query = str(arguments.get("query") or "").strip()
     if not query:
         msg = "web_search requires a query string"

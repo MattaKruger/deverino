@@ -76,7 +76,7 @@ def run_repl(app_state: AppState) -> None:
     ChatApp(app_state).run()
 
 
-def handle_repl_input(app_state: AppState, user_input: str) -> None:  # noqa: PLR0911
+def handle_repl_input(app_state: AppState, user_input: str) -> None:
     if _is_repl_help_command(user_input):
         print_repl_help()
         return

@@ -216,7 +216,7 @@ def bootstrap_document_index(config: HarnessConfig, database: BlackboardDatabase
     except FutureTimeoutError:
         logger.info("Skipping auto-index: Vespa health check timed out")
         return
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.info("Skipping auto-index: Vespa not reachable")
         return
 

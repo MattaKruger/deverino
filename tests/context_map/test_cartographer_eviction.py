@@ -104,10 +104,10 @@ def test_budget_eviction_trims_lowest_priority_tail() -> None:
     ]
     config = CartographerConfig(
         token_budget=3,  # one short summary fits, not both
-        recency_bonus={t: 0.0 for t in _SCORED},
-        recency_cap={t: 0.0 for t in _SCORED},
-        staleness_penalty={t: 0.0 for t in _SCORED},
-        staleness_floor={t: 0.0 for t in _SCORED},
+        recency_bonus=dict.fromkeys(_SCORED, 0.0),
+        recency_cap=dict.fromkeys(_SCORED, 0.0),
+        staleness_penalty=dict.fromkeys(_SCORED, 0.0),
+        staleness_floor=dict.fromkeys(_SCORED, 0.0),
         section_budget_share={
             "context_roadmap": 1.0,
             "parsing_schema": 0.0,
@@ -145,10 +145,10 @@ def test_budget_eviction_tie_breaks_deterministically() -> None:
     ]
     config = CartographerConfig(
         token_budget=2,  # only ~2 tokens worth survive
-        recency_bonus={t: 0.0 for t in _SCORED},
-        recency_cap={t: 0.0 for t in _SCORED},
-        staleness_penalty={t: 0.0 for t in _SCORED},
-        staleness_floor={t: 0.0 for t in _SCORED},
+        recency_bonus=dict.fromkeys(_SCORED, 0.0),
+        recency_cap=dict.fromkeys(_SCORED, 0.0),
+        staleness_penalty=dict.fromkeys(_SCORED, 0.0),
+        staleness_floor=dict.fromkeys(_SCORED, 0.0),
         section_budget_share={
             "context_understanding": 1.0,
             "parsing_schema": 0.0,
@@ -164,10 +164,10 @@ def test_budget_eviction_tie_breaks_deterministically() -> None:
         cycle_n=0,
         config=CartographerConfig(
             token_budget=10_000,
-            recency_bonus={t: 0.0 for t in _SCORED},
-            recency_cap={t: 0.0 for t in _SCORED},
-            staleness_penalty={t: 0.0 for t in _SCORED},
-            staleness_floor={t: 0.0 for t in _SCORED},
+            recency_bonus=dict.fromkeys(_SCORED, 0.0),
+            recency_cap=dict.fromkeys(_SCORED, 0.0),
+            staleness_penalty=dict.fromkeys(_SCORED, 0.0),
+            staleness_floor=dict.fromkeys(_SCORED, 0.0),
         ),  # no eviction
     )
     again_a = deterministic_cartographer(

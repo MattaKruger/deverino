@@ -264,7 +264,7 @@ class DocumentIndexer:
     # Per-file indexing (thread-safe — only touches its own file's data)
     # ------------------------------------------------------------------
 
-    def _index_one_isolated(  # noqa: PLR0911
+    def _index_one_isolated(
         self,
         file_path: Path,
         uri: str,
@@ -328,7 +328,7 @@ class DocumentIndexer:
                     kind=_infer_kind(uri),
                     max_tokens=self._config.chunk_size_chars,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 return _FileResult(
                     uri=uri,
                     status="failed",
@@ -543,7 +543,7 @@ def _infer_kind(uri: str) -> str:
     return "source"
 
 
-def _make_db_source(  # noqa: PLR0913
+def _make_db_source(
     source_id: str,
     uri: str,
     content_hash: str,

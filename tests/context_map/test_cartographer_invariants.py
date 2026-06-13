@@ -39,7 +39,7 @@ def _broadcast_scalar(value: float) -> dict[str, float]:
         "dispute", "schema", "insight", "architecture",
         "boundary", "entity", "result", "constant",
     ]
-    return {t: value for t in scored}
+    return dict.fromkeys(scored, value)
 
 
 def test_invariant_no_survivor_below_staleness_floor() -> None:

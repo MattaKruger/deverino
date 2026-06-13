@@ -31,6 +31,7 @@ are conditional?
 ```
 
 **Watch for these tool calls (appear as `[tool]` in REPL output):**
+
 - `acdl_inspect(file_path="deverino_react.acdl")`
 - Bonus: `inspect_own_context()` to verify the blueprint matches the actual prompt
 
@@ -59,10 +60,12 @@ Cross-reference against the ACDL blueprint — are there any gaps?
 ```
 
 **Watch for these tool calls:**
+
 - `acdl_inspect(file_path="deverino_react.acdl")` — architectural blueprint
 - `inspect_own_context()` — the actual system prompt text
 
 **Verify the response:**
+
 - [ ] References the 5-layer structure from the ACDL spec (S1)
 - [ ] Quotes or summarizes actual sections found via `inspect_own_context`
 - [ ] Reports word/line counts from the tool's structural summary
@@ -74,6 +77,7 @@ Cross-reference against the ACDL blueprint — are there any gaps?
 - [ ] Reports exact tool policy rules (6 bullet points), not approximate recall
 
 **Red flags:**
+
 - Calls `read_memory` instead of `inspect_own_context` — `read_memory` reads
   the blackboard, not the system prompt
 - Describes the prompt from memory instead of calling the tool
@@ -224,15 +228,15 @@ to verify the agent reached for the right tool first, not as a fallback.
 
 ## What to do if the agent gets it wrong
 
-| Symptom | Correction |
-|---------|------------|
-| Calls `read_file` instead of `acdl_inspect` | "Use acdl_inspect for structural queries, not read_file" |
-| Calls `read_memory` instead of `inspect_own_context` | "read_memory reads the blackboard. Use inspect_own_context to read your system prompt." |
-| Doesn't know `acdl_inspect` or `inspect_own_context` exist | "Check your skill catalog for acdl-tooling" |
-| Stops at structural summary, doesn't drill into `acdl_ast` | "Look at the acdl_ast artifact for the prompt body" |
-| Makes up constraints or fragments | "Check the actual ACDL file, don't guess" |
-| Confuses spec and runtime | "Distinguish between what the spec says and what actually runs. Use inspect_own_context to verify." |
-| Can't find a specific fragment | "The fragment is called ConversationTurn — check role_frags in the summary" |
+| Symptom                                                    | Correction                                                                                          |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Calls `read_file` instead of `acdl_inspect`                | "Use acdl_inspect for structural queries, not read_file"                                            |
+| Calls `read_memory` instead of `inspect_own_context`       | "read_memory reads the blackboard. Use inspect_own_context to read your system prompt."             |
+| Doesn't know `acdl_inspect` or `inspect_own_context` exist | "Check your skill catalog for acdl-tooling"                                                         |
+| Stops at structural summary, doesn't drill into `acdl_ast` | "Look at the acdl_ast artifact for the prompt body"                                                 |
+| Makes up constraints or fragments                          | "Check the actual ACDL file, don't guess"                                                           |
+| Confuses spec and runtime                                  | "Distinguish between what the spec says and what actually runs. Use inspect_own_context to verify." |
+| Can't find a specific fragment                             | "The fragment is called ConversationTurn — check role_frags in the summary"                         |
 
 ---
 

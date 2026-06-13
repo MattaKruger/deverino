@@ -46,7 +46,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
                 "session_id": ctx.session_id,
             }
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return SkillResult(status="failed", content=f"Invalid payload: {exc}", artifacts={})
 
     ctx.database.append_context_map_event(event)

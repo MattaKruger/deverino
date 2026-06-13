@@ -121,6 +121,7 @@ def test_write_map_and_mark_processed_updates_map_and_events() -> None:
     db.append_context_map_event(event)
 
     from datetime import UTC, datetime
+
     from harness_poc.core.context_map.schema import MapEntry
 
     entries = [
@@ -210,6 +211,7 @@ def test_get_context_map_returns_none_or_parsed_dict() -> None:
     assert db.get_context_map("missing") is None
 
     from datetime import UTC, datetime
+
     from harness_poc.core.context_map.schema import MapEntry
 
     entries = [
@@ -286,6 +288,7 @@ def test_execute_reports_map_changed_false_for_noop_edits(
     db.append_context_map_event(event)
 
     from datetime import UTC, datetime
+
     from harness_poc.core.context_map.schema import MapEntry
 
     # The base priority weight for 'entity' is 0.6. Use it to prevent priority recalculation delta.
@@ -312,7 +315,7 @@ def test_execute_reports_map_changed_false_for_noop_edits(
         event_ids=[],
     )
     materializer = _materializer_module()
-    
+
     async def mock_run_distiller(*args, **kwargs):
         return []
     monkeypatch.setattr(materializer, "run_distiller", mock_run_distiller)

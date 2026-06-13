@@ -1,14 +1,21 @@
 """Context Map Materializer skill — thin adapter over the Deterministic Cartographer engine.
 
 See docs/superpowers/specs/2026-05-24-deterministic-cartographer-deferred-features.md §3.1.
+
+CopT gate (plans/09-copt-gate-plan.md): skips the Cartographer LLM call when the
+Distiller's observations are semantically redundant with the existing context map.
+Embeds summaries with all-MiniLM-L6-v2, queries pgvector for cosine similarity,
+and bypasses Cartographer when max_similarity > threshold (default 0.92).
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.context_map import (
     deterministic_cartographer,
+    embed_single,
     run_distiller,
 )
 from harness_poc.core.context_map.schema import MapEntry
@@ -22,6 +29,8 @@ from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
     from harness_poc.core.skills import SkillContext
+
+logger = logging.getLogger(__name__)
 
 
 async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
@@ -60,6 +69,40 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             content=f"Distiller failed: {exc}",
             artifacts={},
         )
+
+    # ---- CopT Gate: skip Cartographer if all observations are redundant ----
+    copt_threshold = ctx.config.runtime.materializer_copt_threshold
+    if db.copt_is_available() and distilled and current_map:
+        all_redundant = True
+        for entry in distilled:
+            embedding = embed_single(entry.summary)
+            sim = db.copt_query_similarity(corpus_key, embedding)
+            if sim < copt_threshold:
+                all_redundant = False
+                break
+        if all_redundant:
+            db.write_map_and_mark_processed(
+                corpus_key,
+                current_map,
+                sum(e.token_estimate for e in current_map),
+                [row.event_id for row in pending],
+            )
+            return SkillResult(
+                status="success",
+                content=(
+                    f"CopT gate: skipped Cartographer for {corpus_key} "
+                    f"({len(distilled)} observation(s) redundant). "
+                    f"Map unchanged at {sum(e.token_estimate for e in current_map)} tokens."
+                ),
+                artifacts={
+                    "corpus_key": corpus_key,
+                    "events_processed": len(pending),
+                    "token_count": sum(e.token_estimate for e in current_map),
+                    "map_changed": False,
+                    "cycle_n": cycle_n,
+                    "copt_skipped": True,
+                },
+            )
 
     result = deterministic_cartographer(distilled, current_map, cycle_n, ctx.config.cartographer)
 
@@ -101,6 +144,17 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         [row.event_id for row in pending],
     )
 
+    # ---- CopT Gate: upsert embeddings for future batches ----
+    if db.copt_is_available() and distilled:
+        try:
+            embedding_pairs: list[tuple[str, list[float]]] = []
+            for entry in distilled:
+                emb = embed_single(entry.summary)
+                embedding_pairs.append((entry.key, emb))
+            db.copt_upsert_embeddings(corpus_key, embedding_pairs)
+        except Exception:
+            logger.warning("CopT embedding upsert failed", exc_info=True)
+
     return SkillResult(
         status="success",
         content=(f"Materialized {len(pending)} event(s) for {corpus_key}. Map now {token_count} tokens."),
@@ -135,7 +189,7 @@ def _events_from_rows(rows: list[Any], max_event_tokens: int) -> list[ContextMap
             data = json.loads(serialized)
             result.append(deserialize_event(data))
             used += len(serialized)
-        except json.JSONDecodeError, Exception:  # noqa: BLE001
+        except json.JSONDecodeError, Exception:
             logger.debug("Failed to deserialize context map event row", exc_info=True)
             continue
     return result

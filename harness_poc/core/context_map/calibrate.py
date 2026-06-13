@@ -295,7 +295,7 @@ def _write_weights_to_config(
 class CalibrationResult:
     """Result of a calibration run."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         status: str,
         corpus_key: str,

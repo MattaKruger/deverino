@@ -239,7 +239,7 @@ class PydanticAgentRuntime:
         )
 
 
-def build_model(  # noqa: PLR0911
+def build_model(
     config: LLMConfig | None = None,
     *,
     fallback_model: Model | None = None,
@@ -302,7 +302,7 @@ def build_model(  # noqa: PLR0911
     raise ValueError(msg)
 
 
-def build_primary_agent(  # noqa: PLR0913
+def build_primary_agent(
     *,
     system_prompt: str,
     skill_runner: SkillRunner,

@@ -11,6 +11,20 @@ Reference: paper 2605.01920 Appendix D (ACDL specification).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, NoReturn
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from harness_poc.core.acdl.ast import (
+        Block,
+        Expression,
+        PromptBodyItem,
+        RoleBodyItem,
+        RoleFragBodyItem,
+        StrFragBodyItem,
+    )
+
 from harness_poc.core.acdl.ast import (
     ACDLFile,
     BinaryOp,
@@ -18,7 +32,6 @@ from harness_poc.core.acdl.ast import (
     Comparison,
     ConditionalBlock,
     ContextVar,
-    Expression,
     FragInvocation,
     Identifier,
     LoopBlock,
@@ -136,9 +149,8 @@ class Tokenizer:
         if ch.isalpha() or ch == "_":
             return self._read_identifier()
 
-        raise ParseError(
-            f"Unexpected character {ch!r}", self._line, self._col, self._filename,
-        )
+        msg = f"Unexpected character {ch!r}"
+        raise ParseError(msg, self._line, self._col, self._filename)
 
     def _skip_whitespace(self) -> None:
         while not self._eof and self._peek.isspace():
@@ -194,7 +206,8 @@ class Tokenizer:
                 self._col += 1
             chars.append(ch)
             self._pos += 1
-        raise ParseError("Unterminated string literal", self._line, col, self._filename)
+        msg = "Unterminated string literal"
+        raise ParseError(msg, self._line, col, self._filename)
 
     def _read_symbol(self) -> Token:
         col = self._col
@@ -281,15 +294,11 @@ class Parser:
     def _consume(self, typ: str, value: str | None = None) -> Token:
         tok = self._tokens[self._pos]
         if tok.type != typ:
-            raise ParseError(
-                f"Expected {typ}, got {tok.type} ({tok.value!r})",
-                tok.line, tok.col, self._filename,
-            )
+            msg = f"Expected {typ}, got {tok.type} ({tok.value!r})"
+            raise ParseError(msg, tok.line, tok.col, self._filename)
         if value is not None and tok.value != value:
-            raise ParseError(
-                f"Expected {typ} {value!r}, got {tok.value!r}",
-                tok.line, tok.col, self._filename,
-            )
+            msg = f"Expected {typ} {value!r}, got {tok.value!r}"
+            raise ParseError(msg, tok.line, tok.col, self._filename)
         self._pos += 1
         return tok
 
@@ -297,10 +306,8 @@ class Parser:
         """Consume an identifier, accepting both IDENT and KEYWORD token types."""
         tok = self._tokens[self._pos]
         if tok.type not in ("IDENT", "KEYWORD"):
-            raise ParseError(
-                f"Expected identifier, got {tok.type} ({tok.value!r})",
-                tok.line, tok.col, self._filename,
-            )
+            msg = f"Expected identifier, got {tok.type} ({tok.value!r})"
+            raise ParseError(msg, tok.line, tok.col, self._filename)
         self._pos += 1
         return tok.value
 
@@ -313,13 +320,27 @@ class Parser:
         self._pos += 1
         return True
 
-    def _err(self, msg: str, tok: Token | None = None) -> ParseError:
+    def _err(self, msg: str, tok: Token | None = None, **fmt: object) -> ParseError:
+        """Build a ParseError with an optional format-string message.
+
+        Prefer ``_raise_err`` for raising immediately.
+        Use this only when you need the exception object itself.
+        """
         t = tok or self._peek
-        return ParseError(msg, t.line, t.col, self._filename)
+        exc_msg = msg.format(**fmt) if fmt else msg
+        return ParseError(exc_msg, t.line, t.col, self._filename)
+
+    def _raise_err(
+        self, msg: str, tok: Token | None = None, **fmt: object
+    ) -> NoReturn:
+        """Raise a ParseError with an optional format-string message."""
+        t = tok or self._peek
+        exc_msg = msg.format(**fmt) if fmt else msg
+        raise ParseError(exc_msg, t.line, t.col, self._filename)
 
     # -- top-level blocks ----------------------------------------------------
 
-    def _parse_top_level(self):
+    def _parse_top_level(self) -> Block:
         tok = self._peek
 
         if tok.type == "COMMENT":
@@ -335,8 +356,8 @@ class Parser:
             if tok.value == "Mark":
                 self._skip_block()
                 return CommentBlock(text="")
-            raise self._err(
-                f"Unexpected keyword {tok.value!r} at top level", tok,
+            return self._raise_err(
+                "Unexpected keyword {value!r} at top level", tok, value=tok.value,
             )
 
         if tok.type == "IDENT":
@@ -347,7 +368,7 @@ class Parser:
             # Could be a prompt definition: Name[@T]: { ... }
             return self._parse_prompt_def()
 
-        raise self._err(f"Unexpected token {tok.type} ({tok.value!r}) at top level")
+        return self._raise_err("Unexpected token {type} ({value!r}) at top level", type=tok.type, value=tok.value)
 
     # -- StrFrag definition --------------------------------------------------
 
@@ -363,7 +384,7 @@ class Parser:
         self._consume("SYMBOL", "}")
         return StrFragDef(name=name, params=params, body=body)
 
-    def _parse_str_frag_body_item(self):
+    def _parse_str_frag_body_item(self) -> StrFragBodyItem:
         tok = self._peek
 
         if tok.type == "COMMENT":
@@ -383,15 +404,15 @@ class Parser:
                 return self._parse_frag_invocation()
             if tok.value == "Name":
                 return self._parse_name_def()
-            raise self._err(
-                f"Unexpected keyword {tok.value!r} in StrFrag body", tok,
+            return self._raise_err(
+                "Unexpected keyword {value!r} in StrFrag body", tok, value=tok.value,
             )
 
         if tok.type == "IDENT":
             return self._parse_template_or_func()
 
-        raise self._err(
-            f"Unexpected token {tok.type} ({tok.value!r}) in StrFrag body",
+        return self._raise_err(
+            "Unexpected token {type} ({value!r}) in StrFrag body", type=tok.type, value=tok.value,
         )
 
     # -- RoleFrag definition -------------------------------------------------
@@ -408,7 +429,7 @@ class Parser:
         self._consume("SYMBOL", "}")
         return RoleFragDef(name=name, params=params, body=body)
 
-    def _parse_role_frag_body_item(self):
+    def _parse_role_frag_body_item(self) -> RoleFragBodyItem:
         tok = self._peek
 
         if tok.type == "COMMENT":
@@ -428,12 +449,12 @@ class Parser:
                 return self._parse_frag_invocation()
             if tok.value == "Name":
                 return self._parse_name_def()
-            raise self._err(
-                f"Unexpected keyword {tok.value!r} in RoleFrag body", tok,
+            return self._raise_err(
+                "Unexpected keyword {value!r} in RoleFrag body", tok, value=tok.value,
             )
 
-        raise self._err(
-            f"Unexpected token {tok.type} ({tok.value!r}) in RoleFrag body",
+        return self._raise_err(
+            "Unexpected token {type} ({value!r}) in RoleFrag body", type=tok.type, value=tok.value,
         )
 
     # -- Prompt definition ---------------------------------------------------
@@ -449,7 +470,7 @@ class Parser:
         self._consume("SYMBOL", "}")
         return PromptDef(name=name, indices=indices, body=body)
 
-    def _parse_prompt_body_item(self):
+    def _parse_prompt_body_item(self) -> PromptBodyItem:
         tok = self._peek
 
         if tok.type == "COMMENT":
@@ -477,12 +498,12 @@ class Parser:
                 return CommentBlock(text="")
             if tok.value == "Name":
                 return self._parse_name_def()
-            raise self._err(
-                f"Unexpected keyword {tok.value!r} in prompt body", tok,
+            return self._raise_err(
+                "Unexpected keyword {value!r} in prompt body", tok, value=tok.value,
             )
 
-        raise self._err(
-            f"Unexpected token {tok.type} ({tok.value!r}) in prompt body",
+        return self._raise_err(
+            "Unexpected token {type} ({value!r}) in prompt body", type=tok.type, value=tok.value,
         )
 
     # -- Namespace definition ------------------------------------------------
@@ -531,7 +552,7 @@ class Parser:
                 self._consume("SYMBOL", "]")
                 return f"{base}[]"
             return base
-        raise self._err(f"Expected type expression, got {tok.type} ({tok.value!r})")
+        return self._raise_err("Expected type expression, got {type} ({value!r})", type=tok.type, value=tok.value)
 
     # -- Role message --------------------------------------------------------
 
@@ -552,7 +573,7 @@ class Parser:
         body = [self._parse_role_body_item_single_line()]
         return RoleMessage(role=role, body=body)
 
-    def _parse_role_body_item(self):
+    def _parse_role_body_item(self) -> RoleBodyItem:
         tok = self._peek
 
         if tok.type == "COMMENT":
@@ -574,18 +595,18 @@ class Parser:
                 return self._parse_frag_invocation()
             if tok.value == "Name":
                 return self._parse_name_def()
-            raise self._err(
-                f"Unexpected keyword {tok.value!r} in role body", tok,
+            return self._raise_err(
+                "Unexpected keyword {value!r} in role body", tok, value=tok.value,
             )
 
         if tok.type == "IDENT":
             return self._parse_template_or_func()
 
-        raise self._err(
-            f"Unexpected token {tok.type} ({tok.value!r}) in role body",
+        return self._raise_err(
+            "Unexpected token {type} ({value!r}) in role body", type=tok.type, value=tok.value,
         )
 
-    def _parse_role_body_item_single_line(self):
+    def _parse_role_body_item_single_line(self) -> ContextVar | TemplateCall:
         """Single-line role body: only context vars and template calls, no strings."""
         tok = self._peek
 
@@ -595,8 +616,8 @@ class Parser:
         if tok.type == "IDENT":
             return self._parse_template_or_func()
 
-        raise self._err(
-            f"Unexpected {tok.type} ({tok.value!r}) in single-line role syntax",
+        return self._raise_err(
+            "Unexpected {type} ({value!r}) in single-line role syntax", type=tok.type, value=tok.value,
         )
 
     # -- Context variable ----------------------------------------------------
@@ -613,7 +634,7 @@ class Parser:
 
     # -- Template / function call --------------------------------------------
 
-    def _parse_template_or_func(self):
+    def _parse_template_or_func(self) -> Expression:
         name = self._consume("IDENT").value
 
         if name == name.upper():
@@ -665,7 +686,7 @@ class Parser:
 
     # -- Control flow --------------------------------------------------------
 
-    def _parse_conditional(self, body_parser) -> ConditionalBlock:
+    def _parse_conditional(self, body_parser: Callable[[], object]) -> ConditionalBlock:
         self._consume("KEYWORD", "If")
         if_condition = self._parse_condition()
         self._consume("SYMBOL", "{")
@@ -699,7 +720,7 @@ class Parser:
             else_body=else_body,
         )
 
-    def _parse_loop(self, body_parser) -> LoopBlock:
+    def _parse_loop(self, body_parser: Callable[[], object]) -> LoopBlock:
         self._consume("KEYWORD", "ForEach")
         self._consume("SYMBOL", "(")
         # Variable can be @time or plain identifier
@@ -716,7 +737,7 @@ class Parser:
         self._consume("SYMBOL", "}")
         return LoopBlock(variable=variable, iterable=iterable, body=body)
 
-    def _parse_switch(self, body_parser) -> SwitchBlock:
+    def _parse_switch(self, body_parser: Callable[[], object]) -> SwitchBlock:
         self._consume("KEYWORD", "Switch")
         expression = self._parse_condition()
         self._consume("SYMBOL", "{")
@@ -741,8 +762,8 @@ class Parser:
                 default_body = self._parse_body_until("}", body_parser)
                 self._consume("SYMBOL", "}")
             else:
-                raise self._err(
-                    f"Expected Case or Default in Switch, got {kw.value!r}", kw,
+                return self._raise_err(
+                    "Expected Case or Default in Switch, got {value!r}", kw, value=kw.value,
                 )
 
         self._consume("SYMBOL", "}")
@@ -781,8 +802,8 @@ class Parser:
                 return self._parse_context_var()
             if tok.value in _LITERAL_KEYWORDS:
                 return Identifier(name=self._consume("KEYWORD").value)
-            raise self._err(
-                f"Unexpected keyword {tok.value!r} in expression",
+            return self._raise_err(
+                "Unexpected keyword {value!r} in expression", value=tok.value,
             )
 
         if tok.type == "IDENT":
@@ -803,8 +824,8 @@ class Parser:
             indices = self._parse_optional_indices()
             return ContextVar(namespace="$", path=[name], indices=indices)
 
-        raise self._err(
-            f"Unexpected token {tok.type} ({tok.value!r}) in expression",
+        return self._raise_err(
+            "Unexpected token {type} ({value!r}) in expression", type=tok.type, value=tok.value,
         )
 
     def _parse_expression(self) -> Expression:
@@ -934,7 +955,7 @@ class Parser:
             self._pos += 1
         return tokens
 
-    def _parse_body_until(self, stop_value: str, body_parser) -> list:
+    def _parse_body_until(self, stop_value: str, body_parser: Callable[[], object]) -> list[object]:
         """Parse body items using the given parser until a specific closing symbol."""
         items: list = []
         while not self._eof and self._peek.value != stop_value:

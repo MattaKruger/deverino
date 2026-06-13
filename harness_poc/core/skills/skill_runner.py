@@ -123,7 +123,7 @@ class SkillRunner:
         )
         return result.content
 
-    def execute_skill(  # noqa: PLR0913, PLR0915
+    def execute_skill(  # noqa: PLR0915
         self,
         tool_name: str,
         arguments: dict[str, Any],

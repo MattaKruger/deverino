@@ -114,6 +114,18 @@ class SessionTokenUsage:
 
 
 @dataclass(frozen=True, slots=True)
+class SessionEventRow:
+    event_id: int
+    event_type: str
+    created_at: str
+    time_delta: float
+    skill_name: str
+    status: str
+    tokens_used: int
+    content_preview: str
+
+
+@dataclass(frozen=True, slots=True)
 class DashboardSnapshot:
     summary: DashboardSummary
     skills: list[SkillPerformance]
@@ -580,6 +592,119 @@ def snapshot_to_dict(snapshot: DashboardSnapshot) -> dict[str, Any]:
         "model_token_usage": [asdict(row) for row in snapshot.model_token_usage],
         "session_token_usage": [asdict(row) for row in snapshot.session_token_usage],
     }
+
+
+def fetch_session_ids(engine: Engine, *, limit: int = 50) -> list[tuple[str, str]]:
+    """Return (session_id, display_label) pairs ordered most-recent-first.
+    Queries the sessions table as the canonical source so sessions
+    without events are still visible.
+    """
+    with engine.connect() as conn:
+        rows = (
+            conn.execute(
+                text(
+                    """
+                    select
+                        s.session_id,
+                        s.global_objective,
+                        s.created_at,
+                        coalesce(
+                            max(payload->'payload'->>'goal')
+                                filter (where se.event_type = 'AgentStarted'),
+                            ''
+                        ) as goal,
+                        max(se.created_at) as last_event_at
+                    from sessions s
+                    left join state_events se
+                        on se.scope_id = s.session_id
+                        and se.scope = 'session'
+                    group by s.session_id, s.global_objective, s.created_at
+                    order by coalesce(max(se.created_at), s.created_at) desc
+                    limit :limit
+                    """
+                ),
+                {"limit": limit},
+            )
+            .mappings()
+            .all()
+        )
+    return [
+        (
+            str(row["session_id"]),
+            f"{str(row['goal'] or row['global_objective'])[:60] or '—'}  [{str(row['session_id'])[-8:]}]",
+        )
+        for row in rows
+    ]
+
+
+def fetch_session_events(engine: Engine, session_id: str) -> list[SessionEventRow]:
+    """Return all events for *session_id* ordered by time, with a time_delta field."""
+    with engine.connect() as conn:
+        rows = (
+            conn.execute(
+                text(
+                    """
+                    select
+                        id,
+                        event_type,
+                        created_at,
+                        coalesce(
+                            nullif(payload->'payload'->>'skill_name', ''),
+                            nullif(payload->'payload'->>'tool_name', ''),
+                            ''
+                        ) as skill_name,
+                        coalesce(payload->'payload'->>'status', '') as status,
+                        coalesce(
+                            nullif(payload->'payload'->>'tokens_used', '')::int,
+                            0
+                        ) as tokens_used,
+                        coalesce(
+                            nullif(payload->'payload'->>'content', ''),
+                            nullif(payload->'payload'->>'result', ''),
+                            nullif(payload->'payload'->>'goal', ''),
+                            nullif(payload->'payload'->>'reason', ''),
+                            ''
+                        ) as content
+                    from state_events
+                    where scope_id = :session_id
+                    order by created_at asc, id asc
+                    """
+                ),
+                {"session_id": session_id},
+            )
+            .mappings()
+            .all()
+        )
+
+    if not rows:
+        return []
+
+    from datetime import datetime  # noqa: PLC0415
+
+    def _parse_ts(s: str) -> datetime | None:
+        try:
+            return datetime.fromisoformat(s)
+        except ValueError:
+            return None
+
+    first_ts = _parse_ts(str(rows[0]["created_at"]))
+    result: list[SessionEventRow] = []
+    for row in rows:
+        ts = _parse_ts(str(row["created_at"]))
+        delta = round((ts - first_ts).total_seconds(), 1) if ts and first_ts else 0.0
+        result.append(
+            SessionEventRow(
+                event_id=int(row["id"]),
+                event_type=str(row["event_type"]),
+                created_at=str(row["created_at"]),
+                time_delta=delta,
+                skill_name=str(row["skill_name"] or ""),
+                status=str(row["status"] or ""),
+                tokens_used=int(row["tokens_used"] or 0),
+                content_preview=str(row["content"] or "")[:120],
+            )
+        )
+    return result
 
 
 def fetch_corpus_keys(engine: Engine) -> list[str]:

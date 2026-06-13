@@ -37,7 +37,7 @@ _BLOCKED_BINARIES: frozenset[str] = frozenset({
 logger = logging.getLogger(__name__)
 
 
-def container_exec(  # noqa: PLR0911, PLR0913
+def container_exec(
     command: str = "",
     container: str = "",
     backend: str = "auto",

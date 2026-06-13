@@ -131,7 +131,7 @@ class ToolRunner:
     # Execution
     # ------------------------------------------------------------------
 
-    def execute_tool(  # noqa: PLR0911
+    def execute_tool(
         self,
         tool_name: str,
         arguments: dict[str, Any],

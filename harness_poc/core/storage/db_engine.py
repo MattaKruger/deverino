@@ -18,4 +18,17 @@ def create_db_engine(database_url: str) -> Engine:
                 cursor.execute("PRAGMA journal_mode = WAL")
                 cursor.close()
 
+    if engine.dialect.name == "postgresql":
+        _register_pgvector()
+
     return engine
+
+
+def _register_pgvector() -> None:
+    """Register pgvector adapter for psycopg2 so vector columns serialize correctly."""
+    try:
+        from pgvector.psycopg2 import register_vector_adapter  # noqa: PLC0415
+
+        register_vector_adapter()
+    except ImportError:
+        pass  # pgvector not installed — CopT gate will be disabled

@@ -35,7 +35,7 @@ def _config() -> CartographerConfig:
     ]
     return CartographerConfig(
         token_budget=200,
-        staleness_floor={t: 0.0 for t in scored},
+        staleness_floor=dict.fromkeys(scored, 0.0),
     )
 
 

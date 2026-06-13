@@ -161,7 +161,7 @@ class InputVimHandler:
 
     # ------------------------------------------------------------------ normal
 
-    def _handle_normal(self, key: str, editor: _Editor) -> bool:  # noqa: PLR0911, PLR0912
+    def _handle_normal(self, key: str, editor: _Editor) -> bool:  # noqa: PLR0911
         state = self._state
 
         if key == "escape":

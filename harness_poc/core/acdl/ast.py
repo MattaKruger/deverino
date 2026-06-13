@@ -93,7 +93,7 @@ type Block = StrFragDef | RoleFragDef | PromptDef | NamespaceDef | CommentBlock
 
 @dataclass(frozen=True, slots=True)
 class StrFragDef:
-    """StrFrag definition: StrFrag Name[params]: { body }"""
+    """StrFrag definition: StrFrag Name[params]: { body }."""
 
     name: str
     params: list[str] = field(default_factory=list)
@@ -102,7 +102,7 @@ class StrFragDef:
 
 @dataclass(frozen=True, slots=True)
 class RoleFragDef:
-    """RoleFrag definition: RoleFrag Name[params]: { body }"""
+    """RoleFrag definition: RoleFrag Name[params]: { body }."""
 
     name: str
     params: list[str] = field(default_factory=list)
@@ -116,7 +116,7 @@ class RoleFragDef:
 
 @dataclass(frozen=True, slots=True)
 class PromptDef:
-    """Prompt/chart definition: Name[@T, $param]: { body }"""
+    """Prompt/chart definition: Name[@T, $param]: { body }."""
 
     name: str
     indices: list[Expression] = field(default_factory=list)
@@ -138,7 +138,7 @@ class PromptDef:
 
 @dataclass(frozen=True, slots=True)
 class NamespaceDef:
-    """Namespace block: Namespace name := { bindings }"""
+    """Namespace block: Namespace name := { bindings }."""
 
     name: str
     bindings: list[NamespaceBinding] = field(default_factory=list)
@@ -146,7 +146,7 @@ class NamespaceDef:
 
 @dataclass(frozen=True, slots=True)
 class NamespaceBinding:
-    """A single binding inside a Namespace block: name: type"""
+    """A single binding inside a Namespace block: name: type."""
 
     name: str
     type_expr: str  # e.g. "string", "string[]", "int", "(int,int,int)"
@@ -170,11 +170,24 @@ class CommentBlock:
 
 
 type StrFragBodyItem = (
-    ContextVar | TemplateCall | StringLiteral | CommentBlock | ConditionalBlock | LoopBlock | NameDef | FragInvocation
+    ContextVar
+    | TemplateCall
+    | StringLiteral
+    | CommentBlock
+    | ConditionalBlock
+    | LoopBlock
+    | NameDef
+    | FragInvocation
 )
 
 type RoleFragBodyItem = (
-    RoleMessage | ConditionalBlock | LoopBlock | SwitchBlock | CommentBlock | NameDef | FragInvocation
+    RoleMessage
+    | ConditionalBlock
+    | LoopBlock
+    | SwitchBlock
+    | CommentBlock
+    | NameDef
+    | FragInvocation
 )
 
 type PromptBodyItem = (
@@ -209,7 +222,7 @@ type RoleBodyItem = (
 
 @dataclass(frozen=True, slots=True)
 class RoleMessage:
-    """A role-tagged message: S: | U: | A: | T: { body }"""
+    """A role-tagged message: S: | U: | A: | T: { body }."""
 
     role: str  # "system" | "user" | "assistant" | "tool"
     body: list[RoleBodyItem] = field(default_factory=list)
@@ -221,13 +234,21 @@ class RoleMessage:
 
 
 type Expression = (
-    ContextVar | TemplateCall | StringLiteral | NumberLiteral | NameRef | TimeIndex | Comparison | BinaryOp | Identifier
+    ContextVar
+    | TemplateCall
+    | StringLiteral
+    | NumberLiteral
+    | NameRef
+    | TimeIndex
+    | Comparison
+    | BinaryOp
+    | Identifier
 )
 
 
 @dataclass(frozen=True, slots=True)
 class ContextVar:
-    """A namespace-prefixed variable: sys.foo, env.bar[@t]"""
+    """A namespace-prefixed variable: sys.foo, env.bar[@t]."""
 
     namespace: str  # "env" | "sys" | "resp" | "prompt"
     path: list[str] = field(default_factory=list)
@@ -236,7 +257,7 @@ class ContextVar:
 
 @dataclass(frozen=True, slots=True)
 class TemplateCall:
-    """A template or function call: FUNC(args) or template_name"""
+    """A template or function call: FUNC(args) or template_name."""
 
     name: str
     arguments: list[Expression] = field(default_factory=list)
@@ -259,7 +280,7 @@ class NumberLiteral:
 
 @dataclass(frozen=True, slots=True)
 class NameRef:
-    """A $-prefixed variable reference: $max_iterations"""
+    """A $-prefixed variable reference: $max_iterations."""
 
     name: str
     indices: list[Expression] = field(default_factory=list)
@@ -267,7 +288,7 @@ class NameRef:
 
 @dataclass(frozen=True, slots=True)
 class TimeIndex:
-    """An @-prefixed time index: @T, @t"""
+    """An @-prefixed time index: @T, @t."""
 
     value: Expression  # usually just an identifier like "T" or "t"
 
@@ -326,7 +347,7 @@ class ConditionalBlock:
 
 @dataclass(frozen=True, slots=True)
 class LoopBlock:
-    """ForEach block: ForEach(var: expr) { body }"""
+    """ForEach block: ForEach(var: expr) { body }."""
 
     variable: str
     iterable: Expression | None = None
@@ -357,7 +378,7 @@ class SwitchCase:
 
 @dataclass(frozen=True, slots=True)
 class FragInvocation:
-    """Frag Name or Frag Name[args]"""
+    """Frag Name or Frag Name[args]."""
 
     name: str
     arguments: list[Expression] = field(default_factory=list)
@@ -365,7 +386,7 @@ class FragInvocation:
 
 @dataclass(frozen=True, slots=True)
 class NameDef:
-    """Name varname := expr"""
+    """Name varname := expr."""
 
     name: str
     value: list[Token] = field(default_factory=list)

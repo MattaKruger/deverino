@@ -29,7 +29,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             _build_messages(memory_key=memory_key, payload=payload),
             model=build_model(ctx.config.llm),
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return SkillResult(
             status="failed",
             content=f"LLM summarization failed: {exc}",

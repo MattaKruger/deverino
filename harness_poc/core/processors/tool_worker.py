@@ -63,7 +63,7 @@ async def run_skill_worker(
                     result=result.content,
                     artifacts=result.artifacts,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 completed = SkillCompleted(
                     session_id=session_id,
                     tool_name=skill_name,

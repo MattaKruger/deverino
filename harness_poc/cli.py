@@ -110,6 +110,10 @@ cartographer_app = typer.Typer(
     help="Manage the Deterministic Cartographer.",
     rich_markup_mode="rich",
 )
+v2_app = typer.Typer(
+    help="V2 engine operations — probe, gate, workflow.",
+    rich_markup_mode="rich",
+)
 
 
 @app.callback(invoke_without_command=True)
@@ -546,7 +550,7 @@ async def _run_event_sourced_goal(
 
 
 @app.command("events")
-def events_log(  # noqa: PLR0913
+def events_log(
     session_id: Annotated[
         str | None,
         typer.Option(
@@ -1041,3 +1045,195 @@ app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(dashboard_app, name="dashboard")
 app.add_typer(acdl_app, name="acdl")
 app.add_typer(cartographer_app, name="cartographer")
+app.add_typer(v2_app, name="v2")
+
+
+# ---------------------------------------------------------------------------
+# V2 commands
+# ---------------------------------------------------------------------------
+
+
+@v2_app.command("probe")
+def v2_probe(
+    code: Annotated[str, typer.Argument(help="Python code to execute in the sandbox probe.")],
+) -> None:
+    """Run a fail-fast sandbox probe (Step #1).
+
+    Executes code in an isolated sandbox. On failure, extracts constraints
+    and warms the context map.
+    """
+    app_state = _new_app_state()
+    _run_command(lambda: _run_v2_probe(app_state, code))
+
+
+@v2_app.command("gate")
+def v2_gate(
+    workspace: Annotated[
+        str | None,
+        typer.Argument(help="Workspace path for the review gate. Defaults to project root."),
+    ] = None,
+) -> None:
+    """Run the deterministic review gate (Step #3).
+
+    Runs the test suite against the workspace. On success, updates the
+    materialized context map to reflect verified state.
+    """
+    app_state = _new_app_state()
+    _run_command(lambda: _run_v2_gate(app_state, workspace))
+
+
+@v2_app.command("workflow")
+def v2_workflow(
+    spec_file: Annotated[
+        str,
+        typer.Argument(help="Path to a YAML spec file with probe, tasks, and workspace keys."),
+    ],
+    persona: Annotated[
+        str,
+        typer.Option("--persona", "-p", help="Persona to use (e.g. coder, reviewer)."),
+    ] = "coder",
+) -> None:
+    """Run the full two-mode workflow (Steps #1-#3).
+
+    The spec file is a YAML dict with optional keys:
+      - probe: code string for sandbox exploration
+      - tasks: list of {agent_type, objective} dicts for spec execution
+      - workspace: path for the review gate
+    """
+    app_state = _new_app_state()
+    _run_command(lambda: _run_v2_workflow(app_state, spec_file, persona))
+
+
+@v2_app.command("context")
+def v2_context(
+    persona: Annotated[
+        str,
+        typer.Option("--persona", "-p", help="Persona to use (e.g. coder, code_reviewer)."),
+    ] = "coder",
+) -> None:
+    """Materialize the context map through a persona+pedagogy lens.
+
+    Loads the persona and pedagogy profile, materializes the context map,
+    and prints the rendered prompt block that would be injected into the
+    system message.
+    """
+    app_state = _new_app_state()
+    _run_command(lambda: _run_v2_context(app_state, persona))
+
+
+def _run_v2_probe(app_state: AppState, code: str) -> None:
+    from harness_poc.v2.wiring import (
+        build_context_engine,
+        build_execution_engine,
+        build_workflow_orchestrator,
+    )
+
+    ctx = build_context_engine(app_state.database, app_state.config)
+    exec_eng = build_execution_engine(app_state.database, app_state.config)
+    orch = build_workflow_orchestrator(ctx, exec_eng)
+
+    result = orch.run_exploration_probe(code=code, session_id=app_state.session_id)
+
+    if result.success:
+        print_text(f"Probe passed: exit={result.exit_code}")
+        print_text(f"stdout:\n{result.stdout}")
+    else:
+        print_error(f"Probe failed: exit={result.exit_code}")
+        print_error(f"stderr:\n{result.stderr}")
+        if result.discovered_constraints:
+            print_text("\nDiscovered constraints:")
+            for c in result.discovered_constraints:
+                print_text(f"  [{c['type']}] {c['detail']}")
+
+
+def _run_v2_gate(app_state: AppState, workspace: str | None) -> None:
+    from harness_poc.v2.wiring import build_execution_engine
+
+    exec_eng = build_execution_engine(app_state.database, app_state.config)
+    ws = workspace or str(app_state.config.project_root)
+
+    try:
+        passed = exec_eng.execute_deterministic_gate(
+            workspace_path=ws,
+            session_id=app_state.session_id,
+        )
+    except Exception as exc:
+        print_error(f"Gate error: {exc}")
+        return
+
+    if passed:
+        print_text("Gate PASSED — context map reflects verified state.")
+    else:
+        print_error("Gate FAILED — test suite did not pass cleanly.")
+
+
+def _run_v2_workflow(app_state: AppState, spec_file: str, persona: str) -> None:
+    from pathlib import Path
+
+    import yaml
+
+    from harness_poc.v2.wiring import (
+        build_context_engine,
+        build_execution_engine,
+        build_workflow_orchestrator,
+    )
+
+    spec_path = Path(spec_file)
+    if not spec_path.exists():
+        print_error(f"Spec file not found: {spec_file}")
+        return
+
+    spec = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+    if not isinstance(spec, dict):
+        print_error("Spec file must be a YAML mapping")
+        return
+
+    ctx = build_context_engine(app_state.database, app_state.config)
+    exec_eng = build_execution_engine(app_state.database, app_state.config)
+    orch = build_workflow_orchestrator(ctx, exec_eng)
+
+    result = orch.execute_workflow(
+        spec=spec,
+        persona_id=persona,
+        probe_code=spec.get("probe"),
+        workspace_path=spec.get("workspace"),
+    )
+
+    print_text(f"Workflow {result.workflow_id}")
+    print_text(f"  Steps completed: {result.steps_completed}")
+
+    if result.probe:
+        status = "PASS" if result.probe.success else "FAIL"
+        print_text(f"  Probe: {status} (exit={result.probe.exit_code})")
+        if result.probe.discovered_constraints:
+            print_text(f"    Constraints: {len(result.probe.discovered_constraints)}")
+
+    if result.execution:
+        status = "PASS" if result.execution.all_passed else "FAIL"
+        print_text(
+            f"  Execution: {status} "
+            f"({len(result.execution.sub_agents)} agents, "
+            f"{result.execution.failure_count} failures)"
+        )
+
+    if result.gate:
+        status = "PASS" if result.gate.passed else "FAIL"
+        print_text(f"  Gate: {status} ({result.gate.test_count} tests)")
+
+    print_text(f"  Context refreshed: {result.context_map_refreshed}")
+
+
+def _run_v2_context(app_state: AppState, persona: str) -> None:
+    from harness_poc.v2.wiring import build_v2_system_prompt_block
+
+    block = build_v2_system_prompt_block(
+        app_state.database,
+        app_state.config,
+        persona_id=persona,
+        working_context={"session_id": app_state.session_id},
+    )
+
+    if block:
+        print_text(block)
+    else:
+        print_error(f"Could not materialize context for persona '{persona}'.")

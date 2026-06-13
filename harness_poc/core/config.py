@@ -43,6 +43,7 @@ class RuntimeConfig:
     materializer_max_event_tokens: int = 8000
     materializer_freeze_threshold: int = 3
     materializer_freeze_seconds: int = 300
+    materializer_copt_threshold: float = 0.92
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +183,9 @@ class HarnessConfig:
                 runtime_raw.get("materializer_freeze_threshold", 3)
             ),
             materializer_freeze_seconds=int(runtime_raw.get("materializer_freeze_seconds", 300)),
+            materializer_copt_threshold=float(
+                runtime_raw.get("materializer_copt_threshold", 0.92)
+            ),
         )
         observability = ObservabilityConfig(
             logfire_enabled=bool(observability_raw.get("logfire", False)),

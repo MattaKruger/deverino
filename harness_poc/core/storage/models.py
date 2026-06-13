@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import Column, DateTime, Index, Text
@@ -172,3 +173,49 @@ class DbContextMap(SQLModel, table=True):
     last_updated: str
     freeze_until: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     schema_version: int = Field(default=1)
+
+
+class DbContextEvent(SQLModel, table=True):
+    """V2 context event stream table — maps to planning_specv2.md §4 schema."""
+
+    __tablename__ = "context_events_v2"  # type: ignore[assignment]
+    __table_args__ = (
+        Index("idx_context_events_v2_session", "session_id", "event_type"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    session_id: str = Field(nullable=False)
+    team_member: str = Field(nullable=False)
+    event_type: str = Field(nullable=False)
+    payload: Any = Field(sa_column=Column(_StateJSON, nullable=False))
+    created_at: str
+
+
+class DbMaterializedContextMap(SQLModel, table=True):
+    """V2 materialized context map snapshot — planning_specv2.md §4 schema."""
+
+    __tablename__ = "materialized_context_maps_v2"  # type: ignore[assignment]
+
+    project_id: str = Field(primary_key=True)
+    active_persona: str = Field(nullable=False)
+    pedagogy_snapshot: Any = Field(sa_column=Column(_StateJSON, nullable=False))
+    verified_state: Any = Field(sa_column=Column(_StateJSON, nullable=False))
+    last_event_id: int | None = Field(default=None, foreign_key="context_events_v2.id")
+    updated_at: str
+
+
+# ---------------------------------------------------------------------------
+# CopT Gate — embedding table (pgvector-only, created via raw SQL on PostgreSQL)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class DbContextMapEmbedding:
+    """A single embedding row for the CopT gate.
+
+    Stored in the ``context_map_embeddings`` table (created via raw SQL,
+    not SQLModel metadata, because pgvector is PostgreSQL-only).
+    """
+
+    corpus_key: str
+    entry_key: str
+    embedding: list[float]

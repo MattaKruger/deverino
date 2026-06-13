@@ -23,6 +23,8 @@ dependencies = [
     "pyvespa>=0.43.0",
     "docling>=2.0.0",
     "dash>=4.1.0",
+    "sentence-transformers>=5.5.1",
+    "pgvector>=0.4.2",
 ]
 
 [dependency-groups]
@@ -55,39 +57,114 @@ line-length = 100
 target-version = "py314"
 
 [tool.ruff.lint]
-select = ["ALL"]
-ignore = [
-    "COM812",
-    "C901",
-    "D100",
-    "D101",
-    "D102",
-    "D103",
-    "D104",
-    "D105",
-    "D107",
-    "D203",
-    "D213",
-    "T201",
+# ---------------------------------------------------------------------------
+# Rule selection: start from defaults (pyflakes + pycodestyle errors),
+# then consciously opt in to additional rule categories.
+# This avoids surprise breakage when new rules land in future Ruff releases.
+# ---------------------------------------------------------------------------
+select = ["E4", "E7", "E9", "F"]
+extend-select = [
+    "W",     # pycodestyle warnings
+    "I",     # isort (import ordering)
+    "N",     # pep8-naming
+    "UP",    # pyupgrade (modernise syntax for py314)
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "SIM",   # flake8-simplify
+    "RUF",   # Ruff-specific rules
+    "PERF",  # perflint (performance anti-patterns)
+    "FBT",   # flake8-boolean-trap
+    "A",     # flake8-builtins
+    "EM",    # flake8-errmsg
+    "ISC",   # flake8-implicit-str-concat
+    "PIE",   # flake8-pie
+    "PTH",   # flake8-use-pathlib
+    "RET",   # flake8-return
+    "SLF",   # flake8-self
+    "SLOT",  # flake8-slots
+    "TRY",   # tryceratops
+    "FLY",   # flynt (f-strings)
+    "PL",    # pylint (all sub-categories)
+    "RSE",   # flake8-raise
+    "YTT",   # flake8-2020
+    "ASYNC", # flake8-async
+    "ARG",   # flake8-unused-arguments
+    "ICN",   # flake8-import-conventions
+    "G",     # flake8-logging-format
+    "INP",   # flake8-no-pep420
+    "Q",     # flake8-quotes
+    "TC",    # flake8-type-checking
+    "ERA",   # eradicate (commented-out code)
+    "T20",   # flake8-print
+    "PT",    # flake8-pytest-style
+    "D",     # pydocstyle (see convention below)
+    "TID",   # flake8-tidy-imports
+    "S",     # flake8-bandit (security)
+    "ANN",   # flake8-annotations
 ]
 
+# ---------------------------------------------------------------------------
+# Global ignores – rules we have consciously decided are not a fit for
+# this project (REPL tool, POC harness, not a library).
+# ---------------------------------------------------------------------------
+ignore = [
+    "COM812",  # Trailing comma – handled by the formatter
+    "D100",    # Missing docstring in public module (app, not a library)
+    "D101",    # Missing docstring in public class (app, not a library)
+    "D102",    # Missing docstring in public method (app, not a library)
+    "D103",    # Missing docstring in public function (app, not a library)
+    "D104",    # Missing docstring in public package (app, not a library)
+    "D105",    # Missing docstring in magic method
+    "D107",    # Missing docstring in __init__
+    "T201",    # print() is fine in a REPL / CLI tool
+]
+
+# Enable future annotations so TC rules can move more imports into
+# TYPE_CHECKING blocks (Python 3.14 defers annotations by default anyway).
+future-annotations = true
+
+# ---------------------------------------------------------------------------
+# Pydocstyle: use Google convention to resolve D203-vs-D211 and
+# D213-vs-D212 conflicts automatically.
+# ---------------------------------------------------------------------------
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# ---------------------------------------------------------------------------
+# McCabe complexity: raise the threshold instead of disabling C901 entirely.
+# ---------------------------------------------------------------------------
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+# ---------------------------------------------------------------------------
+# Pylint: raise some thresholds for parser / code-generator style functions.
+# ---------------------------------------------------------------------------
+[tool.ruff.lint.pylint]
+max-returns = 12
+max-args = 8
+max-branches = 15
+max-positional-args = 6
+
+# ---------------------------------------------------------------------------
+# Per-file ignores – temporary suppressions for files that still need
+# refactoring.  D400/D415 were removed from the ACDL files because the
+# Google convention already disables those rules.
+# ---------------------------------------------------------------------------
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "TC002", "TC003", "PLR2004", "SLF001", "FBT001", "FBT002", "INP001", "TC001"]
+"tests/**/*.py" = [
+    "S101",    # assert is expected in tests
+    "PLR2004", # magic-value-comparison
+    "SLF001",  # private-member-access
+    "FBT001",  # boolean-positional-arg-in-function-definition
+    "FBT002",  # boolean-default-value-positional-argument
+    "INP001",  # implicit-namespace-package
+    "TC001",   # typing-only-third-party-import
+    "TC002",   # typing-only-third-party-import
+    "TC003",   # typing-only-standard-library-import
+]
 "harness_poc/core/context_map/cartographer.py" = ["TC001", "TC003"]
 "harness_poc/core/context_map/distiller.py" = ["TC001", "TC002", "TC003"]
 "harness_poc/core/context_map/schema.py" = ["TC003"]
-"harness_poc/core/acdl/ast.py" = ["D400", "D415", "E501"]
-"harness_poc/core/acdl/parser.py" = [
-    "ANN001",
-    "ANN202",
-    "D400",
-    "D415",
-    "E501",
-    "EM101",
-    "EM102",
-    "PLR0911",
-    "TRY003",
-]
 "harness_poc/core/skills/skill_catalog.py" = ["PLW0603", "TC003"]
 "harness_poc/core/skills/skill_preprocessing.py" = ["S105", "S603", "S607", "TC003"]
 "harness_poc/system_tools/container_destroy.py" = ["ERA001", "TC001"]
@@ -109,3 +186,32 @@ ignore = [
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+# ===========================================================================
+# Ty – static type checker (Astral, 2026)
+# ===========================================================================
+# Configuration reference:
+#   https://docs.astral.sh/ty/reference/configuration/
+# ===========================================================================
+
+[tool.ty]
+
+[tool.ty.rules]
+# Strict-by-default: treat most rules as errors.
+# Rules that are noisy or have known false positives are set to "warn"
+# or "ignore" below.
+possibly-unresolved-reference = "error"
+possibly-missing-import = "error"
+possibly-missing-attribute = "error"
+missing-type-argument = "warn"
+missing-override-decorator = "warn"
+
+# ---------------------------------------------------------------------------
+# Test overrides – relax type checking for test code where spies, mocks
+# and fixtures commonly produce invalid-argument-type diagnostics.
+# ---------------------------------------------------------------------------
+[[tool.ty.overrides]]
+include = ["tests/**", "**/test_*.py"]
+
+[tool.ty.overrides.rules]
+invalid-argument-type = "warn"

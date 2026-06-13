@@ -32,6 +32,7 @@ runtime:
   materializer_token_budget: 1024
   materializer_freeze_threshold: 3
   materializer_freeze_seconds: 300
+  materializer_copt_threshold: 0.92
 
 observability:
   logfire: true   # set to true and export LOGFIRE_TOKEN to enable
@@ -60,7 +61,7 @@ retrieval:
     - docs/acdl   # ACDL source — code, not prose documentation
 
 distiller:
-  model: deepseek/deepseek-chat
+  model: deepseek/deepseek-v4-flash
   max_retries: 3
   prompt_template: distiller_v2          # updated: includes architecture + obsolete
 

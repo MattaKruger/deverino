@@ -206,7 +206,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             content=f"Observation recorded ({observation_type}).",
             artifacts={"observation_type": observation_type},
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return SkillResult(
             status="failed",
             content=f"Failed to record observation: {exc}",

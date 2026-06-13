@@ -11,7 +11,12 @@ from harness_poc.core.events import (
     SkillCompleted,
     StreamPaused,
 )
-from harness_poc.core.observability import fetch_dashboard_snapshot, snapshot_to_dict
+from harness_poc.core.observability import (
+    fetch_dashboard_snapshot,
+    fetch_session_events,
+    fetch_session_ids,
+    snapshot_to_dict,
+)
 from harness_poc.core.storage import BlackboardDatabase
 
 
@@ -75,6 +80,7 @@ def test_dashboard_snapshot_rolls_up_agent_events(db_engine: Engine) -> None:
         )
     )
     from datetime import UTC, datetime
+
     from harness_poc.core.context_map.schema import MapEntry
 
     database.write_map_and_mark_processed(
@@ -129,6 +135,88 @@ def test_dashboard_snapshot_rolls_up_agent_events(db_engine: Engine) -> None:
     assert snapshot.session_token_usage[0].session_id == "s1"
     assert snapshot.session_token_usage[0].models == "fake, fake-small"
     assert snapshot.session_token_usage[0].tokens == 42
+
+
+def test_fetch_session_ids_returns_recent_sessions(db_engine: Engine) -> None:
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    from sqlmodel import Session  # noqa: PLC0415
+
+    from harness_poc.core.storage.models import DbSession  # noqa: PLC0415
+
+    now = datetime.now(tz=UTC).isoformat()
+    with Session(db_engine) as s:
+        s.add(DbSession(
+            session_id="sess-aaa",
+            global_objective="Find the answer",
+            status="active",
+            created_at=now,
+        ))
+        s.add(DbSession(
+            session_id="sess-bbb",
+            global_objective="Do another thing",
+            status="active",
+            created_at=now,
+        ))
+        s.commit()
+
+    store = EventStore(db_engine)
+    store.persist(
+        LLMActionEmitted(
+            session_id="sess-aaa", model="fake", tokens_used=5,
+            input_tokens=3, output_tokens=2,
+        )
+    )
+
+    results = fetch_session_ids(db_engine, limit=10)
+
+    ids = [r[0] for r in results]
+    assert "sess-aaa" in ids
+    assert "sess-bbb" in ids
+    # label contains objective and session suffix
+    labels = {r[0]: r[1] for r in results}
+    assert "Find the answer" in labels["sess-aaa"]
+    assert "sess-aaa"[-8:] in labels["sess-aaa"]
+
+
+def test_fetch_session_events_returns_ordered_events_with_time_delta(db_engine: Engine) -> None:
+    store = EventStore(db_engine)
+    store.persist(AgentStarted(session_id="sess-xyz", goal="Run a test"))
+    store.persist(SkillCalled(session_id="sess-xyz", tool_name="search_documents"))
+    store.persist(
+        SkillCompleted(
+            session_id="sess-xyz",
+            tool_name="search_documents",
+            status="success",
+            content="some result",
+        )
+    )
+    store.persist(
+        LLMActionEmitted(
+            session_id="sess-xyz",
+            model="fake",
+            tokens_used=20,
+            input_tokens=15,
+            output_tokens=5,
+        )
+    )
+    store.persist(StreamPaused(session_id="sess-xyz", reason="budget"))
+
+    rows = fetch_session_events(db_engine, "sess-xyz")
+
+    assert len(rows) == 5
+    assert rows[0].event_type == "AgentStarted"
+    assert rows[0].time_delta == 0.0
+    # all subsequent time_deltas are >= 0
+    assert all(r.time_delta >= 0.0 for r in rows)
+    # LLMActionEmitted row has tokens_used populated
+    llm_rows = [r for r in rows if r.event_type == "LLMActionEmitted"]
+    assert llm_rows[0].tokens_used == 20
+    # SkillCompleted has content_preview
+    skill_rows = [r for r in rows if r.event_type == "SkillCompleted"]
+    assert "some result" in skill_rows[0].content_preview
+    # unknown session returns empty list
+    assert fetch_session_events(db_engine, "no-such-session") == []
 
 
 def test_snapshot_to_dict_handles_slot_dataclasses(db_engine: Engine) -> None:
