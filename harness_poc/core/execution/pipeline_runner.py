@@ -5,6 +5,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from pathlib import Path  # noqa: TC003 — required at runtime for Python 3.14 annotation eval
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -18,9 +19,8 @@ from harness_poc.core.events import (
 from harness_poc.core.runtime import GoalRunner
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from harness_poc.app_factory import AppState
+
 
 _TEMPLATE = re.compile(r"{{\s*([^}]+?)\s*}}")
 

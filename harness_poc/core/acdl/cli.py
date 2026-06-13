@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated
+from pathlib import Path  # noqa: TC003 — required at runtime for Python 3.14 annotation eval
+from typing import Annotated
 
 import typer
 from rich.markup import escape as _rich_escape
 
 from harness_poc.console import console
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _index_to_str(idx: object) -> str:

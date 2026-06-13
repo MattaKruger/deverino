@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path  # noqa: TC003 — required at runtime for Python 3.14 annotation eval
 from typing import TYPE_CHECKING
 
 from rich.console import Console
@@ -8,10 +9,10 @@ from rich.table import Table
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from harness_poc.core.execution import WorkflowRunResult
     from harness_poc.core.skills import SkillRunner
+
 
 
 console = Console()
