@@ -123,7 +123,7 @@ class SkillRunner:
         )
         return result.content
 
-    def execute_skill(  # noqa: PLR0915
+    def execute_skill(  # noqa: PLR0913, PLR0915
         self,
         tool_name: str,
         arguments: dict[str, Any],
@@ -177,7 +177,7 @@ class SkillRunner:
                     import threading
                     from concurrent.futures import Future
 
-                    def run_in_new_loop(coro, fut):
+                    def run_in_new_loop(coro: Any, fut: Any) -> None:  # noqa: ANN401
                         new_loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(new_loop)
                         try:
@@ -260,7 +260,11 @@ class SkillRunner:
     @staticmethod
     def _normalize_arguments(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(arguments)
-        if tool_name == "delegate_task" and "template_name" in normalized and "persona" not in normalized:
+        if (
+            tool_name == "delegate_task"
+            and "template_name" in normalized
+            and "persona" not in normalized
+        ):
             normalized["persona"] = normalized["template_name"]
 
         return normalized

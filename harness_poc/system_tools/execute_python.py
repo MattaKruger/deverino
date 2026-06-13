@@ -23,7 +23,7 @@ MAX_STDOUT_CHARS = 20_000
 MAX_STDERR_CHARS = 20_000
 
 
-def execute_python(
+def execute_python(  # noqa: PLR0913
     ctx: ToolContext,
     code: str = "",
     container: str = "",

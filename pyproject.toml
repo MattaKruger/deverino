@@ -104,6 +104,11 @@ extend-select = [
     "TID",   # flake8-tidy-imports
     "S",     # flake8-bandit (security)
     "ANN",   # flake8-annotations
+    "DTZ",   # flake8-datetimez (timezone-aware datetimes)
+    "T10",   # flake8-debugger (no breakpoint/pdb in production)
+    "FURB",  # refurb (modern Python patterns)
+    "PGH",   # pygrep-hooks (no eval, blanket except, etc.)
+    "FIX",   # flake8-fixme (no TODO/FIXME in production)
 ]
 
 # ---------------------------------------------------------------------------
@@ -143,10 +148,11 @@ max-complexity = 15
 # Pylint: raise some thresholds for parser / code-generator style functions.
 # ---------------------------------------------------------------------------
 [tool.ruff.lint.pylint]
-max-returns = 12
-max-args = 8
-max-branches = 15
-max-positional-args = 6
+max-returns = 6
+max-args = 5
+max-branches = 12
+max-statements = 50
+max-positional-args = 5
 
 # ---------------------------------------------------------------------------
 # Per-file ignores – temporary suppressions for files that still need
@@ -154,7 +160,19 @@ max-positional-args = 6
 # Google convention already disables those rules.
 # ---------------------------------------------------------------------------
 [tool.ruff.lint.per-file-ignores]
+"fix_pylint.py" = ["ALL"]
 "tests/**/*.py" = [
+    "S108",
+    "PLC0415",
+    "ANN001",
+    "ANN002",
+    "ANN003",
+    "ANN201",
+    "ANN202",
+    "ANN204",
+    "ANN401",
+    "ARG001",
+    "ARG002",
     "S101",    # assert is expected in tests
     "PLR2004", # magic-value-comparison
     "SLF001",  # private-member-access
@@ -168,6 +186,11 @@ max-positional-args = 6
     "TC003",   # typing-only-standard-library-import
 ]
 "harness_poc/v2/tests/**/*.py" = [
+    "S108",
+    "PLC0415",
+    "ANN002",
+    "ANN003",
+    "ANN401",
     "S101",
     "PLR2004",
     "SLF001",
@@ -176,11 +199,14 @@ max-positional-args = 6
     "S306",
     "F841",
     "RUF006",
+    "ERA001",
     "ANN001",
     "ANN201",
     "ANN202",
+    "ANN204",
     "ARG001",
     "ARG002",
+    "D205",
     "TC001",
     "TC002",
     "TC003",
@@ -188,6 +214,17 @@ max-positional-args = 6
 "harness_poc/core/context_map/cartographer.py" = ["TC001", "TC003"]
 "harness_poc/core/context_map/distiller.py" = ["TC001", "TC002", "TC003"]
 "harness_poc/core/context_map/schema.py" = ["TC003"]
+"harness_poc/cli.py" = ["PLC0415", "PLR0915"]
+"harness_poc/repl.py" = ["PLC0415"]
+"harness_poc/v2/wiring.py" = ["PLC0415"]
+"harness_poc/v2/execution_engine.py" = ["PLC0415"]
+"harness_poc/v2/subscribers/llm_worker.py" = ["PLC0415"]
+"harness_poc/core/storage/database.py" = ["PLC0415"]
+"harness_poc/core/skills/skill_runner.py" = ["PLC0415"]
+"harness_poc/core/context_map/calibrate.py" = ["PLC0415"]
+"harness_poc/core/acdl/cli.py" = ["FBT002", "PLC0415"]
+"skills/context-map-materializer/skill.py" = ["PLC0415"]
+"fix_ann.py" = ["ALL"]
 "harness_poc/core/skills/skill_catalog.py" = ["PLW0603", "TC003"]
 "harness_poc/core/skills/skill_preprocessing.py" = ["S105", "S603", "S607", "TC003"]
 "harness_poc/system_tools/container_destroy.py" = ["ERA001", "TC001"]
@@ -204,7 +241,7 @@ max-positional-args = 6
 "tests/runtime/test_container_skills.py" = ["PLC0415"]
 "tests/runtime/test_execute_python.py" = ["ARG001", "PLC0415", "PLR0913"]
 "tests/runtime/test_pydantic_runtime.py" = ["PLR0913"]
-"tests/skills/test_knowledge_tools.py" = ["ARG002", "N817", "PLC0415"]
+"tests/skills/test_knowledge_tools.py" = ["ARG001", "ARG002", "N817", "PLC0415"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -238,3 +275,17 @@ include = ["tests/**", "**/test_*.py"]
 
 [tool.ty.overrides.rules]
 invalid-argument-type = "warn"
+invalid-method-override = "warn"
+unresolved-attribute = "warn"
+
+# ---------------------------------------------------------------------------
+# ACDL overrides – the parser uses complex recursive types that produce
+# false-positive argument-type and return-type diagnostics.
+# ---------------------------------------------------------------------------
+[[tool.ty.overrides]]
+include = ["harness_poc/core/acdl/**"]
+
+[tool.ty.overrides.rules]
+invalid-argument-type = "warn"
+invalid-return-type = "warn"
+not-iterable = "warn"

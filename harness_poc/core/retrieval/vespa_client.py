@@ -6,11 +6,13 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from harness_poc.core.config import RetrievalConfig
-    from harness_poc.core.retrieval.retrieval import DocumentChunk
+    from harness_poc.core.retrieval.retrieval import (
+        DocumentChunk,
+        SearchRequest,
+    )
 
 from harness_poc.core.retrieval.retrieval import (
     FeedSummary,
-    SearchRequest,
     SearchResult,
 )
 

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from harness_poc.core.events.event_bus import EventBus
     from harness_poc.core.storage.database import BlackboardDatabase
     from harness_poc.v2.context_engine import ContextEngine
+    from harness_poc.v2.contracts.sub_agent_spawner import DelegatedTaskOutput
     from harness_poc.v2.execution_engine import ExecutionEngine
     from harness_poc.v2.workflow_orchestrator import WorkflowOrchestrator
 
@@ -42,7 +43,7 @@ def build_context_engine(
     If event_bus is provided, all v2 events are routed through it
     instead of direct database writes.
     """
-    from harness_poc.v2.context_engine import ContextEngine  # noqa: PLC0415
+    from harness_poc.v2.context_engine import ContextEngine
 
     materializer = _build_materializer_adapter(db, config)
 
@@ -73,7 +74,7 @@ def build_execution_engine(
     Wires the v2 delegate_task handler with real spawner, event bus,
     and blackboard writer. event_bus is required.
     """
-    from harness_poc.v2.execution_engine import ExecutionEngine  # noqa: PLC0415
+    from harness_poc.v2.execution_engine import ExecutionEngine
 
     if event_bus is None:
         msg = "ExecutionEngine requires an event_bus"
@@ -100,7 +101,7 @@ def build_workflow_orchestrator(
     project_id: str = "deverino",
 ) -> WorkflowOrchestrator:
     """Build a WorkflowOrchestrator from pre-built engines."""
-    from harness_poc.v2.workflow_orchestrator import (  # noqa: PLC0415
+    from harness_poc.v2.workflow_orchestrator import (
         WorkflowOrchestrator,
     )
 
@@ -162,15 +163,15 @@ def build_v2_runtime(
         )
 
     if mode == "react":
-        from harness_poc.core.skills import SkillRunner  # noqa: PLC0415
-        from harness_poc.v2.subscribers.circuit_breaker import (  # noqa: PLC0415
+        from harness_poc.core.skills import SkillRunner
+        from harness_poc.v2.subscribers.circuit_breaker import (
             CircuitBreaker,
         )
-        from harness_poc.v2.subscribers.goal_evaluator import (  # noqa: PLC0415
+        from harness_poc.v2.subscribers.goal_evaluator import (
             GoalEvaluator,
         )
-        from harness_poc.v2.subscribers.llm_worker import LlmWorker  # noqa: PLC0415
-        from harness_poc.v2.subscribers.tool_worker import ToolWorker  # noqa: PLC0415
+        from harness_poc.v2.subscribers.llm_worker import LlmWorker
+        from harness_poc.v2.subscribers.tool_worker import ToolWorker
 
         db = identity.database
         skill_runner = SkillRunner(database=db, config=config)
@@ -198,9 +199,8 @@ def build_v2_runtime(
             goal_evaluator=goal_evaluator,
         )
 
-    raise ValueError(
-        f"Unknown v2 mode '{mode}'. Expected 'pipeline' or 'react'."
-    )
+    _msg = f"Unknown v2 mode '{mode}'. Expected 'pipeline' or 'react'."
+    raise ValueError(_msg)
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +233,7 @@ def build_v2_system_prompt_block(
     Returns:
         A rendered prompt string ready for system message injection.
     """
-    from harness_poc.v2.context_engine import (  # noqa: PLC0415
+    from harness_poc.v2.context_engine import (
         PedagogyNotFoundError,
         PersonaNotFoundError,
     )
@@ -261,7 +261,7 @@ def build_v2_system_prompt_block(
 # ---------------------------------------------------------------------------
 
 
-def _build_materializer_adapter(
+def _build_materializer_adapter(  # noqa: ANN202
     db: BlackboardDatabase,
     config: HarnessConfig,
 ):
@@ -270,8 +270,8 @@ def _build_materializer_adapter(
     Wraps the existing context map pipeline (Distiller → Cartographer)
     behind the V2 ContextMapMaterializer protocol.
     """
-    from harness_poc.core.context_map.render import render_context_map  # noqa: PLC0415
-    from harness_poc.v2.contracts.context_map_pipeline import (  # noqa: PLC0415
+    from harness_poc.core.context_map.render import render_context_map
+    from harness_poc.v2.contracts.context_map_pipeline import (
         DbContextMap,
     )
 
@@ -303,14 +303,14 @@ def _build_materializer_adapter(
     return _HarnessMaterializer()
 
 
-def _build_spawner_adapter(config: HarnessConfig):
+def _build_spawner_adapter(_config: HarnessConfig):  # noqa: ANN202
     """Build a SubAgentSpawner adapter from the harness skill runner.
 
     Uses the context-map-materializer skill pattern to execute sub-agents.
     For now, returns a stub that delegates through the existing
     delegate_task handler interface.
     """
-    from harness_poc.v2.contracts.sub_agent_spawner import (  # noqa: PLC0415
+    from harness_poc.v2.contracts.sub_agent_spawner import (
         DELEGATED_STATUS_SUCCESS,
         DelegatedTaskResult,
     )
@@ -335,11 +335,11 @@ def _build_spawner_adapter(config: HarnessConfig):
     return _HarnessSpawner()
 
 
-def _build_blackboard_adapter(db: BlackboardDatabase):
+def _build_blackboard_adapter(db: BlackboardDatabase):  # noqa: ANN202
     """Build a BlackboardWriter adapter over the harness database."""
 
     class _HarnessBlackboard:
-        def write(self, task_id: str, output, session_id: str) -> None:
+        def write(self, task_id: str, output: DelegatedTaskOutput, session_id: str) -> None:
             # Write the delegated output to shared memory
             db.write_memory(
                 session_id=session_id,
@@ -359,7 +359,7 @@ def _build_blackboard_adapter(db: BlackboardDatabase):
 # ---------------------------------------------------------------------------
 
 
-def build_soul_constitution(config: HarnessConfig):
+def build_soul_constitution(config: HarnessConfig):  # noqa: ANN201
     """Build a SoulConstitution adapter from the SOUL.md file.
 
     Parses ``## N. Section Name`` headings and exposes section access
@@ -379,7 +379,8 @@ def build_soul_constitution(config: HarnessConfig):
 
     soul_path = config.paths.soul
     if not soul_path.exists():
-        raise FileNotFoundError(f"SOUL.md not found at {soul_path}")
+        _msg = f"SOUL.md not found at {soul_path}"
+        raise FileNotFoundError(_msg)
 
     raw = soul_path.read_text(encoding="utf-8")
     parsed = _parse_soul_sections(raw)

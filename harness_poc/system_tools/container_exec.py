@@ -11,9 +11,12 @@ import logging
 import shutil
 import subprocess
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.skills import CancellationToken, SkillResult
+from harness_poc.core.skills import SkillResult
+
+if TYPE_CHECKING:
+    from harness_poc.core.skills import CancellationToken
 
 BACKENDS = ("podman", "docker")
 DEFAULT_TIMEOUT_SECONDS = 120
@@ -37,7 +40,7 @@ _BLOCKED_BINARIES: frozenset[str] = frozenset({
 logger = logging.getLogger(__name__)
 
 
-def container_exec(
+def container_exec(  # noqa: PLR0913 PLR0911
     command: str = "",
     container: str = "",
     backend: str = "auto",

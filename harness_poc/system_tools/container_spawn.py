@@ -28,7 +28,7 @@ SCRATCH_TARGET = "/scratch"
 logger = logging.getLogger(__name__)
 
 
-def container_spawn(
+def container_spawn(  # noqa: PLR0911
     ctx: ToolContext,
     image: str = "",
     container_name: str = "",
@@ -206,7 +206,7 @@ def _validate_inputs(image: str, backend: str | None) -> str:
     return ""
 
 
-def _ensure_image_available(
+def _ensure_image_available(  # noqa: PLR0911
     backend: str,
     image: str,
     project_root: str,

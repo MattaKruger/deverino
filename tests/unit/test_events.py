@@ -4,7 +4,6 @@ Every event in the system flows through these types. Tests validate
 auto-population, backward-compatibility fields, and registry integrity.
 """
 
-# ruff: noqa: ANN201
 
 from harness_poc.core.events import (
     EVENT_REGISTRY,

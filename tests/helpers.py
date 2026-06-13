@@ -139,7 +139,7 @@ def text_response(content: str) -> LLMResponse:
 def skill_result(
     status: str = "success",
     content: str = "",
-    **artifacts: Any,  # noqa: ANN401
+    **artifacts: Any,
 ) -> SkillResult:
     """Shorthand for a mock skill result — used with SessionHarness skill_overrides.
 
@@ -157,7 +157,7 @@ def skill_result(
             },
         )
     """
-    from harness_poc.core.skills import SkillResult  # noqa: PLC0415
+    from harness_poc.core.skills import SkillResult
 
     return SkillResult(status=status, content=content, artifacts=dict(artifacts))  # ty:ignore[invalid-argument-type]
 

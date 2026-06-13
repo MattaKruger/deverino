@@ -10,7 +10,6 @@ from pydantic_ai import (
     Agent,
     PartDeltaEvent,
     PartStartEvent,
-    RunContext,
     TextPart,
     TextPartDelta,
     Tool,
@@ -26,6 +25,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from pydantic_ai import (
+        RunContext,
+    )
     from pydantic_ai.messages import ModelMessage
     from pydantic_ai.models import Model
     from pydantic_ai.usage import RunUsage
@@ -239,7 +241,7 @@ class PydanticAgentRuntime:
         )
 
 
-def build_model(
+def build_model(  # noqa: PLR0911
     config: LLMConfig | None = None,
     *,
     fallback_model: Model | None = None,
@@ -302,7 +304,7 @@ def build_model(
     raise ValueError(msg)
 
 
-def build_primary_agent(
+def build_primary_agent(  # noqa: PLR0913
     *,
     system_prompt: str,
     skill_runner: SkillRunner,

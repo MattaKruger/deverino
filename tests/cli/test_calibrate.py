@@ -111,7 +111,7 @@ def test_min_events_configurable(db: BlackboardDatabase) -> None:
     assert refused.status == "insufficient_data"
 
 
-def test_dry_run_does_not_write_config(tmp_path) -> None:  # noqa: ANN001
+def test_dry_run_does_not_write_config(tmp_path) -> None:
     db = BlackboardDatabase.from_url("sqlite:///:memory:")
     corpus = "deverino:codebase"
     _seed_references(db, corpus, count=60)
@@ -133,7 +133,7 @@ def test_dry_run_does_not_write_config(tmp_path) -> None:  # noqa: ANN001
 # ---------------------------------------------------------------------------
 
 
-def test_apply_writes_new_weights_and_backup(tmp_path) -> None:  # noqa: ANN001
+def test_apply_writes_new_weights_and_backup(tmp_path) -> None:
     db = BlackboardDatabase.from_url("sqlite:///:memory:")
     corpus = "deverino:codebase"
     _seed_references(db, corpus, count=60)

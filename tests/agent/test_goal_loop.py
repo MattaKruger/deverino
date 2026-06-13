@@ -4,7 +4,7 @@ These tests validate ReAct loop behaviour, skill sequencing, stuck
 detection, context window construction, and budget enforcement.
 """
 
-# ruff: noqa: ANN201, FBT003
+# ruff: noqa: FBT003
 
 from tests.agent.harness import SessionHarness
 from tests.helpers import (

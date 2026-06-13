@@ -55,9 +55,10 @@ class DbContextMap:
     # Pipeline provenance — which stages ran
     stages_run: list[str] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self.map_id:
-            raise ValueError("DbContextMap.map_id must not be empty")
+            msg = "DbContextMap.map_id must not be empty"
+            raise ValueError(msg)
 
 
 # ---------------------------------------------------------------------------

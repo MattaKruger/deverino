@@ -22,10 +22,12 @@ from harness_poc.core.events.events import (
     ExecutionCompleted,
     GateCompleted,
     ProbeCompleted,
-    WorkflowStarted,
 )
 
 if TYPE_CHECKING:
+    from harness_poc.core.events.events import (
+        WorkflowStarted,
+    )
     from harness_poc.v2.workflow_orchestrator import WorkflowOrchestrator
 
 logger = logging.getLogger(__name__)
@@ -45,7 +47,7 @@ class PipelineStepRunner:
     def __init__(
         self,
         orchestrator: WorkflowOrchestrator,
-        event_bus: Any,
+        event_bus: Any,  # noqa: ANN401
     ) -> None:
         self._orch = orchestrator
         self._bus = event_bus

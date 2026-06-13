@@ -33,7 +33,7 @@ class GoalEvaluator:
         self._max_iterations = max_iterations
         self._iteration_count = 0
 
-    async def run(self, bus: Any, session_id: str) -> None:
+    async def run(self, bus: Any, session_id: str) -> None:  # noqa: ANN401
         """Run the goal evaluator loop for a session."""
         async for event in bus.subscribe_session(session_id):
             if isinstance(event, StreamPaused):

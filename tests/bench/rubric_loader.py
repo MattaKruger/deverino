@@ -143,7 +143,7 @@ class Rubric:
                 raise AssertionError(msg)
 
         if self.skill_sequence and events is not None:
-            from tests.helpers import TraceAssertions  # noqa: PLC0415
+            from tests.helpers import TraceAssertions
 
             TraceAssertions(events).assert_skill_order(*self.skill_sequence)
 
@@ -160,7 +160,7 @@ class Rubric:
         """
         if self.judge_prompt is None or self.judge_model is None:
             return None
-        from tests.bench.llm_judge import llm_judge  # noqa: PLC0415
+        from tests.bench.llm_judge import llm_judge
 
         return llm_judge(
             self.judge_prompt,

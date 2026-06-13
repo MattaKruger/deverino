@@ -7,7 +7,6 @@ from harness_poc.core.events import (
     ArchitectureInvariantObserved,
     BoundaryIdentified,
     ConstantDocumented,
-    ContextMapEvent,
     ContextualInsightDiscovered,
     EntityReferenced,
     FactDisputed,
@@ -17,6 +16,9 @@ from harness_poc.core.events import (
 from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
+    from harness_poc.core.events import (
+        ContextMapEvent,
+    )
     from harness_poc.core.skills import SkillContext
 
 logger = logging.getLogger(__name__)

@@ -29,25 +29,25 @@ class TestCoptSqliteNoop:
         db.create_tables()
         return db
 
-    def test_copt_is_available_returns_false(self, sqlite_db):
+    def test_copt_is_available_returns_false(self, sqlite_db) -> None:
         assert sqlite_db.copt_is_available() is False
 
-    def test_copt_ensure_schema_noop(self, sqlite_db):
+    def test_copt_ensure_schema_noop(self, sqlite_db) -> None:
         """Should not raise on SQLite."""
         sqlite_db.copt_ensure_schema()
 
-    def test_copt_query_similarity_returns_zero(self, sqlite_db):
+    def test_copt_query_similarity_returns_zero(self, sqlite_db) -> None:
         sim = sqlite_db.copt_query_similarity("corpus-1", [0.1] * 384)
         assert sim == 0.0
 
-    def test_copt_upsert_embeddings_noop(self, sqlite_db):
+    def test_copt_upsert_embeddings_noop(self, sqlite_db) -> None:
         """Should not raise on SQLite."""
         sqlite_db.copt_upsert_embeddings(
             "corpus-1",
             [("key-1", [0.1] * 384)],
         )
 
-    def test_copt_query_returns_zero_on_empty_corpus(self, sqlite_db):
+    def test_copt_query_returns_zero_on_empty_corpus(self, sqlite_db) -> None:
         sim = sqlite_db.copt_query_similarity("nonexistent", [0.5] * 384)
         assert sim == 0.0
 
@@ -57,12 +57,12 @@ class TestCoptSqliteNoop:
 # ---------------------------------------------------------------------------
 
 class TestEmbeddingHelpers:
-    def test_embed_single_returns_384_dim_vector(self):
+    def test_embed_single_returns_384_dim_vector(self) -> None:
         embedding = embed_single("This is a test summary for semantic dedup.")
         assert len(embedding) == 384
         assert all(isinstance(x, float) for x in embedding)
 
-    def test_embed_summaries_returns_correct_count(self):
+    def test_embed_summaries_returns_correct_count(self) -> None:
         summaries = [
             "The codebase uses pytest for testing.",
             "Configuration lives in harness.yaml.",
@@ -74,10 +74,10 @@ class TestEmbeddingHelpers:
             assert len(emb) == 384
             assert all(isinstance(x, float) for x in emb)
 
-    def test_embed_summaries_empty(self):
+    def test_embed_summaries_empty(self) -> None:
         assert embed_summaries([]) == []
 
-    def test_similar_summaries_have_high_cosine_similarity(self):
+    def test_similar_summaries_have_high_cosine_similarity(self) -> None:
         """Semantically similar strings should have cosine sim > 0.7."""
         import numpy as np
 
@@ -87,7 +87,7 @@ class TestEmbeddingHelpers:
         sim = float(np.dot(emb1, emb2))
         assert sim > 0.5, f"Expected similar summaries to have sim > 0.5, got {sim:.3f}"
 
-    def test_dissimilar_summaries_have_low_cosine_similarity(self):
+    def test_dissimilar_summaries_have_low_cosine_similarity(self) -> None:
         """Semantically different strings should have cosine sim < 0.5."""
         import numpy as np
 

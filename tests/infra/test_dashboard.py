@@ -138,11 +138,11 @@ def test_dashboard_snapshot_rolls_up_agent_events(db_engine: Engine) -> None:
 
 
 def test_fetch_session_ids_returns_recent_sessions(db_engine: Engine) -> None:
-    from datetime import UTC, datetime  # noqa: PLC0415
+    from datetime import UTC, datetime
 
-    from sqlmodel import Session  # noqa: PLC0415
+    from sqlmodel import Session
 
-    from harness_poc.core.storage.models import DbSession  # noqa: PLC0415
+    from harness_poc.core.storage.models import DbSession
 
     now = datetime.now(tz=UTC).isoformat()
     with Session(db_engine) as s:

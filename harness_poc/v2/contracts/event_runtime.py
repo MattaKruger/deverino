@@ -78,9 +78,12 @@ def map_goal_status_to_delegated(goal_status: str) -> str:
     Raises ValueError if goal_status is not a known GOAL_STATUS_*.
     """
     if goal_status not in GOAL_STATUSES:
-        raise ValueError(
+        msg = (
             f"Unknown goal status '{goal_status}'. "
             f"Expected one of {sorted(GOAL_STATUSES)}"
+        )
+        raise ValueError(
+            msg
         )
     return GOAL_TO_DELEGATED_STATUS[goal_status]
 
@@ -106,9 +109,12 @@ def map_delegated_to_external(
         ValueError if delegated_status is not "success" or "failed".
     """
     if delegated_status not in ("success", "failed"):
-        raise ValueError(
+        msg = (
             f"Unknown delegated status '{delegated_status}'. "
             f"Expected 'success' or 'failed'."
+        )
+        raise ValueError(
+            msg
         )
     if delegated_status == "success":
         return "completed"
@@ -142,7 +148,7 @@ class GoalExecutionError(RuntimeError):
         reason: Human-readable explanation.
     """
 
-    def __init__(self, goal: Goal, reason: str):
+    def __init__(self, goal: Goal, reason: str) -> None:
         self.goal = goal
         self.reason = reason
         super().__init__(f"Goal '{goal.goal_id}' failed: {reason}")
@@ -161,9 +167,10 @@ class Goal:
     status: str = GOAL_STATUS_COMPLETED  # current status
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self.goal_id:
-            raise ValueError("Goal.goal_id must not be empty")
+            msg = "Goal.goal_id must not be empty"
+            raise ValueError(msg)
 
 
 @dataclass
@@ -176,11 +183,14 @@ class GoalResult:
     error: str | None = None
     duration_ms: float = 0.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.status not in GOAL_STATUSES:
-            raise ValueError(
+            msg = (
                 f"GoalResult.status must be one of {sorted(GOAL_STATUSES)}, "
                 f"got '{self.status}'"
+            )
+            raise ValueError(
+                msg
             )
 
 
@@ -232,7 +242,7 @@ class EventStore(Protocol):
         """Enter the runtime context."""
         ...
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, *args: Any) -> None:  # noqa: ANN401
         """Exit the runtime context, calling close()."""
         ...
 

@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 _OBSERVATION_TYPES = sorted(_REQUIRED_WEIGHT_KEYS)
 
 
-def run_calibration(
+def run_calibration(  # noqa: PLR0913
     db: BlackboardDatabase,
     corpus_key: str,
     *,
@@ -295,7 +295,7 @@ def _write_weights_to_config(
 class CalibrationResult:
     """Result of a calibration run."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         status: str,
         corpus_key: str,

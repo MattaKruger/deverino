@@ -69,7 +69,7 @@ class _LiveSession:
 
     def assert_skill_order(self, *names: str) -> None:
         """Validate the order of skill calls from the event trace."""
-        from tests.helpers import TraceAssertions  # noqa: PLC0415
+        from tests.helpers import TraceAssertions
 
         TraceAssertions(self._events).assert_skill_order(*names)
 

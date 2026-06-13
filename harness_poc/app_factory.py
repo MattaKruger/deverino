@@ -20,7 +20,6 @@ from harness_poc.core.logging import configure_logging
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.retrieval import DocumentIndexer, LiveVespaDocumentClient, TextEmbedder
 from harness_poc.core.runtime import (
-    PydanticAgentRuntime,
     build_runtime,
 )
 from harness_poc.core.skills import SkillRunner, SkillScaffolder, build_skill_catalog
@@ -32,7 +31,6 @@ from harness_poc.core.storage import (
 )
 from harness_poc.core.tools import ToolRunner
 from harness_poc.system_tools.knowledge_tools import init_knowledge_context
-from harness_poc.v2.runtime import V2Runtime
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +47,11 @@ if TYPE_CHECKING:
 
     from harness_poc.core.execution import MaterializerRunner
     from harness_poc.core.processors import ProcessorSupervisor
-    from harness_poc.core.runtime import Message
+    from harness_poc.core.runtime import (
+        Message,
+        PydanticAgentRuntime,
+    )
+    from harness_poc.v2.runtime import V2Runtime
 
 
 def _default_on_text(chunk: str) -> None:
@@ -457,7 +459,7 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
     # inspect it at runtime (e.g., inspect_own_context).
     # PydanticAI stores system prompts as a tuple of strings in
     # _system_prompts — join them to get the full text.
-    tool_runner.system_prompt = "\n\n".join(runtime.pydantic_runtime.agent._system_prompts)
+    tool_runner.system_prompt = "\n\n".join(runtime.pydantic_runtime.agent._system_prompts)  # noqa: SLF001
 
     return runtime
 
@@ -584,7 +586,7 @@ def _render_corpus_inventory(
     return "\n".join(lines)
 
 
-def _build_app_state_with(
+def _build_app_state_with(  # noqa: PLR0913
     *,
     identity: Identity,
     runtime: Runtime,

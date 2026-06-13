@@ -16,7 +16,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     tool_ctx = ToolContext(
         session_id=ctx.session_id,
         project_root=ctx.config.project_root,
-        database=ctx.database,
+        database=ctx.database,  # ty: ignore
         runtime_config=ctx.config.runtime,
     )
     memory_key = str(arguments.get("memory_key") or "")

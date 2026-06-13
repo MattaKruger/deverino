@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 from pydantic_ai.messages import (
-    ModelMessage,
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
@@ -31,7 +30,6 @@ from harness_poc.core.runtime import (
     AgentRunResult,
     GoalRunner,
     GoalRunResult,
-    TokenAccounting,
     account_for_model_run,
     build_model,
     estimate_message_tokens,
@@ -40,14 +38,23 @@ from harness_poc.core.runtime import (
     sanitize_new_messages,
     split_chat_turns,
 )
-from harness_poc.core.storage import StateSection, build_state_context
+from harness_poc.core.storage import build_state_context
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from pydantic_ai.messages import (
+        ModelMessage,
+    )
+
     from harness_poc.app_factory import AppState
+    from harness_poc.core.runtime import (
+        TokenAccounting,
+    )
+    from harness_poc.core.storage import StateSection
+    from harness_poc.v2.runtime import V2Runtime
 
 
 MIN_WORKFLOW_PARTS = 2
@@ -69,16 +76,16 @@ def _track_tokens(accounting: TokenAccounting, app_state: AppState) -> None:
 
 
 def run_repl(app_state: AppState) -> None:
-    from harness_poc.app_factory import bootstrap_document_index  # noqa: PLC0415
+    from harness_poc.app_factory import bootstrap_document_index
 
     bootstrap_document_index(app_state.config, app_state.database)
 
-    from harness_poc.tui import ChatApp  # noqa: PLC0415
+    from harness_poc.tui import ChatApp
 
     ChatApp(app_state).run()
 
 
-def handle_repl_input(app_state: AppState, user_input: str) -> None:
+def handle_repl_input(app_state: AppState, user_input: str) -> None:  # noqa: PLR0911
     if _is_repl_help_command(user_input):
         print_repl_help()
         return
@@ -737,7 +744,7 @@ def list_skills(app_state: AppState) -> None:
 def handle_copy_command(app_state: AppState) -> None:
     for msg in reversed(app_state.messages):
         if msg.get("role") == "assistant" and msg.get("content"):
-            import subprocess  # noqa: PLC0415
+            import subprocess
 
             content = msg["content"]
             try:
@@ -1002,7 +1009,7 @@ def handle_mode_command(app_state: AppState, user_input: str) -> None:
     app_state.active_mode = new_mode
 
     if new_mode != "chat" and app_state.v2_runtime is None:
-        from harness_poc.v2.wiring import build_v2_runtime  # noqa: PLC0415
+        from harness_poc.v2.wiring import build_v2_runtime
 
         app_state.v2_runtime = build_v2_runtime(
             app_state.identity, app_state.config, mode=new_mode
@@ -1029,7 +1036,7 @@ def _handle_v2_mode_input(app_state: AppState, user_input: str) -> None:
         _run_react_inline(app_state, runtime, user_input)
 
 
-def _run_pipeline_inline(app_state: AppState, runtime, user_input: str) -> None:
+def _run_pipeline_inline(app_state: AppState, runtime: V2Runtime, user_input: str) -> None:
     """Run the pipeline synchronously (blocks REPL until done)."""
     from harness_poc.core.events import ExecutionCompleted, GateCompleted, ProbeCompleted
 
@@ -1075,7 +1082,7 @@ def _run_pipeline_inline(app_state: AppState, runtime, user_input: str) -> None:
     )
 
 
-def _run_react_inline(app_state: AppState, runtime, user_input: str) -> None:
+def _run_react_inline(app_state: AppState, runtime: V2Runtime, user_input: str) -> None:
     """Run the ReAct loop in a background thread so the REPL stays responsive."""
     import asyncio
     import threading
@@ -1093,6 +1100,12 @@ def _run_react_inline(app_state: AppState, runtime, user_input: str) -> None:
         print_error("GoalEvaluator not available")
         return
 
+    # Narrowed after the None guards above — safe to use.
+    cb = runtime.circuit_breaker
+    lw = runtime.llm_worker
+    tw = runtime.tool_worker
+    ge = runtime.goal_evaluator
+
     session_id = app_state.session_id
     bus = runtime.bus
 
@@ -1105,22 +1118,22 @@ def _run_react_inline(app_state: AppState, runtime, user_input: str) -> None:
             output_parts.append(event.content)
             terminal_event.set()
 
-        def on_pause(event: StreamPaused) -> None:
+        def on_pause(_event: StreamPaused) -> None:
             terminal_event.set()
 
-        def on_goal(event: GoalEvaluated) -> None:
+        def on_goal(_event: GoalEvaluated) -> None:
             terminal_event.set()
 
         bus.subscribe(LLMTextEmitted, on_text)
         bus.subscribe(StreamPaused, on_pause)
         bus.subscribe(GoalEvaluated, on_goal)
 
-        async def _react():
+        async def _react() -> None:
             tasks = [
-                asyncio.create_task(runtime.circuit_breaker.run(bus, session_id)),
-                asyncio.create_task(runtime.llm_worker.run(bus, session_id)),
-                asyncio.create_task(runtime.tool_worker.run(bus, session_id)),
-                asyncio.create_task(runtime.goal_evaluator.run(bus, session_id)),
+                asyncio.create_task(cb.run(bus, session_id)),
+                asyncio.create_task(lw.run(bus, session_id)),
+                asyncio.create_task(tw.run(bus, session_id)),
+                asyncio.create_task(ge.run(bus, session_id)),
             ]
             try:
                 bus.publish(

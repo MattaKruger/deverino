@@ -595,9 +595,10 @@ def snapshot_to_dict(snapshot: DashboardSnapshot) -> dict[str, Any]:
 
 
 def fetch_session_ids(engine: Engine, *, limit: int = 50) -> list[tuple[str, str]]:
-    """Return (session_id, display_label) pairs ordered most-recent-first.
-    Queries the sessions table as the canonical source so sessions
-    without events are still visible.
+    """Return (session_id, display_label) pairs.
+
+    Ordered most-recent-first. Queries the sessions table as the canonical
+    source so sessions without events are still visible.
     """
     with engine.connect() as conn:
         rows = (

@@ -33,7 +33,7 @@ class ToolResultError(Exception):
 class MalformedToolResultError(ToolResultError):
     """The raw result does not conform to the expected shape."""
 
-    def __init__(self, reason: str, raw: Any = None):
+    def __init__(self, reason: str, raw: Any = None) -> None:  # noqa: ANN401
         self.reason = reason
         self.raw = raw
         super().__init__(f"Malformed tool result: {reason}")
@@ -42,7 +42,7 @@ class MalformedToolResultError(ToolResultError):
 class ToolTimeoutError(ToolResultError):
     """The tool call timed out."""
 
-    def __init__(self, task_id: str, detail: str | None = None):
+    def __init__(self, task_id: str, detail: str | None = None) -> None:
         self.task_id = task_id
         self.detail = detail
         msg = f"Tool '{task_id}' timed out"
@@ -54,7 +54,7 @@ class ToolTimeoutError(ToolResultError):
 class RetryableToolError(ToolResultError):
     """The tool call failed with a transient error that may succeed on retry."""
 
-    def __init__(self, task_id: str, original_error: str):
+    def __init__(self, task_id: str, original_error: str) -> None:
         self.task_id = task_id
         self.original_error = original_error
         super().__init__(
@@ -105,7 +105,7 @@ _VALID_RAW_STATUSES: frozenset[str] = frozenset({
 # ---------------------------------------------------------------------------
 
 def _process_tool_result(
-    raw_result: Any,
+    raw_result: Any,  # noqa: ANN401
     *,
     original_goal_status: str | None = None,
 ) -> DelegatedTaskOutput:
@@ -122,28 +122,32 @@ def _process_tool_result(
 
     # Branch 1: malformed (not dict-like)
     if not isinstance(raw_result, dict):
+        msg = f"Expected dict or DelegatedTaskResult, got {type(raw_result).__name__}"
         raise MalformedToolResultError(
-            f"Expected dict or DelegatedTaskResult, got {type(raw_result).__name__}",
+            msg,
             raw=raw_result,
         )
 
     # Branch 2: malformed (missing fields)
     task_id = raw_result.get("task_id")
     if task_id is None or not isinstance(task_id, str):
+        msg = "Missing or invalid 'task_id' field (must be a non-empty string)"
         raise MalformedToolResultError(
-            "Missing or invalid 'task_id' field (must be a non-empty string)",
+            msg,
             raw=raw_result,
         )
 
     status = raw_result.get("status")
     if status is None or not isinstance(status, str):
+        msg = f"Missing or invalid 'status' field (must be a string, got {type(status).__name__})"
         raise MalformedToolResultError(
-            f"Missing or invalid 'status' field (must be a string, got {type(status).__name__})",
+            msg,
             raw=raw_result,
         )
     if status not in _VALID_RAW_STATUSES:
+        msg = f"Invalid status '{status}'. Expected one of {sorted(_VALID_RAW_STATUSES)}"
         raise MalformedToolResultError(
-            f"Invalid status '{status}'. Expected one of {sorted(_VALID_RAW_STATUSES)}",
+            msg,
             raw=raw_result,
         )
 
@@ -209,7 +213,7 @@ def _from_delegated_task_result(
 
 
 def _build_summary(
-    raw_status: str,
+    _raw_status: str,
     output_label: str,
     error_msg: str | None,
 ) -> str:

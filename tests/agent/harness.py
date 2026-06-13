@@ -55,7 +55,7 @@ class _SkillOverrideProxy:
         tool_name: str,
         arguments: dict[str, Any],
         session_id: str,
-        **kwargs: Any,  # noqa: ANN401
+        **kwargs: Any,
     ) -> SkillResult:
         if tool_name in self._overrides:
             return self._overrides[tool_name]
@@ -66,7 +66,7 @@ class _SkillOverrideProxy:
             **kwargs,
         )
 
-    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
+    def __getattr__(self, name: str) -> Any:
         return getattr(self._real, name)
 
 
@@ -134,7 +134,7 @@ class SessionHarness:
             poolclass=StaticPool,
         )
         # Import database module to ensure SQLModel table classes are registered
-        import harness_poc.core.storage.database  # noqa: F401, PLC0415
+        import harness_poc.core.storage.database  # noqa: F401
         SQLModel.metadata.create_all(engine)
         database = BlackboardDatabase(engine)
 

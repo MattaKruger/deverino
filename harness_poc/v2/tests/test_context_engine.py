@@ -77,7 +77,7 @@ class DatabaseSpy:
 class MaterializerSpy:
     """Returns a predictable DbContextMap without running the real pipeline."""
 
-    def __init__(self, rendered: str = "cycle: 1\nsection: context_architecture\n  - [entry:abc123] (p=0.85) Test entry"):
+    def __init__(self, rendered: str = "cycle: 1\nsection: context_architecture\n  - [entry:abc123] (p=0.85) Test entry") -> None:
         self._rendered = rendered
         self.calls: list[str] = []
 
@@ -313,7 +313,8 @@ class TestMaterializeOutput:
 
         class ExplodingMaterializer(MaterializerSpy):
             def materialize(self, corpus_path: str) -> DbContextMap:
-                raise MaterializationError("Pipeline exploded")
+                msg = "Pipeline exploded"
+                raise MaterializationError(msg)
 
         engine = ContextEngine(
             db=db,

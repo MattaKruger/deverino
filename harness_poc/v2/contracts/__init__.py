@@ -54,45 +54,45 @@ from .sub_agent_spawner import (
 )
 
 __all__ = [
-    # Soul
-    "REQUIRED_SECTIONS",
-    "SoulConstitution",
-    "SoulIntegrityError",
-    # ContextMap
-    "CorpusNotFoundError",
-    "MaterializationError",
-    "ContextMapMaterializer",
-    "DbContextMap",
-    "RENDER_MODES",
     "DEFAULT_RENDER_MODE",
+    "DELEGATED_OUTPUT_BLOCKED",
+    "DELEGATED_OUTPUT_COMPLETED",
+    "DELEGATED_OUTPUT_FAILED",
+    "DELEGATED_STATUS_FAILED",
+    # SubAgentSpawner
+    "DELEGATED_STATUS_SUCCESS",
+    "DELEGATED_TO_EXTERNAL_STATUS",
+    "GOAL_STATUSES",
+    "GOAL_STATUS_BLOCKED",
     # EventRuntime — status
     "GOAL_STATUS_COMPLETED",
     "GOAL_STATUS_FAILED",
-    "GOAL_STATUS_BLOCKED",
     "GOAL_STATUS_TIMEOUT",
-    "GOAL_STATUSES",
     "GOAL_TO_DELEGATED_STATUS",
-    "DELEGATED_TO_EXTERNAL_STATUS",
     "GOAL_TO_EXTERNAL_STATUS",
-    "map_goal_status_to_delegated",
-    "map_delegated_to_external",
+    "RENDER_MODES",
+    # Soul
+    "REQUIRED_SECTIONS",
+    "ContextMapMaterializer",
+    # ContextMap
+    "CorpusNotFoundError",
+    "DbContextMap",
+    "DelegatedTaskOutput",
+    "DelegatedTaskResult",
+    "EventBus",
     # EventRuntime — protocols
     "EventHandler",
     "EventStore",
     "EventStoreError",
-    "EventBus",
-    "GoalRunner",
     # EventRuntime — data
     "Goal",
-    "GoalResult",
     "GoalExecutionError",
-    # SubAgentSpawner
-    "DELEGATED_STATUS_SUCCESS",
-    "DELEGATED_STATUS_FAILED",
-    "DELEGATED_OUTPUT_COMPLETED",
-    "DELEGATED_OUTPUT_FAILED",
-    "DELEGATED_OUTPUT_BLOCKED",
+    "GoalResult",
+    "GoalRunner",
+    "MaterializationError",
+    "SoulConstitution",
+    "SoulIntegrityError",
     "SubAgentSpawner",
-    "DelegatedTaskResult",
-    "DelegatedTaskOutput",
+    "map_delegated_to_external",
+    "map_goal_status_to_delegated",
 ]

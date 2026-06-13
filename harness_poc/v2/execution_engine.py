@@ -53,7 +53,7 @@ class ExecutionEngine:
     the "true" implementation state.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         db: BlackboardDatabase,
         spawner: SubAgentSpawner,
@@ -87,7 +87,7 @@ class ExecutionEngine:
         *,
         background: bool = False,
         session_id: str | None = None,
-        on_text: Callable[[str], None] | None = None,
+        on_text: Callable[[str], None] | None = None,  # noqa: ARG002
     ) -> dict[str, Any]:
         """Spawn a sub-agent for isolated execution.
 
@@ -111,9 +111,12 @@ class ExecutionEngine:
 
         if background:
             if len(self._bg_active) >= self._max_background:
-                raise SubAgentPoolFullError(
+                msg = (
                     f"Background pool full ({self._max_background} max). "
                     f"Active tasks: {sorted(self._bg_active)}"
+                )
+                raise SubAgentPoolFullError(
+                    msg
                 )
             logger.info(
                 "Background sub-agent queued: type=%s",
@@ -200,7 +203,8 @@ class ExecutionEngine:
                 passed=False,
                 detail=f"Test suite timed out after 120s: {exc}",
             )
-            raise GateFailureError("Deterministic gate timed out") from exc
+            msg = "Deterministic gate timed out"
+            raise GateFailureError(msg) from exc
         except FileNotFoundError:
             # uv not available — try python -m pytest directly
             try:
@@ -218,7 +222,8 @@ class ExecutionEngine:
                     passed=False,
                     detail=f"Test suite timed out after 120s: {exc}",
                 )
-                raise GateFailureError("Deterministic gate timed out") from exc
+                msg = "Deterministic gate timed out"
+                raise GateFailureError(msg) from exc
             except Exception as exc:
                 self._record_gate_event(
                     resolved_session,

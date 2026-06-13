@@ -52,7 +52,7 @@ class LlmWorker:
         self._system_prompt = system_prompt
         self._runtime = runtime
 
-    async def run(self, bus: Any, session_id: str) -> None:
+    async def run(self, bus: Any, session_id: str) -> None:  # noqa: ANN401
         """Run the LLM worker loop for a session.
 
         Listens via async session subscription and reacts to

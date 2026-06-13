@@ -44,7 +44,7 @@ def test_get_last_session_id(in_memory_engine: Engine) -> None:
     _utc_now() truncates to seconds, so we sleep to ensure distinct
     created_at values.
     """
-    import time  # noqa: PLC0415
+    import time
 
     db = BlackboardDatabase(in_memory_engine)
     db.start_session("First")

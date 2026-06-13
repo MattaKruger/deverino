@@ -3,9 +3,12 @@ from __future__ import annotations
 import shutil
 import subprocess
 import time
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from harness_poc.core.skills import SkillContext, SkillResult
+from harness_poc.core.skills import SkillResult
+
+if TYPE_CHECKING:
+    from harness_poc.core.skills import SkillContext
 
 SEARCH_MODES = {"hybrid", "semantic", "bm25"}
 DEFAULT_TOP_K = 5
@@ -121,7 +124,7 @@ def _find_related(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 # --------------------------------------------------------------------------- #
 
 
-def _run_semble(
+def _run_semble(  # noqa: PLR0911
     ctx: SkillContext, cmd: list[str], *, query: str
 ) -> SkillResult:
     binary = cmd[0]

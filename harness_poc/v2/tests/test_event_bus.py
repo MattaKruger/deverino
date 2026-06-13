@@ -162,7 +162,8 @@ class TestEventBusSubscribe:
         received: list[str] = []
 
         def crashy(event: AgentInputAdded) -> None:
-            raise RuntimeError("boom")
+            msg = "boom"
+            raise RuntimeError(msg)
 
         def safe(event: AgentInputAdded) -> None:
             received.append("safe")

@@ -10,10 +10,12 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, PromptedOutput
 
 from harness_poc.core.runtime import build_model, is_live_model
-from harness_poc.core.skills import SkillContext, SkillResult
+from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
+
+    from harness_poc.core.skills import SkillContext
 
 DRAFT_KEY_PREFIX = "rubric_draft"
 RUBRICS_DIR = Path("tests/bench/rubrics")

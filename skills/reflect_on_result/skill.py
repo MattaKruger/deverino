@@ -4,10 +4,11 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.runtime import build_model, chat_text
-from harness_poc.core.skills import SkillContext, SkillResult
+from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
     from harness_poc.core.runtime import Message
+    from harness_poc.core.skills import SkillContext
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:

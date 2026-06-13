@@ -42,7 +42,7 @@ class ToolWorker:
         self._on_call_started = on_call_started
         self._on_call_ended = on_call_ended
 
-    async def run(self, bus: Any, session_id: str) -> None:
+    async def run(self, bus: Any, session_id: str) -> None:  # noqa: ANN401
         """Run the tool worker loop for a session."""
         async for event in bus.subscribe_session(session_id):
             if isinstance(event, StreamPaused):

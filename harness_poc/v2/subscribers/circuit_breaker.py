@@ -31,7 +31,7 @@ class CircuitBreaker:
         self._max_retries = max_retries
         self._max_tokens = max_tokens
 
-    async def run(self, bus: Any, session_id: str) -> None:
+    async def run(self, bus: Any, session_id: str) -> None:  # noqa: ANN401
         """Run the circuit breaker loop for a session."""
         consecutive_failures = 0
         total_tokens = 0

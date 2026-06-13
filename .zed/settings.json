@@ -1,0 +1,27 @@
+{
+  "lsp": {
+    "ruff": {
+      "initialization_options": {
+        "settings": {
+          "lineLength": 100,
+          "configuration": "pyproject.toml"
+        }
+      }
+    }
+  },
+  "languages": {
+    "Python": {
+      "language_servers": ["ty", "ruff", "!basedpyright", "!pyright", "!pylsp"],
+      "formatter": {
+        "language_server": {
+          "name": "ruff"
+        }
+      },
+      "format_on_save": "on",
+      "code_actions_on_format": {
+        "source.fixAll.ruff": true,
+        "source.organizeImports.ruff": true
+      }
+    }
+  }
+}

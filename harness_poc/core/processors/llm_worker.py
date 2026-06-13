@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from harness_poc.core.storage import BlackboardDatabase
 
 
-async def run_llm_worker(
+async def run_llm_worker(  # noqa: PLR0913
     bus: EventBus,
     session_id: str,
     database: BlackboardDatabase,

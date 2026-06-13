@@ -340,7 +340,7 @@ class Parser:
 
     # -- top-level blocks ----------------------------------------------------
 
-    def _parse_top_level(self) -> Block:
+    def _parse_top_level(self) -> Block:  # noqa: PLR0911
         tok = self._peek
 
         if tok.type == "COMMENT":
@@ -384,7 +384,7 @@ class Parser:
         self._consume("SYMBOL", "}")
         return StrFragDef(name=name, params=params, body=body)
 
-    def _parse_str_frag_body_item(self) -> StrFragBodyItem:
+    def _parse_str_frag_body_item(self) -> StrFragBodyItem:  # noqa: PLR0911
         tok = self._peek
 
         if tok.type == "COMMENT":
@@ -429,7 +429,7 @@ class Parser:
         self._consume("SYMBOL", "}")
         return RoleFragDef(name=name, params=params, body=body)
 
-    def _parse_role_frag_body_item(self) -> RoleFragBodyItem:
+    def _parse_role_frag_body_item(self) -> RoleFragBodyItem:  # noqa: PLR0911
         tok = self._peek
 
         if tok.type == "COMMENT":
@@ -470,7 +470,7 @@ class Parser:
         self._consume("SYMBOL", "}")
         return PromptDef(name=name, indices=indices, body=body)
 
-    def _parse_prompt_body_item(self) -> PromptBodyItem:
+    def _parse_prompt_body_item(self) -> PromptBodyItem:  # noqa: PLR0911
         tok = self._peek
 
         if tok.type == "COMMENT":
@@ -573,7 +573,7 @@ class Parser:
         body = [self._parse_role_body_item_single_line()]
         return RoleMessage(role=role, body=body)
 
-    def _parse_role_body_item(self) -> RoleBodyItem:
+    def _parse_role_body_item(self) -> RoleBodyItem:  # noqa: PLR0911
         tok = self._peek
 
         if tok.type == "COMMENT":
@@ -782,7 +782,7 @@ class Parser:
                 break
         return args
 
-    def _parse_atom(self) -> Expression:
+    def _parse_atom(self) -> Expression:  # noqa: PLR0911
         """Parse a single expression atom — no BinaryOp postfix."""
         tok = self._peek
 

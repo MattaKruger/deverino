@@ -5,7 +5,6 @@ aliases, and normalize arguments — without touching the filesystem or
 executing any skills.
 """
 
-# ruff: noqa: ANN201
 
 import tempfile
 from pathlib import Path
@@ -19,7 +18,7 @@ from harness_poc.core.skills import SkillRunner
 # ---------------------------------------------------------------------------
 
 
-def _write_skill_file(
+def _write_skill_file(  # noqa: PLR0913
     directory: Path,
     name: str,
     *,

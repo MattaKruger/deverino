@@ -91,7 +91,7 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     return chunks
 
 
-def make_document_chunks(
+def make_document_chunks(  # noqa: PLR0913
     text: str,
     uri: str,
     title: str,

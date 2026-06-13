@@ -6,10 +6,13 @@ materialization pipeline defined in planning_specv2.md §4.
 
 from __future__ import annotations
 
-from typing import Any
-from uuid import UUID, uuid4
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 class Event(BaseModel):

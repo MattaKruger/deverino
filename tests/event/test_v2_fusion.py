@@ -306,7 +306,8 @@ class TestHandlerExceptionResilience:
         received: list[str] = []
 
         def crashy(event: WorkflowStarted) -> None:
-            raise RuntimeError("boom")
+            msg = "boom"
+            raise RuntimeError(msg)
 
         def safe(event: WorkflowStarted) -> None:
             received.append(event.workflow_id)
@@ -322,7 +323,8 @@ class TestHandlerExceptionResilience:
         bus = EventBus(EventStore(db_engine))
 
         def crashy(event: ProbeCompleted) -> None:
-            raise RuntimeError("boom")
+            msg = "boom"
+            raise RuntimeError(msg)
 
         bus.subscribe(ProbeCompleted, crashy)
         bus.publish(ProbeCompleted(session_id="s1", probe_id="p1"))
@@ -409,7 +411,7 @@ class TestSessionIsolation:
 class TestEventRegistryCompleteness:
     """All v2 event types are registered and constructable."""
 
-    def test_all_v2_events_in_registry(self):
+    def test_all_v2_events_in_registry(self) -> None:
         from harness_poc.core.events.events import EVENT_REGISTRY
 
         required = {
@@ -427,7 +429,7 @@ class TestEventRegistryCompleteness:
         missing = required - set(EVENT_REGISTRY.keys())
         assert not missing, f"Missing from EVENT_REGISTRY: {missing}"
 
-    def test_v2_events_constructable(self):
+    def test_v2_events_constructable(self) -> None:
         """Every v2 event constructs with session_id only (minimal args)."""
         events = [
             WorkflowStarted(session_id="s1", workflow_id="wf1"),

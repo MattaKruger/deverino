@@ -45,10 +45,12 @@ class SpawnerStreamingSpy:
         self.streaming_calls: list[dict] = []
 
     def spawn(self, task_spec: dict) -> DelegatedTaskResult:
-        raise NotImplementedError("sync spawn not used in streaming tests")
+        msg = "sync spawn not used in streaming tests"
+        raise NotImplementedError(msg)
 
     async def spawn_async(self, task_spec: dict) -> DelegatedTaskResult:
-        raise NotImplementedError("spawn_async not used in streaming tests")
+        msg = "spawn_async not used in streaming tests"
+        raise NotImplementedError(msg)
 
     async def spawn_streaming(
         self,

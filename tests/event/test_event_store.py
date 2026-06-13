@@ -59,7 +59,7 @@ def test_get_recent_events_returns_chronological_order(db_engine: Engine) -> Non
 def test_skips_unrecognized_event_type_and_continues(db_engine: Engine) -> None:
     store = _make_store(db_engine)
     # Inject a legacy row with unknown event_type directly via SQLModel
-    from datetime import UTC, datetime  # noqa: PLC0415
+    from datetime import UTC, datetime
 
     with Session(db_engine) as session:
         session.add(

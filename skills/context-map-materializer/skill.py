@@ -18,9 +18,7 @@ from harness_poc.core.context_map import (
     embed_single,
     run_distiller,
 )
-from harness_poc.core.context_map.schema import MapEntry
 from harness_poc.core.events import (
-    ContextMapEvent,
     MapEntryEvicted,
     MapEntryInserted,
 )
@@ -28,12 +26,16 @@ from harness_poc.core.runtime import build_model
 from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
+    from harness_poc.core.context_map.schema import MapEntry
+    from harness_poc.core.events import (
+        ContextMapEvent,
+    )
     from harness_poc.core.skills import SkillContext
 
 logger = logging.getLogger(__name__)
 
 
-async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
+async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noqa: PLR0912
     corpus_key = str(arguments.get("corpus_key") or "").strip()
     if not corpus_key:
         return SkillResult(

@@ -5,7 +5,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai.messages import (
-    ModelMessage,
     ModelMessagesTypeAdapter,
     ModelRequest,
     ToolReturnPart,
@@ -14,6 +13,10 @@ from pydantic_ai.messages import (
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from pydantic_ai.messages import (
+        ModelMessage,
+    )
 
 TOKEN_CHAR_RATIO = 4
 TOKENS_PER_MESSAGE = 3

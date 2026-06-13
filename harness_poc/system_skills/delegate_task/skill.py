@@ -8,12 +8,13 @@ from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 
 from harness_poc.core.runtime import build_model
-from harness_poc.core.skills import SkillContext, SkillResult
+from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from harness_poc.core.config import LLMConfig
+    from harness_poc.core.skills import SkillContext
 
 
 class DelegatedTaskOutput(BaseModel):
@@ -71,7 +72,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     )
 
 
-def _run_subagent(
+def _run_subagent(  # noqa: PLR0913
     *,
     persona_template: str,
     objective: str,

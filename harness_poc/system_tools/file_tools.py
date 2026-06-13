@@ -308,7 +308,7 @@ def _lint_file(path: str, content: str) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
-def _fuzzy_find_and_replace(  # noqa: PLR0912
+def _fuzzy_find_and_replace(  # noqa: PLR0911, PLR0912
     content: str,
     old_string: str,
     new_string: str,
@@ -396,7 +396,7 @@ def _fuzzy_find_and_replace(  # noqa: PLR0912
 # ---------------------------------------------------------------------------
 
 
-def read_file(
+def read_file(  # noqa: PLR0911
     path: str,
     offset: int = 1,
     limit: int = 500,
@@ -552,7 +552,7 @@ def write_file(
     return result
 
 
-def patch(
+def patch(  # noqa: PLR0911
     path: str,
     old_string: str,
     new_string: str,
@@ -660,7 +660,7 @@ def search_files(  # noqa: PLR0913
     )
 
 
-def _search_files_by_content(  # noqa: PLR0912
+def _search_files_by_content(  # noqa: PLR0912, PLR0913
     pattern: str,
     path: str,
     file_glob: str | None,

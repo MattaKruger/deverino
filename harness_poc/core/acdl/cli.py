@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from rich.markup import escape as _rich_escape
 
 from harness_poc.console import console
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _index_to_str(idx: object) -> str:
@@ -127,19 +129,17 @@ def inspect_acdl(
                 params_str = _rich_escape(params_str)
                 console.print(f"  {f.name}{params_str}  ([italic]{len(f.body)} items[/italic])")
 
-    if show_all or prompts_only:
-        if prompts:
-            console.print("\n[bold]Prompt definitions:[/bold]")
-            for p in prompts:
-                idx_parts: list[str] = []
-                for i in p.indices:
-                    idx_parts.append(_index_to_str(i))
-                idx_str = f"[{', '.join(idx_parts)}]" if idx_parts else ""
-                idx_str = _rich_escape(idx_str)
-                console.print(f"  {p.name}{idx_str}  ([italic]{len(p.body)} items[/italic])")
+    if (show_all or prompts_only) and prompts:
+        console.print("\n[bold]Prompt definitions:[/bold]")
+        for p in prompts:
+            idx_parts: list[str] = [
+                _index_to_str(i) for i in p.indices
+            ]
+            idx_str = f"[{', '.join(idx_parts)}]" if idx_parts else ""
+            idx_str = _rich_escape(idx_str)
+            console.print(f"  {p.name}{idx_str}  ([italic]{len(p.body)} items[/italic])")
 
-    if show_all or namespaces_only:
-        if namespaces:
-            console.print("\n[bold]Namespace blocks:[/bold]")
-            for ns in namespaces:
-                console.print(f"  {ns.name}  ([italic]{len(ns.bindings)} bindings[/italic])")
+    if (show_all or namespaces_only) and namespaces:
+        console.print("\n[bold]Namespace blocks:[/bold]")
+        for ns in namespaces:
+            console.print(f"  {ns.name}  ([italic]{len(ns.bindings)} bindings[/italic])")

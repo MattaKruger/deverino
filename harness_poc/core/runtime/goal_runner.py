@@ -16,7 +16,6 @@ from pydantic_ai import Agent, PromptedOutput
 
 from harness_poc.core.events import (
     AgentStarted,
-    BaseEvent,
     GoalEvaluated,
     LLMTextEmitted,
     SkillCalled,
@@ -33,6 +32,9 @@ if TYPE_CHECKING:
     from pydantic_ai.models import Model
 
     from harness_poc.app_factory import AppState
+    from harness_poc.core.events import (
+        BaseEvent,
+    )
     from harness_poc.core.runtime.llm_client import Message
 
 _encoder_cache: dict[str, tiktoken.Encoding] = {}

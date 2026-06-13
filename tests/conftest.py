@@ -57,7 +57,7 @@ def in_memory_engine() -> Engine:
     # Import database to ensure all SQLModel table classes are registered
     # before create_all runs. Without this, SQLModel.metadata is empty and
     # no tables are created in the in-memory database.
-    import harness_poc.core.storage.database  # noqa: F401, PLC0415 — triggers model registration
+    import harness_poc.core.storage.database  # noqa: F401 — triggers model registration
 
     engine = create_engine(
         "sqlite:///:memory:",

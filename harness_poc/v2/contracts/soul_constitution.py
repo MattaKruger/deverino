@@ -32,7 +32,7 @@ REQUIRED_SECTIONS: set[str] = {
 class SoulIntegrityError(ValueError):
     """Raised when a soul.md fails validation against REQUIRED_SECTIONS."""
 
-    def __init__(self, missing: set[str], extra: set[str] = None):
+    def __init__(self, missing: set[str], extra: set[str] | None = None) -> None:
         self.missing = missing or set()
         self.extra = extra or set()
         msg = f"Soul integrity error: missing sections={sorted(self.missing)}"

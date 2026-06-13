@@ -22,7 +22,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, cast
 
-from harness_poc.core.skills import CancellationToken, SkillResult, SkillStatus
+from harness_poc.core.skills import CancellationToken, SkillResult
 from harness_poc.core.tools.tool_context import ToolContext
 from harness_poc.core.tools.tool_result import ToolResult
 
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from harness_poc.core.config import HarnessConfig, RuntimeConfig
-    from harness_poc.core.skills import SkillRunner
+    from harness_poc.core.skills import SkillRunner, SkillStatus
     from harness_poc.core.storage import BlackboardAccessProxy
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,7 @@ class ToolRunner:
     # Execution
     # ------------------------------------------------------------------
 
-    def execute_tool(
+    def execute_tool(  # noqa: PLR0911
         self,
         tool_name: str,
         arguments: dict[str, Any],
@@ -179,7 +179,7 @@ class ToolRunner:
                 ctx = ToolContext(
                     session_id=session_id,
                     project_root=self._project_root,
-                    database=self._database,
+                    database=self._database,  # ty: ignore
                     runtime_config=self._runtime_config,
                     cancellation=token,
                     system_prompt=self.system_prompt,
@@ -324,7 +324,7 @@ def _accepts_context(handler: object) -> bool:
     """Return True if ``handler`` accepts a ``ToolContext`` first argument."""
     try:
         sig = inspect.signature(cast("Callable[..., object]", handler))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return False
     params = list(sig.parameters.values())
     if not params:
@@ -342,7 +342,7 @@ def _accepts_context(handler: object) -> bool:
 def _accepts_cancellation(handler: object) -> bool:
     try:
         sig = inspect.signature(cast("Callable[..., object]", handler))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return False
     return "cancellation" in sig.parameters
 

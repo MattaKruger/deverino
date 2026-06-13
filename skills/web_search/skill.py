@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from harness_poc.core.skills import SkillContext, SkillResult
+from harness_poc.core.skills import SkillResult
+
+if TYPE_CHECKING:
+    from harness_poc.core.skills import SkillContext
 
 LANGSEARCH_API_BASE = "https://api.langsearch.com/v1/web-search"
 MAX_RESULTS = 20
@@ -42,7 +45,7 @@ class LangSearchSettings(BaseSettings):
         return cls(_env_file=env_path)  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
 
 
-def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
+def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noqa: PLR0911
     query = str(arguments.get("query") or "").strip()
     if not query:
         msg = "web_search requires a query string"

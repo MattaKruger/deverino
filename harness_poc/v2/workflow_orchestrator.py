@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # Error types
 # ---------------------------------------------------------------------------
 
+
 class WorkflowError(RuntimeError):
     """Raised when the workflow orchestrator cannot complete an operation."""
 
@@ -52,6 +53,7 @@ class GateRejectedError(WorkflowError):
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ProbeResult:
@@ -116,6 +118,7 @@ class WorkflowResult:
 # ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
+
 
 class WorkflowOrchestrator:
     """Orchestrates the Exploration → Execution → Review lifecycle.
@@ -327,7 +330,7 @@ class WorkflowOrchestrator:
                 probe_id=probe_id,
                 success=True,
                 exit_code=exit_code,
-                stdout=stdout,
+                stdout=stdout,  # ty: ignore
                 stderr=stderr,
             )
 
@@ -348,7 +351,7 @@ class WorkflowOrchestrator:
             probe_id=probe_id,
             success=False,
             exit_code=exit_code,
-            stdout=stdout,
+            stdout=stdout,  # ty: ignore
             stderr=stderr,
             context_delta=context_delta,
             discovered_constraints=context_delta.get("discovered_constraints", []),
@@ -394,9 +397,7 @@ class WorkflowOrchestrator:
                     session_id=session_id,
                 )
             except Exception as exc:
-                logger.exception(
-                    "Sub-agent spawn failed for type=%s: %s", agent_type, exc
-                )
+                logger.exception("Sub-agent spawn failed for type=%s", agent_type)
                 sub_results.append(
                     SubAgentResult(
                         task_id="error",
@@ -473,7 +474,7 @@ class WorkflowOrchestrator:
                 session_id=session_id,
             )
         except Exception as exc:
-            logger.exception("Review gate raised: %s", exc)
+            logger.exception("Review gate raised")
             return GateResult(
                 gate_id=gate_id,
                 passed=False,
@@ -482,7 +483,7 @@ class WorkflowOrchestrator:
 
         # Extract test count from the materialized map
         test_count = 0
-        snapshot = self._execution._db.get_materialized_context_map(self._project_id)
+        snapshot = self._execution._db.get_materialized_context_map(self._project_id)  # noqa: SLF001
         if snapshot:
             verified = snapshot.get("verified_state", {})
             test_count = verified.get("test_count", 0)

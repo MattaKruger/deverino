@@ -30,7 +30,7 @@ GoalEvaluated, not SkillCalled. Do not include it in
 assert_skill_order().
 """
 
-# ruff: noqa: ANN201, FBT003
+# ruff: noqa: FBT003
 
 from tests.agent.harness import SessionHarness
 from tests.helpers import (

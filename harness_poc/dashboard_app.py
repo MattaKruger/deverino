@@ -98,12 +98,9 @@ def _register_callbacks(engine: Engine) -> None:
     def update_dashboard(_: int) -> tuple[Any, ...]:
         snapshot = fetch_dashboard_snapshot(engine)
         data = snapshot_to_dict(snapshot)
-        corpus_options = [
-            {"label": key, "value": key} for key in fetch_corpus_keys(engine)
-        ]
+        corpus_options = [{"label": key, "value": key} for key in fetch_corpus_keys(engine)]
         session_options = [
-            {"label": label, "value": sid}
-            for sid, label in fetch_session_ids(engine)
+            {"label": label, "value": sid} for sid, label in fetch_session_ids(engine)
         ]
         return (
             _summary_cards(data["summary"]),
@@ -337,7 +334,7 @@ def _session_inspector_tab() -> list:
                         "maxWidth": "400px",
                     },
                     style_header={"fontWeight": "600", "backgroundColor": "#f2f5f8"},
-                    style_data_conditional=[
+                    style_data_conditional=[  # ty: ignore
                         {
                             "if": {
                                 "filter_query": (
@@ -345,22 +342,21 @@ def _session_inspector_tab() -> list:
                                     ' || {status} = "cancelled"'
                                 ),
                             },
-                            "backgroundColor": "#fee2e2",
+                            "backgroundColor": "#fee2e2",  # ty: ignore
                         },
                         {
                             "if": {
                                 "filter_query": '{event_type} = "StreamPaused"',
                             },
-                            "backgroundColor": "#fef9c3",
+                            "backgroundColor": "#fef9c3",  # ty: ignore
                         },
                         {
                             "if": {
                                 "filter_query": (
-                                    '{event_type} = "SkillCompleted"'
-                                    ' && {status} = "success"'
+                                    '{event_type} = "SkillCompleted" && {status} = "success"'
                                 ),
                             },
-                            "backgroundColor": "#dcfce7",
+                            "backgroundColor": "#dcfce7",  # ty: ignore
                         },
                     ],
                 ),
@@ -435,8 +431,16 @@ def _session_timeline_figure(rows: list[dict[str, Any]]) -> go.Figure:
 
     event_types = sorted({r["event_type"] for r in rows})
     palette = [
-        "#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed",
-        "#0891b2", "#be185d", "#64748b", "#059669", "#b45309",
+        "#2563eb",
+        "#16a34a",
+        "#dc2626",
+        "#d97706",
+        "#7c3aed",
+        "#0891b2",
+        "#be185d",
+        "#64748b",
+        "#059669",
+        "#b45309",
     ]
     color_map = {et: palette[i % len(palette)] for i, et in enumerate(event_types)}
 
@@ -599,8 +603,15 @@ def _map_priority_scatter_figure(rows: list[dict[str, Any]]) -> go.Figure:
 
     obs_types = sorted({r["observation_type"] for r in rows})
     palette = [
-        "#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed",
-        "#0891b2", "#be185d", "#64748b", "#059669",
+        "#2563eb",
+        "#16a34a",
+        "#dc2626",
+        "#d97706",
+        "#7c3aed",
+        "#0891b2",
+        "#be185d",
+        "#64748b",
+        "#059669",
     ]
     color_map = {ot: palette[i % len(palette)] for i, ot in enumerate(obs_types)}
 
@@ -657,8 +668,15 @@ def _map_stickiness_figure(rows: list[dict[str, Any]]) -> go.Figure:
     top = list(reversed(top))  # horizontal bar reads bottom-to-top
 
     palette = [
-        "#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed",
-        "#0891b2", "#be185d", "#64748b", "#059669",
+        "#2563eb",
+        "#16a34a",
+        "#dc2626",
+        "#d97706",
+        "#7c3aed",
+        "#0891b2",
+        "#be185d",
+        "#64748b",
+        "#059669",
     ]
     obs_types = sorted({r["observation_type"] for r in top})
     color_map = {ot: palette[i % len(palette)] for i, ot in enumerate(obs_types)}

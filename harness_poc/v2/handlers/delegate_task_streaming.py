@@ -9,32 +9,39 @@ This is the implementation of Gap 10a from the spec-to-code gap analysis.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.events.event_bus import EventBus
 from harness_poc.core.events.events import DelegateTaskCompleted
 from harness_poc.v2.contracts import (
     DELEGATED_STATUS_SUCCESS,
     DelegatedTaskOutput,
-    DelegatedTaskResult,
-    SubAgentSpawner,
     map_delegated_to_external,
 )
 from harness_poc.v2.handlers.delegate_task_handler import (
     REQUIRED_ARGS,
-    BlackboardWriter,
     DelegateTaskResult,
     SpawnerFailureError,
     _build_task_spec,
     _validate_args,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from harness_poc.core.events.event_bus import EventBus
+    from harness_poc.v2.contracts import (
+        DelegatedTaskResult,
+        SubAgentSpawner,
+    )
+    from harness_poc.v2.handlers.delegate_task_handler import (
+        BlackboardWriter,
+    )
+
 # ---------------------------------------------------------------------------
 # Core handler
 # ---------------------------------------------------------------------------
 
-async def _handle_delegate_task_streaming(
+async def _handle_delegate_task_streaming(  # noqa: PLR0913
     *,
     spawner: SubAgentSpawner,
     event_bus: EventBus,
@@ -99,9 +106,12 @@ async def _handle_delegate_task_streaming(
     except Exception as exc:
         if on_text:
             on_text(f"[{task_spec['task_id']}] Error: {exc}")
-        raise SpawnerFailureError(
+        msg = (
             f"SubAgentSpawner.spawn_streaming() raised "
             f"{type(exc).__name__}: {exc}"
+        )
+        raise SpawnerFailureError(
+            msg
         ) from exc
 
     # ---- Step 5: map status → output label ---------------------------

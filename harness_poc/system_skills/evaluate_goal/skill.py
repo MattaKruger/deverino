@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.skills import SkillContext, SkillResult
+from harness_poc.core.skills import SkillResult
+
+if TYPE_CHECKING:
+    from harness_poc.core.skills import SkillContext
 
 
 def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:

@@ -5,18 +5,17 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from rich.table import Table
 
-from harness_poc.app_factory import STARTUP_ERRORS, AppState, build_app_state
+from harness_poc.app_factory import STARTUP_ERRORS, build_app_state
 from harness_poc.console import console, print_error, print_text
 from harness_poc.core.acdl.cli import acdl_app
 from harness_poc.core.config import HarnessConfig
 from harness_poc.core.events import (
     AgentInputAdded,
-    BaseEvent,
     GoalEvaluated,
     LLMActionEmitted,
     LLMTextEmitted,
@@ -28,7 +27,6 @@ from harness_poc.core.events import (
     render_event_log_row,
 )
 from harness_poc.core.observability import (
-    DashboardSnapshot,
     fetch_dashboard_snapshot,
     snapshot_to_dict,
 )
@@ -50,7 +48,6 @@ from harness_poc.repl import (
     show_skill,
     show_state,
 )
-from harness_poc.v2.runtime import V2Runtime
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +55,15 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from sqlalchemy import Engine
+
+    from harness_poc.app_factory import AppState
+    from harness_poc.core.events import (
+        BaseEvent,
+    )
+    from harness_poc.core.observability import (
+        DashboardSnapshot,
+    )
+    from harness_poc.v2.runtime import V2Runtime
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,7 +192,7 @@ def repl(
 
 
 @app.command("run")
-def run_command(
+def run_command(  # noqa: PLR0913
     objective: Annotated[
         str,
         typer.Argument(help="The goal/spec to execute."),
@@ -254,7 +260,7 @@ def _resolve_resume(resume: str | None, resume_last: bool) -> str | None:  # noq
         return resume
     if resume_last:
         config = HarnessConfig.load()
-        from harness_poc.core.storage import create_db_engine  # noqa: PLC0415
+        from harness_poc.core.storage import create_db_engine
 
         db = BlackboardDatabase(create_db_engine(config.runtime.database_url))
         db.create_tables()
@@ -279,7 +285,7 @@ def _validate_corpus(corpus: str | None) -> str | None:
     # Soft warning, not a hard fail — unknown keys are allowed so the agent
     # can bootstrap a new corpus by observing into it.
     config = HarnessConfig.load()
-    from harness_poc.core.storage import create_db_engine  # noqa: PLC0415
+    from harness_poc.core.storage import create_db_engine
 
     db = BlackboardDatabase(create_db_engine(config.runtime.database_url))
     db.create_tables()
@@ -506,7 +512,7 @@ def goal(
     """Run an autonomous event-sourced goal execution loop."""
     app_state = _new_app_state()
     try:
-        from harness_poc.app_factory import bootstrap_document_index  # noqa: PLC0415
+        from harness_poc.app_factory import bootstrap_document_index
 
         bootstrap_document_index(app_state.config, app_state.database)
 
@@ -617,7 +623,7 @@ async def _run_event_sourced_goal(
 
 
 @app.command("events")
-def events_log(
+def events_log(  # noqa: PLR0913
     session_id: Annotated[
         str | None,
         typer.Option(
@@ -682,7 +688,7 @@ def events_log(
     """Observe processor events written to the durable event log."""
     try:
         config = HarnessConfig.load()
-        from harness_poc.core.storage import create_db_engine  # noqa: PLC0415
+        from harness_poc.core.storage import create_db_engine
 
         _print_events_log(
             EventLogOptions(
@@ -754,7 +760,7 @@ def dashboard_summary(
     """Print a lightweight dashboard snapshot in the terminal."""
     try:
         config = HarnessConfig.load()
-        from harness_poc.core.storage import create_db_engine  # noqa: PLC0415
+        from harness_poc.core.storage import create_db_engine
 
         snapshot = fetch_dashboard_snapshot(create_db_engine(config.runtime.database_url))
     except Exception as exc:
@@ -781,7 +787,7 @@ def dashboard_serve(
     """Serve the read-only Dash dashboard."""
     try:
         config = HarnessConfig.load()
-        from harness_poc.dashboard_app import create_dashboard_app  # noqa: PLC0415
+        from harness_poc.dashboard_app import create_dashboard_app
 
         console.print(f"Dashboard: http://{host}:{port}")
         dash_app = create_dashboard_app(config.runtime.database_url)
@@ -1190,7 +1196,7 @@ def v2_context(
 
 
 @v2_app.command("run")
-def v2_run(
+def v2_run(  # noqa: PLR0913
     objective: Annotated[
         str,
         typer.Argument(help="The goal/spec to execute."),
@@ -1374,7 +1380,7 @@ def _run_v2_context(app_state: AppState, persona: str) -> None:
         print_error(f"Could not materialize context for persona '{persona}'.")
 
 
-def _run_v2_mode(
+def _run_v2_mode(  # noqa: PLR0913
     app_state: AppState,
     *,
     objective: str,
@@ -1392,7 +1398,7 @@ def _run_v2_mode(
     """
     runtime = app_state.v2_runtime
     if runtime is None:
-        from harness_poc.v2.wiring import build_v2_runtime  # noqa: PLC0415
+        from harness_poc.v2.wiring import build_v2_runtime
 
         runtime = build_v2_runtime(app_state.identity, app_state.config, mode=mode)
 
@@ -1456,8 +1462,10 @@ def _run_v2_pipeline_mode(
     else:
         spec = {"goal": objective, "tasks": []}
 
-    probe_code = cast("str | None", spec.get("probe"))
-    workspace_path = cast("str | None", spec.get("workspace"))
+    _probe_raw = spec.get("probe")
+    probe_code = _probe_raw if isinstance(_probe_raw, str) else None
+    _ws_raw = spec.get("workspace")
+    workspace_path = _ws_raw if isinstance(_ws_raw, str) else None
 
     # Subscribe progress handlers so the user sees step-by-step output.
     # The pipeline runs synchronously within bus.publish(), so these
@@ -1517,14 +1525,14 @@ def _run_v2_pipeline_mode(
     )
 
 
-async def _run_v2_react_mode(
+async def _run_v2_react_mode(  # noqa: PLR0913
     runtime: V2Runtime,
     *,
     app_state: AppState,
     objective: str,
     max_iterations: int,
     max_seconds: float | None,
-    max_tokens: int | None,
+    max_tokens: int | None,  # noqa: ARG001
 ) -> None:
     """Run the v2 ReAct mode using the v2 subscribers."""
     bus = runtime.bus
@@ -1552,10 +1560,10 @@ async def _run_v2_react_mode(
         output_parts.append(event.content)
         terminal_event.set()
 
-    def on_pause(event: StreamPaused) -> None:
+    def on_pause(_event: StreamPaused) -> None:
         terminal_event.set()
 
-    def on_goal(event: GoalEvaluated) -> None:
+    def on_goal(_event: GoalEvaluated) -> None:
         terminal_event.set()
 
     # Progress output — surface what the agent is doing

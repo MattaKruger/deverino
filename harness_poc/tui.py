@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from textual.app import App, Binding, ComposeResult
+from textual.app import App, Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Markdown, OptionList, Static, TextArea
 
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from collections.abc import Coroutine
 
     from textual import events
+    from textual.app import ComposeResult
     from textual.timer import Timer
 
     from harness_poc.app_factory import AppState

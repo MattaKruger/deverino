@@ -13,13 +13,15 @@ from __future__ import annotations
 
 import logging
 import uuid
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from harness_poc.core.events.events import BaseEvent, ContextWarmed, ProbeFailed
+from harness_poc.core.events.events import ContextWarmed, ProbeFailed
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from harness_poc.core.events.event_bus import EventBus
+    from harness_poc.core.events.events import BaseEvent
     from harness_poc.core.storage.database import BlackboardDatabase
     from harness_poc.v2.contracts.context_map_pipeline import ContextMapMaterializer
 
@@ -45,7 +47,7 @@ class ContextEngine:
         SOUL.md → Unified Persona (persona + pedagogy) → Materialized Context Map
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         db: BlackboardDatabase,
         materializer: ContextMapMaterializer,
@@ -110,8 +112,9 @@ class ContextEngine:
         try:
             db_map = self._materializer.materialize(corpus_path)
         except Exception as exc:
+            msg = f"Context map materialization failed for corpus '{corpus_path}': {exc}"
             raise ContextEngineError(
-                f"Context map materialization failed for corpus '{corpus_path}': {exc}"
+                msg
             ) from exc
 
         # Step 5: unify persona + pedagogy into a filtering lens
@@ -233,16 +236,18 @@ class ContextEngine:
         """Load a persona markdown file from the personas directory."""
         persona_path = self._personas_dir / f"{persona_id}.md"
         if not persona_path.exists():
+            msg = f"Persona '{persona_id}' not found at {persona_path}"
             raise PersonaNotFoundError(
-                f"Persona '{persona_id}' not found at {persona_path}"
+                msg
             )
         return persona_path.read_text(encoding="utf-8")
 
     def _load_pedagogy(self) -> str:
         """Load the developer-pedagogy profile."""
         if not self._pedagogy_path.exists():
+            msg = f"Developer pedagogy profile not found at {self._pedagogy_path}"
             raise PedagogyNotFoundError(
-                f"Developer pedagogy profile not found at {self._pedagogy_path}"
+                msg
             )
         return self._pedagogy_path.read_text(encoding="utf-8")
 
@@ -328,11 +333,10 @@ class ContextEngine:
     @staticmethod
     def _format_working_context(ctx: dict[str, Any]) -> str:
         """Render working context as a compact summary block."""
-        lines: list[str] = []
-        # Only surface the most relevant keys
         relevant = {"corpus", "goal", "session_id", "active_skill", "constraints"}
-        for k in sorted(relevant & set(ctx)):
-            lines.append(f"  {k}: {ctx[k]}")
+        lines: list[str] = [
+            f"  {k}: {ctx[k]}" for k in sorted(relevant & set(ctx))
+        ]
         return "\n".join(lines)
 
     def _extract_constraints(

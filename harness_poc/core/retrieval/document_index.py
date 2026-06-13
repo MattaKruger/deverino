@@ -5,7 +5,7 @@ import hashlib
 import logging
 import re
 import threading
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +18,8 @@ from harness_poc.core.storage import DbDocumentChunk, DbDocumentSource
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from concurrent.futures import Future
+
     from harness_poc.core.config import RetrievalConfig
     from harness_poc.core.retrieval.embedder import TextEmbedder
     from harness_poc.core.retrieval.retrieval import VespaDocumentClient
@@ -267,7 +269,7 @@ class DocumentIndexer:
     # Per-file indexing (thread-safe — only touches its own file's data)
     # ------------------------------------------------------------------
 
-    def _index_one_isolated(
+    def _index_one_isolated(  # noqa: PLR0911 PLR0912
         self,
         file_path: Path,
         uri: str,
@@ -567,7 +569,7 @@ def _infer_kind(uri: str) -> str:
     return "source"
 
 
-def _make_db_source(
+def _make_db_source(  # noqa: PLR0913
     source_id: str,
     uri: str,
     content_hash: str,

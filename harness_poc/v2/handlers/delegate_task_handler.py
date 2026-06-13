@@ -11,18 +11,22 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from harness_poc.core.events.event_bus import EventBus
 from harness_poc.core.events.events import DelegateTaskCompleted
 from harness_poc.v2.contracts import (
     DELEGATED_STATUS_SUCCESS,
     DelegatedTaskOutput,
-    DelegatedTaskResult,
-    # Errors
-    SubAgentSpawner,
     map_delegated_to_external,
 )
+
+if TYPE_CHECKING:
+    from harness_poc.core.events.event_bus import EventBus
+    from harness_poc.v2.contracts import (
+        DelegatedTaskResult,
+        # Errors
+        SubAgentSpawner,
+    )
 
 # ---------------------------------------------------------------------------
 # Blackboard write protocol (testability seam)
@@ -86,7 +90,7 @@ REQUIRED_ARGS = frozenset({"persona", "objective"})
 # Core handler
 # ---------------------------------------------------------------------------
 
-def _handle_delegate_task(
+def _handle_delegate_task(  # noqa: PLR0913
     *,
     spawner: SubAgentSpawner,
     event_bus: EventBus,
@@ -135,8 +139,9 @@ def _handle_delegate_task(
     try:
         raw: DelegatedTaskResult = spawner.spawn(task_spec)
     except Exception as exc:
+        msg = f"SubAgentSpawner.spawn() raised {type(exc).__name__}: {exc}"
         raise SpawnerFailureError(
-            f"SubAgentSpawner.spawn() raised {type(exc).__name__}: {exc}"
+            msg
         ) from exc
 
     # ---- Step 4: map status → output label ---------------------------
@@ -188,8 +193,9 @@ def _validate_args(arguments: dict[str, Any], required: frozenset[str]) -> None:
     """Check that every required key is present and non-empty."""
     missing = [k for k in required if k not in arguments or not arguments[k]]
     if missing:
+        msg = f"Missing required argument(s): {', '.join(missing)}"
         raise MalformedArgumentsError(
-            f"Missing required argument(s): {', '.join(missing)}"
+            msg
         )
 
 
@@ -214,7 +220,7 @@ def _build_summary(raw: DelegatedTaskResult) -> str:
     return f"Task {raw.task_id} failed: {err}"
 
 
-def _truncate(value: Any, max_len: int) -> str:
+def _truncate(value: Any, max_len: int) -> str:  # noqa: ANN401
     """Safe string truncation for summary generation."""
     if value is None:
         return "<no output>"

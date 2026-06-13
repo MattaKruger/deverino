@@ -94,7 +94,7 @@ class TextEmbedder:
             return np.empty((0, self.dim), dtype=np.float32)
         model = self.model
         # SentenceTransformer.encode returns a numpy array.
-        embeddings: NDArray[np.float32] = model.encode(  # type: ignore[union-attr]
+        embeddings: NDArray[np.float32] = model.encode(  # ty: ignore
             list(texts),
             batch_size=32,
             show_progress_bar=False,

@@ -1,6 +1,6 @@
 """Tests for GoalRunner, database event methods, evaluate_goal skill, and CLI/REPL integration."""
 
-# ruff: noqa: FBT003, PLC0415
+# ruff: noqa: FBT003
 
 from __future__ import annotations
 

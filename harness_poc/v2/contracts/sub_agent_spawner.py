@@ -18,9 +18,11 @@ The mapping from DelegatedTaskResult → DelegatedTaskOutput is:
                                             if original goal was "blocked")
 """
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # ---------------------------------------------------------------------------
 # Status constants
@@ -53,12 +55,15 @@ class DelegatedTaskResult:
     raw_output: Any = None
     error: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.status not in (DELEGATED_STATUS_SUCCESS, DELEGATED_STATUS_FAILED):
-            raise ValueError(
+            msg = (
                 f"DelegatedTaskResult.status must be "
                 f"'{DELEGATED_STATUS_SUCCESS}' or '{DELEGATED_STATUS_FAILED}', "
                 f"got '{self.status}'"
+            )
+            raise ValueError(
+                msg
             )
 
 
@@ -76,16 +81,19 @@ class DelegatedTaskOutput:
     raw_output: Any = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         valid = {
             DELEGATED_OUTPUT_COMPLETED,
             DELEGATED_OUTPUT_FAILED,
             DELEGATED_OUTPUT_BLOCKED,
         }
         if self.output_label not in valid:
-            raise ValueError(
+            msg = (
                 f"DelegatedTaskOutput.output_label must be one of "
                 f"{sorted(valid)}, got '{self.output_label}'"
+            )
+            raise ValueError(
+                msg
             )
 
 

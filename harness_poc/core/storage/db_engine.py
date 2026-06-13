@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from sqlalchemy import Engine, create_engine
+from typing import TYPE_CHECKING
+
+from sqlalchemy import create_engine
 from sqlalchemy import event as sa_event
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
 
 
 def create_db_engine(database_url: str) -> Engine:
@@ -27,7 +32,7 @@ def create_db_engine(database_url: str) -> Engine:
 def _register_pgvector() -> None:
     """Register pgvector adapter for psycopg2 so vector columns serialize correctly."""
     try:
-        from pgvector.psycopg2 import register_vector_adapter  # noqa: PLC0415
+        from pgvector.psycopg2 import register_vector_adapter  # noqa: PLC0415  # ty: ignore
 
         register_vector_adapter()
     except ImportError:

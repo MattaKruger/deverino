@@ -46,9 +46,9 @@ def _setup_extractor_test(
     monkeypatch.setattr(pydantic_runtime_mod, "is_live_model", lambda _model: live)
 
     def _fake_chat_text(
-        messages: object,  # noqa: ARG001
+        messages: object,
         *,
-        model: object,  # noqa: ARG001
+        model: object,
     ) -> str:
         return fake_output
 

@@ -4,7 +4,6 @@ LLMResponse, Message, ToolCall, and Usage are the fundamental types
 that every LLM interaction flows through.
 """
 
-# ruff: noqa: ANN201
 
 from dataclasses import FrozenInstanceError
 
