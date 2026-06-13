@@ -1,0 +1,34 @@
+# Sample pipeline spec — demonstrates the three-step workflow.
+#
+# Usage:
+#   harness-poc v2 run --mode pipeline --spec specs/sample.yaml "validate the harness"
+#
+# The pipeline runs three steps:
+#   1. Probe: Execute probe_code in a sandbox. Failure discovers constraints.
+#   2. Execution: Spawn sub-agents for each task in the tasks list.
+#   3. Gate: Run pytest in the workspace. Only verified code enters the context map.
+
+# Step 1: Fail-Fast Probe — Python code executed in an isolated sandbox.
+# If the code succeeds (exit 0), the probe passes and no constraints are discovered.
+# If the code fails, stderr is parsed for constraints (missing deps, type errors, etc).
+probe: |
+  import sys
+  # A trivial probe that always passes
+  print("Probe: sandbox is working correctly")
+  print(f"Python version: {sys.version}")
+
+# Step 2: Spec Execution — tasks dispatched to sub-agents via the delegate_task handler.
+# Each task requires agent_type (persona) and objective (what to accomplish).
+tasks:
+  - agent_type: coder
+    objective: Verify that the harness_poc/v2 module imports cleanly
+    context: The v2 module contains the event bus, pipeline, and ReAct mode subscribers.
+
+  - agent_type: reviewer
+    objective: Review the harness_poc/v2/events.py file for event type consistency
+    context: All event type strings must be defined in the ALL_EVENT_TYPES frozenset.
+
+# Step 3: Deterministic Review Gate — runs pytest in the workspace.
+# On pass: the materialized context map is refreshed with verified state.
+# On fail: the gate rejects and the context map is NOT updated.
+workspace: "."

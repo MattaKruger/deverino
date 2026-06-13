@@ -1,12 +1,12 @@
-"""Tests for the v2 EventBus adapter and pub/sub dispatch.
+"""Tests for the v1 EventBus pub/sub dispatch used by v2 engines.
 
-Verifies Phase 2a acceptance criteria:
-  - publish persists events
-  - subscribe fires handlers on matching events
+Verifies:
+  - publish persists events via EventStore
+  - subscribe fires handlers on matching event types
   - unsubscribe removes handlers
   - async session subscriptions work for ReAct mode
 
-Uses an in-memory database spy so tests run fast without PostgreSQL.
+Uses typed BaseEvent instances through the v1 EventBus.
 """
 
 from __future__ import annotations
@@ -16,45 +16,48 @@ from typing import Any
 
 import pytest
 
+from harness_poc.core.events.events import (
+    AgentInputAdded,
+    ExecutionCompleted,
+    ProbeCompleted,
+    ProbeFailed,
+    WorkflowStarted,
+)
 
 # ---------------------------------------------------------------------------
 # Test doubles
 # ---------------------------------------------------------------------------
 
 
-class DatabaseSpy:
-    """Records db.append_context_event calls for assertion."""
+class EventStoreSpy:
+    """Records persisted events for assertion."""
 
     def __init__(self) -> None:
-        self.events: list[dict] = []
-        self._event_id = 1
+        self.events: list[Any] = []
 
-    def append_context_event(
-        self,
-        session_id: str,
-        team_member: str,
-        event_type: str,
-        payload: dict[str, Any],
-    ) -> int:
-        eid = self._event_id
-        self._event_id += 1
-        self.events.append(
-            {
-                "id": eid,
-                "session_id": session_id,
-                "team_member": team_member,
-                "event_type": event_type,
-                "payload": payload,
-            }
-        )
-        return eid
+    def persist(self, event: Any) -> None:
+        self.events.append(event)
 
-    def write_memory(self, **kwargs: Any) -> None:
-        pass
+    async def persist_async(self, event: Any) -> None:
+        self.events.append(event)
+
+    def get_recent_events(
+        self, *, session_id, limit=20, event_types=None
+    ):
+        return [e for e in self.events if e.session_id == session_id][-limit:]
+
+
+def _make_bus(store=None):
+    """Create a v1 EventBus with a spy store."""
+    from harness_poc.core.events.event_bus import EventBus
+
+    if store is None:
+        store = EventStoreSpy()
+    return EventBus(store)
 
 
 # ---------------------------------------------------------------------------
-# Tests: Phase 2a — real EventBus adapter
+# Tests: publish
 # ---------------------------------------------------------------------------
 
 
@@ -62,118 +65,111 @@ class TestEventBusPublish:
     """Acceptance criterion: publish persists an event row."""
 
     def test_publish_persists_event(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
+        store = EventStoreSpy()
+        bus = _make_bus(store)
 
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
+        bus.publish(
+            AgentInputAdded(session_id="sess-1", user_content="value")
+        )
 
-        bus.publish("TEST_EVENT", {"session_id": "sess-1", "key": "value"})
-
-        assert len(db.events) == 1
-        event = db.events[0]
-        assert event["event_type"] == "TEST_EVENT"
-        assert event["session_id"] == "sess-1"
-        assert event["payload"]["key"] == "value"
+        assert len(store.events) == 1
+        event = store.events[0]
+        assert isinstance(event, AgentInputAdded)
+        assert event.session_id == "sess-1"
+        assert event.user_content == "value"
 
     def test_publish_defaults_session_id(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
+        store = EventStoreSpy()
+        bus = _make_bus(store)
 
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
+        bus.publish(
+            AgentInputAdded(session_id="sess-default", user_content="data")
+        )
 
-        bus.publish("NO_SESSION", {"data": 42})
+        assert store.events[0].session_id == "sess-default"
 
-        assert db.events[0]["session_id"] == "v2-runtime"
+    def test_publish_with_different_event_type(self):
+        store = EventStoreSpy()
+        bus = _make_bus(store)
 
-    def test_publish_defaults_team_member(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
+        bus.publish(
+            ProbeFailed(session_id="sess-2", execution_error={"key": "val"})
+        )
 
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
-
-        bus.publish("NO_TEAM", {"session_id": "sess-2"})
-
-        assert db.events[0]["team_member"] == "v2"
+        assert isinstance(store.events[0], ProbeFailed)
+        assert store.events[0].session_id == "sess-2"
 
 
 class TestEventBusSubscribe:
     """Acceptance criterion: subscribe fires the handler on matching events."""
 
     def test_subscribe_handler_is_called(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
+        store = EventStoreSpy()
+        bus = _make_bus(store)
 
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
+        received: list[Any] = []
 
-        received: list[tuple[str, dict]] = []
+        def handler(event: AgentInputAdded) -> None:
+            received.append(event)
 
-        def handler(event_type: str, payload: dict) -> None:
-            received.append((event_type, payload))
-
-        bus.subscribe("MY_EVENT", handler)
-        bus.publish("MY_EVENT", {"session_id": "sess-3", "msg": "hello"})
+        bus.subscribe(AgentInputAdded, handler)
+        bus.publish(AgentInputAdded(session_id="sess-3", user_content="hello"))
 
         assert len(received) == 1
-        assert received[0][0] == "MY_EVENT"
-        assert received[0][1]["msg"] == "hello"
+        assert isinstance(received[0], AgentInputAdded)
+        assert received[0].user_content == "hello"
 
     def test_subscribe_only_fires_for_matching_type(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
-
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
+        store = EventStoreSpy()
+        bus = _make_bus(store)
 
         received: list[str] = []
 
-        def handler_a(event_type: str, _payload: dict) -> None:
-            received.append(f"A:{event_type}")
+        def handler_a(event: AgentInputAdded) -> None:
+            received.append(f"A:{event.event_type}")
 
-        def handler_b(event_type: str, _payload: dict) -> None:
-            received.append(f"B:{event_type}")
+        def handler_b(event: ProbeFailed) -> None:
+            received.append(f"B:{event.event_type}")
 
-        bus.subscribe("TYPE_A", handler_a)
-        bus.subscribe("TYPE_B", handler_b)
-        bus.publish("TYPE_A", {"session_id": "s-4"})
+        bus.subscribe(AgentInputAdded, handler_a)
+        bus.subscribe(ProbeFailed, handler_b)
+        bus.publish(AgentInputAdded(session_id="s-4", user_content="x"))
 
-        assert received == ["A:TYPE_A"]
+        assert received == ["A:AgentInputAdded"]
 
     def test_multiple_handlers_for_same_event(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
-
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
+        store = EventStoreSpy()
+        bus = _make_bus(store)
 
         received: list[str] = []
 
-        def h1(_et: str, _p: dict) -> None:
+        def h1(event: AgentInputAdded) -> None:
             received.append("h1")
 
-        def h2(_et: str, _p: dict) -> None:
+        def h2(event: AgentInputAdded) -> None:
             received.append("h2")
 
-        bus.subscribe("SHARED", h1)
-        bus.subscribe("SHARED", h2)
-        bus.publish("SHARED", {"session_id": "s-5"})
+        bus.subscribe(AgentInputAdded, h1)
+        bus.subscribe(AgentInputAdded, h2)
+        bus.publish(AgentInputAdded(session_id="s-5", user_content="x"))
 
         assert sorted(received) == ["h1", "h2"]
 
     def test_handler_exception_does_not_crash_publish(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
-
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
+        store = EventStoreSpy()
+        bus = _make_bus(store)
 
         received: list[str] = []
 
-        def crashy(_et: str, _p: dict) -> None:
+        def crashy(event: AgentInputAdded) -> None:
             raise RuntimeError("boom")
 
-        def safe(_et: str, _p: dict) -> None:
+        def safe(event: AgentInputAdded) -> None:
             received.append("safe")
 
-        bus.subscribe("DANGER", crashy)
-        bus.subscribe("DANGER", safe)
-        bus.publish("DANGER", {"session_id": "s-6"})
+        bus.subscribe(AgentInputAdded, crashy)
+        bus.subscribe(AgentInputAdded, safe)
+        bus.publish(AgentInputAdded(session_id="s-6", user_content="x"))
 
         assert received == ["safe"]
 
@@ -182,37 +178,31 @@ class TestEventBusUnsubscribe:
     """Acceptance criterion: unsubscribe removes a handler."""
 
     def test_unsubscribe_stops_handler(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
-
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
+        bus = _make_bus()
 
         received: list[str] = []
 
-        def handler(_et: str, _p: dict) -> None:
+        def handler(event: AgentInputAdded) -> None:
             received.append("fired")
 
-        bus.subscribe("EPHEMERAL", handler)
-        bus.unsubscribe("EPHEMERAL", handler)
-        bus.publish("EPHEMERAL", {"session_id": "s-7"})
+        bus.subscribe(AgentInputAdded, handler)
+        bus.unsubscribe(AgentInputAdded, handler)
+        bus.publish(AgentInputAdded(session_id="s-7", user_content="x"))
 
         assert received == []
 
     def test_unsubscribe_nonexistent_handler_is_noop(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
+        bus = _make_bus()
 
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
-
-        def handler(_et: str, _p: dict) -> None:
+        def handler(event: AgentInputAdded) -> None:
             pass
 
         # Should not raise
-        bus.unsubscribe("NONEXISTENT", handler)
+        bus.unsubscribe(AgentInputAdded, handler)
 
 
 # ---------------------------------------------------------------------------
-# Tests: Phase 2c — async session subscriptions for ReAct mode
+# Tests: async session subscriptions for ReAct mode
 # ---------------------------------------------------------------------------
 
 
@@ -221,52 +211,50 @@ class TestAsyncSessionSubscription:
 
     @pytest.mark.asyncio
     async def test_session_subscription_receives_events(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
+        bus = _make_bus()
 
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
-
-        received: list[dict] = []
+        received: list[Any] = []
 
         async def collector() -> None:
-            async for envelope in bus.subscribe_session("sess-async"):
-                received.append(envelope)
+            async for event in bus.subscribe_session("sess-async"):
+                received.append(event)
                 if len(received) >= 1:
                     break
 
         task = asyncio.create_task(collector())
         await asyncio.sleep(0)  # let subscriber start
-        bus.publish("AGENT_INPUT", {"session_id": "sess-async", "content": "hello"})
+        bus.publish(
+            AgentInputAdded(session_id="sess-async", user_content="hello")
+        )
         await asyncio.wait_for(task, timeout=2)
 
         assert len(received) == 1
-        assert received[0]["event_type"] == "AGENT_INPUT"
-        assert received[0]["payload"]["content"] == "hello"
+        assert isinstance(received[0], AgentInputAdded)
+        assert received[0].user_content == "hello"
 
     @pytest.mark.asyncio
     async def test_session_subscription_only_receives_matching_session(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
+        bus = _make_bus()
 
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
-
-        received_a: list[dict] = []
-        received_b: list[dict] = []
+        received_a: list[Any] = []
+        received_b: list[Any] = []
 
         async def collector_a() -> None:
-            async for envelope in bus.subscribe_session("sess-A"):
-                received_a.append(envelope)
+            async for event in bus.subscribe_session("sess-A"):
+                received_a.append(event)
                 break
 
         async def collector_b() -> None:
-            async for envelope in bus.subscribe_session("sess-B"):
-                received_b.append(envelope)
+            async for event in bus.subscribe_session("sess-B"):
+                received_b.append(event)
                 break
 
         task_a = asyncio.create_task(collector_a())
         task_b = asyncio.create_task(collector_b())
         await asyncio.sleep(0)
-        bus.publish("AGENT_INPUT", {"session_id": "sess-B", "content": "for B"})
+        bus.publish(
+            AgentInputAdded(session_id="sess-B", user_content="for B")
+        )
         await asyncio.wait_for(task_b, timeout=2)
 
         assert len(received_a) == 0
@@ -274,7 +262,7 @@ class TestAsyncSessionSubscription:
 
 
 # ---------------------------------------------------------------------------
-# Tests: Phase 2a — pipeline events flow through bus
+# Tests: pipeline events flow through bus
 # ---------------------------------------------------------------------------
 
 
@@ -283,10 +271,9 @@ class TestPipelineEventsViaBus:
 
     def test_context_engine_warm_up_publishes_events(self):
         from harness_poc.v2.context_engine import ContextEngine
-        from harness_poc.v2.wiring import _build_event_bus_adapter
 
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
+        store = EventStoreSpy()
+        bus = _make_bus(store)
 
         class MaterializerSpy:
             def materialize(self, _corpus_path: str):
@@ -303,31 +290,45 @@ class TestPipelineEventsViaBus:
                     stages_run=["test"],
                 )
 
+        class DatabaseSpy:
+            def __init__(self) -> None:
+                pass
+            def append_context_event(self, **kw: Any) -> int:
+                return 1
+
         engine = ContextEngine(
-            db=db,
+            db=DatabaseSpy(),
             materializer=MaterializerSpy(),
             personas_dir=None,  # type: ignore[arg-type]
             pedagogy_path=None,  # type: ignore[arg-type]
             event_bus=bus,
         )
 
-        # Directly test _publish_event (warm_up_context_from_failure is
-        # complex — test the event path via _publish_event directly)
         engine._publish_event(
-            "PROBE_FAILED",
-            {
-                "session_id": "sess-probe",
-                "team_member": "orchestrator",
-                "key": "val",
-            },
+            ProbeFailed(
+                session_id="sess-probe",
+                team_member="orchestrator",
+                execution_error={"key": "val"},
+            )
         )
 
-        assert len(db.events) == 1
-        assert db.events[0]["event_type"] == "PROBE_FAILED"
-        assert db.events[0]["payload"]["key"] == "val"
+        # Event persisted through the EventBus store
+        assert len(store.events) == 1
+        assert isinstance(store.events[0], ProbeFailed)
+        assert store.events[0].execution_error["key"] == "val"
 
     def test_context_engine_falls_back_to_db_when_no_bus(self):
         from harness_poc.v2.context_engine import ContextEngine
+
+        class DatabaseSpy:
+            def __init__(self) -> None:
+                self.events: list[dict] = []
+            def append_context_event(self, session_id, team_member, event_type, payload) -> int:
+                self.events.append(
+                    {"session_id": session_id, "team_member": team_member,
+                     "event_type": event_type, "payload": payload}
+                )
+                return 1
 
         db = DatabaseSpy()
 
@@ -340,16 +341,18 @@ class TestPipelineEventsViaBus:
         )
 
         engine._publish_event(
-            "TEST_FALLBACK",
-            {"session_id": "sess-fb", "team_member": "test"},
+            ProbeFailed(
+                session_id="sess-fb",
+                team_member="test",
+            )
         )
 
         assert len(db.events) == 1
-        assert db.events[0]["event_type"] == "TEST_FALLBACK"
+        assert db.events[0]["event_type"] == "ProbeFailed"
 
 
 # ---------------------------------------------------------------------------
-# Tests: Phase 2b — PipelineStepRunner
+# Tests: PipelineStepRunner
 # ---------------------------------------------------------------------------
 
 
@@ -357,11 +360,10 @@ class TestPipelineStepRunnerEventChain:
     """Verify the pipeline subscriber chains events correctly."""
 
     def test_workflow_started_publishes_probe_completed(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
         from harness_poc.v2.subscribers.pipeline_runner import PipelineStepRunner
 
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
+        store = EventStoreSpy()
+        bus = _make_bus(store)
 
         # Minimal spy orchestrator
         class OrchSpy:
@@ -380,33 +382,31 @@ class TestPipelineStepRunnerEventChain:
                     stderr="",
                 )
 
-        runner = PipelineStepRunner(OrchSpy())
-        bus.subscribe("WORKFLOW_STARTED", runner.handle_workflow_started)
-        bus.subscribe("PROBE_COMPLETED", runner.handle_probe_completed)
-        bus.subscribe("EXECUTION_COMPLETED", runner.handle_execution_completed)
+        runner = PipelineStepRunner(OrchSpy(), bus)
+        bus.subscribe(WorkflowStarted, runner.handle_workflow_started)
+        bus.subscribe(ProbeCompleted, runner.handle_probe_completed)
+        bus.subscribe(ExecutionCompleted, runner.handle_execution_completed)
 
         bus.publish(
-            "WORKFLOW_STARTED",
-            {
-                "session_id": "sess-chain",
-                "workflow_id": "wf-1",
-                "probe_code": "print('hello')",
-                "tasks": [],
-            },
+            WorkflowStarted(
+                session_id="sess-chain",
+                workflow_id="wf-1",
+                probe_code="print('hello')",
+                tasks=[],
+            )
         )
 
-        # Should have WORKFLOW_STARTED + PROBE_COMPLETED + EXECUTION_COMPLETED
-        event_types = [e["event_type"] for e in db.events]
-        assert "WORKFLOW_STARTED" in event_types
-        assert "PROBE_COMPLETED" in event_types
-        assert "EXECUTION_COMPLETED" in event_types
+        # Should have WorkflowStarted + ProbeCompleted + ExecutionCompleted
+        event_names = [e.event_type for e in store.events]
+        assert "WorkflowStarted" in event_names
+        assert "ProbeCompleted" in event_names
+        assert "ExecutionCompleted" in event_names
 
     def test_reentrancy_guard_prevents_infinite_loop(self):
-        from harness_poc.v2.wiring import _build_event_bus_adapter
         from harness_poc.v2.subscribers.pipeline_runner import PipelineStepRunner
 
-        db = DatabaseSpy()
-        bus = _build_event_bus_adapter(db)
+        store = EventStoreSpy()
+        bus = _make_bus(store)
 
         class OrchSpy:
             class ExecSpy:
@@ -420,23 +420,26 @@ class TestPipelineStepRunnerEventChain:
                     probe_id="p1", success=True, exit_code=0, stdout="", stderr=""
                 )
 
-        runner = PipelineStepRunner(OrchSpy())
-        bus.subscribe("WORKFLOW_STARTED", runner.handle_workflow_started)
-        bus.subscribe("PROBE_COMPLETED", runner.handle_probe_completed)
-        bus.subscribe("EXECUTION_COMPLETED", runner.handle_execution_completed)
+        runner = PipelineStepRunner(OrchSpy(), bus)
+        bus.subscribe(WorkflowStarted, runner.handle_workflow_started)
+        bus.subscribe(ProbeCompleted, runner.handle_probe_completed)
+        bus.subscribe(ExecutionCompleted, runner.handle_execution_completed)
 
-        # Publish WORKFLOW_STARTED multiple times — handlers should only fire once
+        # Publish WorkflowStarted multiple times — handlers should only fire once
         bus.publish(
-            "WORKFLOW_STARTED",
-            {"session_id": "sess-reentrant", "workflow_id": "wf-2", "tasks": []},
+            WorkflowStarted(
+                session_id="sess-reentrant",
+                workflow_id="wf-2",
+                tasks=[],
+            )
         )
 
-        # Only one PROBE_COMPLETED and EXECUTION_COMPLETED should appear
+        # Only one ProbeCompleted and ExecutionCompleted should appear
         probe_count = sum(
-            1 for e in db.events if e["event_type"] == "PROBE_COMPLETED"
+            1 for e in store.events if isinstance(e, ProbeCompleted)
         )
         exec_count = sum(
-            1 for e in db.events if e["event_type"] == "EXECUTION_COMPLETED"
+            1 for e in store.events if isinstance(e, ExecutionCompleted)
         )
         assert probe_count == 1
         assert exec_count == 1

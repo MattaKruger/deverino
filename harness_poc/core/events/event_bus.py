@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, TypeVar, overload
@@ -63,6 +64,10 @@ class EventBus:
             raise TypeError(msg)
 
         return self._subscribe_session(event_type_or_session_id)
+
+    def unsubscribe(self, event_type: type[E], handler: Callable[[E], None]) -> None:
+        with contextlib.suppress(ValueError):
+            self._handlers[event_type.__name__].remove(handler)  # type: ignore[arg-type]
 
     def subscribe_session(self, session_id: str) -> AsyncGenerator[BaseEvent]:
         return self._subscribe_session(session_id)

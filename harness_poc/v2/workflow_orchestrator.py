@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from harness_poc.core.events.events import SpecCommitted, WorkflowStarted
+
 if TYPE_CHECKING:
     from harness_poc.v2.context_engine import ContextEngine
     from harness_poc.v2.execution_engine import ExecutionEngine
@@ -238,6 +240,10 @@ class WorkflowOrchestrator:
 
         This is the Phase 2b event-driven equivalent of ``execute_workflow``.
         """
+        from harness_poc.core.events.events import (  # noqa: PLC0415
+            ExecutionCompleted,
+            ProbeCompleted,
+        )
         from harness_poc.v2.subscribers.pipeline_runner import (  # noqa: PLC0415
             PipelineStepRunner,
         )
@@ -245,28 +251,26 @@ class WorkflowOrchestrator:
         workflow_id = str(uuid.uuid4())
         resolved_session = session_id or str(uuid.uuid4())
         tasks = spec.get("tasks", [])
-        bus = self._execution._event_bus
+        bus = self._execution.event_bus
 
-        runner = PipelineStepRunner(self)
+        runner = PipelineStepRunner(self, bus)
 
         # Register the runner on the bus for each step boundary event
-        bus.subscribe("WORKFLOW_STARTED", runner.handle_workflow_started)
-        bus.subscribe("PROBE_COMPLETED", runner.handle_probe_completed)
-        bus.subscribe("EXECUTION_COMPLETED", runner.handle_execution_completed)
+        bus.subscribe(WorkflowStarted, runner.handle_workflow_started)
+        bus.subscribe(ProbeCompleted, runner.handle_probe_completed)
+        bus.subscribe(ExecutionCompleted, runner.handle_execution_completed)
 
         # Kick off the pipeline
         bus.publish(
-            "WORKFLOW_STARTED",
-            {
-                "session_id": resolved_session,
-                "team_member": "orchestrator",
-                "workflow_id": workflow_id,
-                "goal": spec.get("goal", ""),
-                "persona_id": persona_id,
-                "probe_code": probe_code,
-                "tasks": tasks,
-                "workspace_path": workspace_path,
-            },
+            WorkflowStarted(
+                session_id=resolved_session,
+                workflow_id=workflow_id,
+                goal=spec.get("goal", ""),
+                persona_id=persona_id,
+                probe_code=probe_code,
+                tasks=tasks,
+                workspace_path=workspace_path,
+            )
         )
 
     # ------------------------------------------------------------------
@@ -300,12 +304,13 @@ class WorkflowOrchestrator:
             script_path.write_text(code)
 
             try:
-                proc = subprocess.run(
-                    ["python", str(script_path)],
+                proc = subprocess.run(  # noqa: S603
+                    ["python", str(script_path)],  # noqa: S607
                     cwd=sandbox_dir,
                     capture_output=True,
                     text=True,
                     timeout=self._sandbox_timeout,
+                    check=False,
                 )
                 exit_code = proc.returncode
                 stdout = proc.stdout
@@ -419,16 +424,15 @@ class WorkflowOrchestrator:
                 failure_count += 1
 
         # Publish SPEC_COMMITTED event via the execution engine's event bus
-        self._execution._event_bus.publish(
-            "SPEC_COMMITTED",
-            {
-                "session_id": session_id,
-                "team_member": "orchestrator",
-                "execution_id": execution_id,
-                "task_count": len(tasks),
-                "failure_count": failure_count,
-                "all_passed": (failure_count == 0),
-            },
+        self._execution.event_bus.publish(
+            SpecCommitted(
+                session_id=session_id,
+                team_member="orchestrator",
+                execution_id=execution_id,
+                task_count=len(tasks),
+                failure_count=failure_count,
+                all_passed=(failure_count == 0),
+            )
         )
 
         return ExecutionResult(

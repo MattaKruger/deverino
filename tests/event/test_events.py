@@ -47,6 +47,16 @@ def test_event_registry_covers_all_concrete_types() -> None:
         "PipelineNodeStarted",
         "PipelineNodeCompleted",
         "PipelineCompleted",
+        "WorkflowStarted",
+        "ProbeCompleted",
+        "ExecutionCompleted",
+        "GateCompleted",
+        "ProbeFailed",
+        "ContextWarmed",
+        "GatePassed",
+        "GateFailed",
+        "SpecCommitted",
+        "DelegateTaskCompleted",
     }
     assert set(EVENT_REGISTRY.keys()) == expected
 

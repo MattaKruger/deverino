@@ -32,6 +32,7 @@ from harness_poc.core.storage import (
 )
 from harness_poc.core.tools import ToolRunner
 from harness_poc.system_tools.knowledge_tools import init_knowledge_context
+from harness_poc.v2.runtime import V2Runtime
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,8 @@ class AppState:
     goal_decision_model: Model | None
     messages: list[Message]
     streaming: StreamingContext
+    v2_runtime: V2Runtime | None = None
+    active_mode: str = "chat"
     active_run: ActiveRunHandle | None = None
 
     @property
@@ -588,6 +591,8 @@ def _build_app_state_with(
     long_lived: LongLived,
     config: HarnessConfig,
     session_id_was_resumed: bool,
+    v2_runtime: V2Runtime | None = None,
+    active_mode: str = "chat",
 ) -> AppState:
     messages: list[Message] = [_system_message_for(identity, config)]
 
@@ -606,6 +611,8 @@ def _build_app_state_with(
         goal_decision_model=None,
         messages=messages,
         streaming=StreamingContext(),
+        v2_runtime=v2_runtime,
+        active_mode=active_mode,
     )
 
 
@@ -614,6 +621,7 @@ def build_app_state(
     *,
     database_url: str | None = None,
     corpus_key: str | None = None,
+    mode: str = "chat",
 ) -> AppState:
     config = HarnessConfig.load()
     configure_logging(config.project_root)
@@ -638,4 +646,17 @@ def build_app_state(
         long_lived=long_lived,
         config=config,
         session_id_was_resumed=session_id is not None,
+        v2_runtime=_build_v2_runtime_if_needed(identity, config, mode),
+        active_mode=mode,
     )
+
+
+def _build_v2_runtime_if_needed(
+    identity: Identity, config: HarnessConfig, mode: str
+) -> V2Runtime | None:
+    """Build a V2Runtime when mode is 'pipeline' or 'react', else None."""
+    if mode in ("pipeline", "react"):
+        from harness_poc.v2.wiring import build_v2_runtime  # noqa: PLC0415
+
+        return build_v2_runtime(identity, config, mode=mode)
+    return None

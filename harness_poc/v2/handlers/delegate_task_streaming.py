@@ -12,11 +12,12 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+from harness_poc.core.events.event_bus import EventBus
+from harness_poc.core.events.events import DelegateTaskCompleted
 from harness_poc.v2.contracts import (
     DELEGATED_STATUS_SUCCESS,
     DelegatedTaskOutput,
     DelegatedTaskResult,
-    EventBus,
     SubAgentSpawner,
     map_delegated_to_external,
 )
@@ -125,17 +126,13 @@ async def _handle_delegate_task_streaming(
     blackboard.write(task_id=raw.task_id, output=output, session_id=session_id)
 
     # ---- Step 8: emit event ------------------------------------------
-    event_id = str(uuid.uuid4())
-    event_bus.publish(
-        "delegate_task_completed",
-        {
-            "event_id": event_id,
-            "session_id": session_id,
-            "task_id": raw.task_id,
-            "output_label": output_label,
-            "summary": output.summary,
-        },
+    event = DelegateTaskCompleted(
+        session_id=session_id,
+        task_id=raw.task_id,
+        output_label=output_label,
+        summary=output.summary,
     )
+    event_bus.publish(event)
 
     # ---- Step 9: lifecycle — completed/failed ------------------------
     if on_text:
@@ -148,7 +145,7 @@ async def _handle_delegate_task_streaming(
 
     return DelegateTaskResult(
         output=output,
-        event_id=event_id,
+        event_id=event.event_id,
         session_id=session_id,
         metadata={
             "original_goal_status": original_goal_status,

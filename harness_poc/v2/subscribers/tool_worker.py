@@ -1,8 +1,7 @@
 """ToolWorker — v2 ReAct subscriber for skill/tool execution.
 
-Ports ``harness_poc.core.processors.tool_worker.run_skill_worker`` to the v2
-event bus. Listens for ``TOOL_REQUESTED`` events via async session subscription,
-executes the skill, and publishes ``TOOL_COMPLETED``.
+Listens for SkillRequested events via the v1 EventBus's async session subscription,
+executes the skill, and publishes SkillCompleted.
 """
 
 from __future__ import annotations
@@ -16,14 +15,20 @@ if TYPE_CHECKING:
 
     from harness_poc.core.skills import SkillRunner
 
+from harness_poc.core.events.events import (
+    SkillCompleted,
+    SkillRequested,
+    StreamPaused,
+)
+
 logger = logging.getLogger(__name__)
 
 
 class ToolWorker:
     """ReAct tool worker — executes skills in response to tool-request events.
 
-    Uses the v2 event bus's async session subscription to receive
-    ``TOOL_REQUESTED`` events and publishes ``TOOL_COMPLETED`` results.
+    Uses the v1 EventBus's async session subscription to receive
+    SkillRequested events and publishes SkillCompleted results.
     """
 
     def __init__(
@@ -39,17 +44,14 @@ class ToolWorker:
 
     async def run(self, bus: Any, session_id: str) -> None:
         """Run the tool worker loop for a session."""
-        async for envelope in bus.subscribe_session(session_id):
-            event_type: str = envelope["event_type"]
-            payload: dict[str, Any] = envelope["payload"]
-
-            if event_type == "STREAM_PAUSED":
+        async for event in bus.subscribe_session(session_id):
+            if isinstance(event, StreamPaused):
                 break
-            if event_type != "TOOL_REQUESTED":
+            if not isinstance(event, SkillRequested):
                 continue
 
-            skill_name = payload.get("skill_name", "")
-            arguments = payload.get("arguments", {})
+            skill_name = event.skill_name
+            arguments = event.arguments
 
             if self._on_call_started is not None:
                 self._on_call_started("", skill_name)
@@ -61,34 +63,30 @@ class ToolWorker:
                         tool_name=skill_name,
                         arguments=arguments,
                         session_id=session_id,
-                        call_id=payload.get("call_id", ""),
+                        call_id=getattr(event, "call_id", ""),
                     )
                 except Exception as exc:
                     bus.publish(
-                        "TOOL_COMPLETED",
-                        {
-                            "session_id": session_id,
-                            "team_member": "tool_worker",
-                            "tool_name": skill_name,
-                            "skill_name": skill_name,
-                            "status": "failed",
-                            "content": str(exc),
-                            "result": str(exc),
-                        },
+                        SkillCompleted(
+                            session_id=session_id,
+                            skill_name=skill_name,
+                            tool_name=skill_name,
+                            status="failed",
+                            content=str(exc),
+                            result=str(exc),
+                        )
                     )
                 else:
                     bus.publish(
-                        "TOOL_COMPLETED",
-                        {
-                            "session_id": session_id,
-                            "team_member": "tool_worker",
-                            "tool_name": skill_name,
-                            "skill_name": skill_name,
-                            "status": result.status,
-                            "content": result.content,
-                            "result": result.content,
-                            "artifacts": result.artifacts,
-                        },
+                        SkillCompleted(
+                            session_id=session_id,
+                            skill_name=skill_name,
+                            tool_name=skill_name,
+                            status=result.status,
+                            content=result.content,
+                            result=result.content,
+                            artifacts=result.artifacts,
+                        )
                     )
             finally:
                 if self._on_call_ended is not None:

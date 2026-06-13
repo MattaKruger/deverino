@@ -19,11 +19,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from harness_poc.core.events.event_bus import EventBus
     from harness_poc.core.storage.database import BlackboardDatabase
-    from harness_poc.v2.contracts.event_runtime import EventBus
     from harness_poc.v2.contracts.sub_agent_spawner import SubAgentSpawner
     from harness_poc.v2.handlers.delegate_task_handler import BlackboardWriter
 
+from harness_poc.core.events.events import GateFailed, GatePassed
 from harness_poc.v2.handlers.delegate_task_handler import _handle_delegate_task
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,11 @@ class ExecutionEngine:
         self._project_id = project_id
         self._max_background = max_background_agents
         self._bg_active: dict[str, str] = {}  # task_id → status
+
+    @property
+    def event_bus(self) -> EventBus:
+        """The v2 EventBus adapter used by this engine (public accessor)."""
+        return self._event_bus
 
     # ------------------------------------------------------------------
     # spawn_sub_agent  (spec §4, ExecutionEngine interface)
@@ -181,11 +187,12 @@ class ExecutionEngine:
         # Run the test suite
         try:
             result = subprocess.run(
-                ["uv", "run", "pytest", "--tb=short", "-q"],
+                ["uv", "run", "pytest", "--tb=short", "-q"],  # noqa: S607
                 cwd=workspace_path,
                 capture_output=True,
                 text=True,
                 timeout=120,
+                check=False,
             )
         except subprocess.TimeoutExpired as exc:
             self._record_gate_event(
@@ -198,11 +205,12 @@ class ExecutionEngine:
             # uv not available — try python -m pytest directly
             try:
                 result = subprocess.run(
-                    ["python", "-m", "pytest", "--tb=short", "-q"],
+                    ["python", "-m", "pytest", "--tb=short", "-q"],  # noqa: S607
                     cwd=workspace_path,
                     capture_output=True,
                     text=True,
                     timeout=120,
+                    check=False,
                 )
             except subprocess.TimeoutExpired as exc:
                 self._record_gate_event(
@@ -270,17 +278,16 @@ class ExecutionEngine:
         passed: bool,
         detail: str,
     ) -> None:
-        """Publish a GATE_PASSED or GATE_FAILED event via the bus."""
-        event_type = "GATE_PASSED" if passed else "GATE_FAILED"
+        """Publish a GatePassed or GateFailed event via the bus."""
+        event_cls = GatePassed if passed else GateFailed
         self._event_bus.publish(
-            event_type,
-            {
-                "session_id": session_id,
-                "team_member": "execution_engine",
-                "passed": passed,
-                "detail": detail,
-                "project_id": self._project_id,
-            },
+            event_cls(
+                session_id=session_id,
+                team_member="execution_engine",
+                passed=passed,
+                detail=detail,
+                project_id=self._project_id,
+            )
         )
 
     @staticmethod

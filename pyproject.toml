@@ -161,9 +161,29 @@ max-positional-args = 6
     "FBT001",  # boolean-positional-arg-in-function-definition
     "FBT002",  # boolean-default-value-positional-argument
     "INP001",  # implicit-namespace-package
+    "F841",    # unused-variable (common in test setup)
+    "RUF006",  # asyncio-dangling-task (common in test cleanup)
     "TC001",   # typing-only-third-party-import
     "TC002",   # typing-only-third-party-import
     "TC003",   # typing-only-standard-library-import
+]
+"harness_poc/v2/tests/**/*.py" = [
+    "S101",
+    "PLR2004",
+    "SLF001",
+    "FBT001",
+    "FBT002",
+    "S306",
+    "F841",
+    "RUF006",
+    "ANN001",
+    "ANN201",
+    "ANN202",
+    "ARG001",
+    "ARG002",
+    "TC001",
+    "TC002",
+    "TC003",
 ]
 "harness_poc/core/context_map/cartographer.py" = ["TC001", "TC003"]
 "harness_poc/core/context_map/distiller.py" = ["TC001", "TC002", "TC003"]

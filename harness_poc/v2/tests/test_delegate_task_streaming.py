@@ -14,6 +14,7 @@ from collections.abc import Callable
 
 import pytest
 
+from harness_poc.core.events.events import DelegateTaskCompleted
 from harness_poc.v2.contracts import (
     DELEGATED_OUTPUT_BLOCKED,
     DELEGATED_OUTPUT_COMPLETED,
@@ -73,16 +74,10 @@ class EventBusSpy:
     """Records published events for assertion."""
 
     def __init__(self) -> None:
-        self.events: list[tuple[str, dict]] = []
+        self.events: list[DelegateTaskCompleted] = []
 
-    def subscribe(self, event_type: str, handler) -> None:
-        pass
-
-    def unsubscribe(self, event_type: str, handler) -> None:
-        pass
-
-    def publish(self, event_type: str, payload: dict) -> None:
-        self.events.append((event_type, payload))
+    def publish(self, event: DelegateTaskCompleted) -> None:
+        self.events.append(event)
 
 
 class BlackboardSpy:
@@ -197,9 +192,9 @@ class TestStreamingFailureMode:
         ))
 
         assert len(event_bus.events) == 1
-        event_type, payload = event_bus.events[0]
-        assert event_type == "delegate_task_completed"
-        assert payload["output_label"] == DELEGATED_OUTPUT_FAILED
+        event = event_bus.events[0]
+        assert isinstance(event, DelegateTaskCompleted)
+        assert event.output_label == DELEGATED_OUTPUT_FAILED
 
 
 # ====================================================================
@@ -333,9 +328,9 @@ class TestStreamingSuccessPath:
             arguments=make_arguments(),
         ))
 
-        _, payload = event_bus.events[0]
-        assert payload["task_id"] == "t-99"
-        assert payload["output_label"] == DELEGATED_OUTPUT_COMPLETED
+        event = event_bus.events[0]
+        assert event.task_id == "t-99"
+        assert event.output_label == DELEGATED_OUTPUT_COMPLETED
 
 
 # ====================================================================

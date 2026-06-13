@@ -364,10 +364,10 @@ class TestWarmUpFromFailure:
         # Events persisted (PROBE_FAILED + CONTEXT_WARMED)
         assert len(db.context_events) == 2
         event_types = {e["event_type"] for e in db.context_events}
-        assert "PROBE_FAILED" in event_types
-        assert "CONTEXT_WARMED" in event_types
+        assert "ProbeFailed" in event_types
+        assert "ContextWarmed" in event_types
 
-        probe_event = next(e for e in db.context_events if e["event_type"] == "PROBE_FAILED")
+        probe_event = next(e for e in db.context_events if e["event_type"] == "ProbeFailed")
         assert probe_event["session_id"] == "sess-probe-1"
         assert probe_event["team_member"] == "orchestrator"
 

@@ -84,6 +84,10 @@ class ExecutionEngineSpy:
         # Event bus spy for SPEC_COMMITTED publishes
         self._event_bus = EventBusSpy()
 
+    @property
+    def event_bus(self):
+        return self._event_bus
+
     def spawn_sub_agent(
         self,
         agent_type: str,
@@ -183,14 +187,19 @@ class EventBusSpy:
     def __init__(self) -> None:
         self.events: list[tuple[str, dict]] = []
 
-    def subscribe(self, event_type: str, handler) -> None:
+    def subscribe(self, event_type, handler) -> None:
         pass
 
-    def unsubscribe(self, event_type: str, handler) -> None:
+    def unsubscribe(self, event_type, handler) -> None:
         pass
 
-    def publish(self, event_type: str, payload: dict) -> None:
-        self.events.append((event_type, payload))
+    def publish(self, event_type, payload=None) -> None:
+        if payload is None:
+            # New-style: BaseEvent instance
+            event = event_type
+            self.events.append((event.event_type, event.model_dump()))
+        else:
+            self.events.append((event_type, payload))
 
 
 # ---------------------------------------------------------------------------

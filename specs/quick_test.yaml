@@ -1,0 +1,9 @@
+# Quick pipeline test spec — gate runs only the v2 tests (fast).
+probe: |
+  print("hello from probe")
+
+tasks:
+  - agent_type: coder
+    objective: Check that the pipeline runner exists
+
+workspace: "harness_poc/v2/tests"

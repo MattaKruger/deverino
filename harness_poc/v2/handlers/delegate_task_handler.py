@@ -13,12 +13,12 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from harness_poc.core.events.event_bus import EventBus
+from harness_poc.core.events.events import DelegateTaskCompleted
 from harness_poc.v2.contracts import (
     DELEGATED_STATUS_SUCCESS,
     DelegatedTaskOutput,
     DelegatedTaskResult,
-    # Event bus
-    EventBus,
     # Errors
     SubAgentSpawner,
     map_delegated_to_external,
@@ -161,21 +161,17 @@ def _handle_delegate_task(
     blackboard.write(task_id=raw.task_id, output=output, session_id=session_id)
 
     # ---- Step 7: emit event ------------------------------------------
-    event_id = str(uuid.uuid4())
-    event_bus.publish(
-        "delegate_task_completed",
-        {
-            "event_id": event_id,
-            "session_id": session_id,
-            "task_id": raw.task_id,
-            "output_label": output_label,
-            "summary": output.summary,
-        },
+    event = DelegateTaskCompleted(
+        session_id=session_id,
+        task_id=raw.task_id,
+        output_label=output_label,
+        summary=output.summary,
     )
+    event_bus.publish(event)
 
     return DelegateTaskResult(
         output=output,
-        event_id=event_id,
+        event_id=event.event_id,
         session_id=session_id,
         metadata={
             "original_goal_status": original_goal_status,

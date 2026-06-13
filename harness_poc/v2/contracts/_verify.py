@@ -10,11 +10,16 @@ from harness_poc.v2.contracts import (
 )
 
 # --- Status mapping ---
-assert map_goal_status_to_delegated("blocked") == "failed"
-assert map_goal_status_to_delegated("completed") == "success"
-assert map_delegated_to_external("success") == "completed"
-assert map_delegated_to_external("failed", original_goal_status="blocked") == "blocked"
-assert map_delegated_to_external("failed") == "failed"
+if map_goal_status_to_delegated("blocked") != "failed":
+    raise AssertionError("map_goal_status_to_delegated('blocked') != 'failed'")
+if map_goal_status_to_delegated("completed") != "success":
+    raise AssertionError("map_goal_status_to_delegated('completed') != 'success'")
+if map_delegated_to_external("success") != "completed":
+    raise AssertionError("map_delegated_to_external('success') != 'completed'")
+if map_delegated_to_external("failed", original_goal_status="blocked") != "blocked":
+    raise AssertionError("map_delegated_to_external('failed', blocked) != 'blocked'")
+if map_delegated_to_external("failed") != "failed":
+    raise AssertionError("map_delegated_to_external('failed') != 'failed'")
 
 # --- Dataclass validation ---
 g = Goal(goal_id="test-1", description="test")
@@ -23,7 +28,8 @@ dr = DelegatedTaskResult(task_id="t1", status="success")
 do = DelegatedTaskOutput(task_id="t1", output_label="completed", summary="done")
 
 # --- Protocol isolation ---
-assert not isinstance(g, SoulConstitution)
+if isinstance(g, SoulConstitution):
+    raise AssertionError("Goal should not be a SoulConstitution")
 
 print("ALL IMPORTS + RUNTIME CHECKS PASSED")
 print()

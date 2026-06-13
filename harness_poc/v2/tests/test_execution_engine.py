@@ -93,14 +93,19 @@ class EventBusSpy:
     def __init__(self) -> None:
         self.events: list[tuple[str, dict]] = []
 
-    def subscribe(self, event_type: str, handler) -> None:
+    def subscribe(self, event_type, handler) -> None:
         pass
 
-    def unsubscribe(self, event_type: str, handler) -> None:
+    def unsubscribe(self, event_type, handler) -> None:
         pass
 
-    def publish(self, event_type: str, payload: dict) -> None:
-        self.events.append((event_type, payload))
+    def publish(self, event_type, payload=None) -> None:
+        if payload is None:
+            # New-style: BaseEvent instance
+            event = event_type
+            self.events.append((event.event_type, event.model_dump()))
+        else:
+            self.events.append((event_type, payload))
 
 
 class BlackboardSpy:
@@ -432,7 +437,7 @@ class TestDeterministicGate:
 
         assert len(event_bus.events) == 1
         event_type, payload = event_bus.events[0]
-        assert event_type == "GATE_PASSED"
+        assert event_type == "GatePassed"
         assert payload["passed"] is True
 
     def test_gate_fail_records_event(self):
@@ -455,7 +460,7 @@ class TestDeterministicGate:
         )
 
         event_type, payload = event_bus.events[0]
-        assert event_type == "GATE_FAILED"
+        assert event_type == "GateFailed"
         assert payload["passed"] is False
 
     def test_gate_pass_updates_materialized_map(self):

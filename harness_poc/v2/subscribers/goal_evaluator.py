@@ -1,18 +1,21 @@
 """GoalEvaluator — v2 ReAct subscriber for goal completion detection.
 
-New subscriber (no v1 equivalent). Listens for ``LLM_TEXT_EMITTED`` events
-and evaluates whether the goal has been satisfied. Publishes ``GOAL_EVALUATED``
-with a completion flag and reasoning.
-
-In its simplest form, this is a heuristic evaluator that considers the goal
-complete when the LLM emits final text (not a tool request). A future version
-could use a separate LLM call to evaluate goal completion.
+Listens for LLMTextEmitted and LLMActionEmitted events and evaluates whether
+the goal has been satisfied. Publishes GoalEvaluated with a completion flag
+and reasoning.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import Any
+
+from harness_poc.core.events.events import (
+    GoalEvaluated,
+    LLMActionEmitted,
+    LLMTextEmitted,
+    StreamPaused,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +24,7 @@ class GoalEvaluator:
     """ReAct goal evaluator — detects when the goal has been satisfied.
 
     Currently uses a simple heuristic: the goal is considered complete when
-    the LLM emits ``LLM_TEXT_EMITTED`` (as opposed to ``TOOL_REQUESTED``),
+    the LLM emits LLMTextEmitted (as opposed to a tool request),
     indicating it has produced a final answer rather than requesting another
     tool call.
     """
@@ -32,38 +35,32 @@ class GoalEvaluator:
 
     async def run(self, bus: Any, session_id: str) -> None:
         """Run the goal evaluator loop for a session."""
-        async for envelope in bus.subscribe_session(session_id):
-            event_type: str = envelope["event_type"]
-
-            if event_type == "STREAM_PAUSED":
+        async for event in bus.subscribe_session(session_id):
+            if isinstance(event, StreamPaused):
                 break
 
-            if event_type == "LLM_ACTION_EMITTED":
+            if isinstance(event, LLMActionEmitted):
                 self._iteration_count += 1
 
-            if event_type == "LLM_TEXT_EMITTED":
+            if isinstance(event, LLMTextEmitted):
                 # LLM produced final text — consider the goal complete
                 bus.publish(
-                    "GOAL_EVALUATED",
-                    {
-                        "session_id": session_id,
-                        "team_member": "goal_evaluator",
-                        "is_complete": True,
-                        "reasoning": "LLM produced final text output",
-                    },
+                    GoalEvaluated(
+                        session_id=session_id,
+                        is_complete=True,
+                        reasoning="LLM produced final text output",
+                    )
                 )
 
             if self._iteration_count >= self._max_iterations:
                 bus.publish(
-                    "GOAL_EVALUATED",
-                    {
-                        "session_id": session_id,
-                        "team_member": "goal_evaluator",
-                        "is_complete": False,
-                        "reasoning": (
+                    GoalEvaluated(
+                        session_id=session_id,
+                        is_complete=False,
+                        reasoning=(
                             f"Reached max iterations ({self._max_iterations}) "
                             "without final text output"
                         ),
-                    },
+                    )
                 )
                 break

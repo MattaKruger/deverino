@@ -12,6 +12,12 @@ from harness_poc.core.events import (
     AgentStarted,
     AgentTurnRecorded,
     BaseEvent,
+    ContextWarmed,
+    DelegateTaskCompleted,
+    ExecutionCompleted,
+    GateCompleted,
+    GateFailed,
+    GatePassed,
     GoalEvaluated,
     LLMActionEmitted,
     LLMTextEmitted,
@@ -19,13 +25,17 @@ from harness_poc.core.events import (
     PipelineNodeCompleted,
     PipelineNodeStarted,
     PipelineStarted,
+    ProbeCompleted,
+    ProbeFailed,
     SkillCalled,
     SkillCancelled,
     SkillCompleted,
     SkillRequested,
+    SpecCommitted,
     StreamPaused,
     SubAgentCompleted,
     SubAgentDispatched,
+    WorkflowStarted,
 )
 
 # ---------------------------------------------------------------------------
@@ -170,6 +180,16 @@ def test_event_registry_contains_all_public_events():
         "PipelineNodeStarted",
         "PipelineNodeCompleted",
         "PipelineCompleted",
+        "WorkflowStarted",
+        "ProbeCompleted",
+        "ExecutionCompleted",
+        "GateCompleted",
+        "ProbeFailed",
+        "ContextWarmed",
+        "GatePassed",
+        "GateFailed",
+        "SpecCommitted",
+        "DelegateTaskCompleted",
     }
     assert set(EVENT_REGISTRY.keys()) == expected
 
@@ -224,6 +244,16 @@ def test_each_event_type_can_be_constructed_with_minimal_args():
             status="completed",
             duration_s=1.5,
         ),
+        WorkflowStarted(session_id="s1", workflow_id="wf1"),
+        ProbeCompleted(session_id="s1"),
+        ExecutionCompleted(session_id="s1"),
+        GateCompleted(session_id="s1"),
+        ProbeFailed(session_id="s1"),
+        ContextWarmed(session_id="s1"),
+        GatePassed(session_id="s1"),
+        GateFailed(session_id="s1"),
+        SpecCommitted(session_id="s1"),
+        DelegateTaskCompleted(session_id="s1"),
     ]
     assert len(events) == len(EVENT_REGISTRY), (
         f"Constructed {len(events)} events, registry has {len(EVENT_REGISTRY)}"

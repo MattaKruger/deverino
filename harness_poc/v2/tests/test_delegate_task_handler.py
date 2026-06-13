@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pytest
 
+from harness_poc.core.events.events import DelegateTaskCompleted
 from harness_poc.v2.contracts import (
     DELEGATED_OUTPUT_BLOCKED,
     DELEGATED_OUTPUT_COMPLETED,
@@ -56,16 +57,10 @@ class EventBusSpy:
     """Records published events for assertion."""
 
     def __init__(self) -> None:
-        self.events: list[tuple[str, dict]] = []
+        self.events: list[DelegateTaskCompleted] = []
 
-    def subscribe(self, event_type: str, handler) -> None:
-        pass  # not exercised by the handler
-
-    def unsubscribe(self, event_type: str, handler) -> None:
-        pass
-
-    def publish(self, event_type: str, payload: dict) -> None:
-        self.events.append((event_type, payload))
+    def publish(self, event: DelegateTaskCompleted) -> None:
+        self.events.append(event)
 
 
 class BlackboardSpy:
@@ -149,10 +144,10 @@ class TestFailureModeSpawnerReturnsFailed:
         )
 
         assert len(event_bus.events) == 1
-        event_type, payload = event_bus.events[0]
-        assert event_type == "delegate_task_completed"
-        assert payload["output_label"] == DELEGATED_OUTPUT_FAILED
-        assert payload["session_id"] == "sess-2"
+        event = event_bus.events[0]
+        assert isinstance(event, DelegateTaskCompleted)
+        assert event.output_label == DELEGATED_OUTPUT_FAILED
+        assert event.session_id == "sess-2"
 
 
 # ---------------------------------------------------------------------------
@@ -265,8 +260,8 @@ class TestSuccessPathFullRoundtrip:
             arguments=make_arguments(),
         )
 
-        _, payload = event_bus.events[0]
-        assert payload["task_id"] == "t-99"
+        event = event_bus.events[0]
+        assert event.task_id == "t-99"
 
     def test_spawner_receives_task_spec(self) -> None:
         spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS, task_id="spawner-77"))

@@ -142,6 +142,105 @@ class PipelineCompleted(BaseEvent):
     duration_s: float
 
 
+# ---------------------------------------------------------------------------
+# V2 pipeline mode events (unified — replaces v2/events.py string constants)
+# ---------------------------------------------------------------------------
+
+
+class WorkflowStarted(BaseEvent):
+    """Published by the orchestrator to kick off a pipeline run."""
+
+    workflow_id: str
+    goal: str = ""
+    persona_id: str = ""
+    probe_code: str | None = None
+    tasks: list[dict[str, Any]] = Field(default_factory=list)
+    workspace_path: str | None = None
+
+
+class ProbeCompleted(BaseEvent):
+    """Published by PipelineStepRunner after the probe step."""
+
+    workflow_id: str = ""
+    probe_id: str | None = None
+    success: bool = True
+    exit_code: int = 0
+    constraints: list[dict[str, Any]] = Field(default_factory=list)
+    tasks: list[dict[str, Any]] = Field(default_factory=list)
+    workspace_path: str | None = None
+
+
+class ExecutionCompleted(BaseEvent):
+    """Published by PipelineStepRunner after the execution step."""
+
+    workflow_id: str = ""
+    execution_id: str | None = None
+    sub_agents: list[dict[str, Any]] = Field(default_factory=list)
+    all_passed: bool = True
+    workspace_path: str | None = None
+
+
+class GateCompleted(BaseEvent):
+    """Published by PipelineStepRunner after the gate step."""
+
+    workflow_id: str = ""
+    gate_id: str | None = None
+    passed: bool = True
+    test_count: int = 0
+
+
+class ProbeFailed(BaseEvent):
+    """Published by ContextEngine when a probe discovers constraints."""
+
+    team_member: str = "orchestrator"
+    execution_error: dict[str, Any] = Field(default_factory=dict)
+    extracted_constraints: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ContextWarmed(BaseEvent):
+    """Published by ContextEngine after warming context from a failure."""
+
+    team_member: str = "orchestrator"
+    constraint_count: int = 0
+    probe_event_id: str = ""
+
+
+class GatePassed(BaseEvent):
+    """Published by ExecutionEngine when the deterministic gate passes."""
+
+    team_member: str = "execution_engine"
+    passed: bool = True
+    detail: str = ""
+    project_id: str = ""
+
+
+class GateFailed(BaseEvent):
+    """Published by ExecutionEngine when the deterministic gate fails."""
+
+    team_member: str = "execution_engine"
+    passed: bool = False
+    detail: str = ""
+    project_id: str = ""
+
+
+class SpecCommitted(BaseEvent):
+    """Published by WorkflowOrchestrator after spec execution completes."""
+
+    team_member: str = "orchestrator"
+    execution_id: str = ""
+    task_count: int = 0
+    failure_count: int = 0
+    all_passed: bool = False
+
+
+class DelegateTaskCompleted(BaseEvent):
+    """Published by the delegate_task handler on completion."""
+
+    task_id: str = ""
+    output_label: str = ""
+    summary: str = ""
+
+
 EVENT_REGISTRY: dict[str, type[BaseEvent]] = {
     cls.__name__: cls  # type: ignore[misc]
     for cls in [
@@ -162,5 +261,15 @@ EVENT_REGISTRY: dict[str, type[BaseEvent]] = {
         PipelineNodeStarted,
         PipelineNodeCompleted,
         PipelineCompleted,
+        WorkflowStarted,
+        ProbeCompleted,
+        ExecutionCompleted,
+        GateCompleted,
+        ProbeFailed,
+        ContextWarmed,
+        GatePassed,
+        GateFailed,
+        SpecCommitted,
+        DelegateTaskCompleted,
     ]
 }

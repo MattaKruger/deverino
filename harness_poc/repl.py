@@ -22,8 +22,10 @@ from harness_poc.console import print_error, print_markdown, print_skill_table, 
 from harness_poc.core.events import (
     AgentInputAdded,
     AgentTurnRecorded,
+    GoalEvaluated,
     LLMActionEmitted,
     LLMTextEmitted,
+    StreamPaused,
 )
 from harness_poc.core.runtime import (
     AgentRunResult,
@@ -79,6 +81,10 @@ def run_repl(app_state: AppState) -> None:
 def handle_repl_input(app_state: AppState, user_input: str) -> None:
     if _is_repl_help_command(user_input):
         print_repl_help()
+        return
+
+    if _is_mode_command(user_input):
+        handle_mode_command(app_state, user_input)
         return
 
     if _is_workflows_command(user_input):
@@ -146,6 +152,7 @@ def _is_copy_command(user_input: str) -> bool:
 def print_repl_help() -> None:
     print_text(
         """REPL commands:
+  /mode [chat|pipeline|react]
   /goal <objective>
   /workflow <name> <objective>
   /workflows
@@ -311,6 +318,10 @@ def _fire_observations_async(app_state: AppState, response: object) -> None:
 
 
 def handle_chat_input(app_state: AppState, user_input: str) -> None:
+    if app_state.active_mode in ("pipeline", "react"):
+        _handle_v2_mode_input(app_state, user_input)
+        return
+
     app_state.messages.append({"role": "user", "content": user_input})
     app_state.event_bus.publish(
         AgentInputAdded(session_id=app_state.session_id, user_content=user_input)
@@ -958,3 +969,180 @@ def _pydantic_chat_exchange(user_content: str, assistant_content: str) -> list[M
         ModelRequest(parts=[UserPromptPart(content=user_content)]),
         ModelResponse(parts=[TextPart(content=assistant_content)]),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Mode switching (v2 pipeline / react / chat)
+# ---------------------------------------------------------------------------
+
+VALID_MODES = frozenset({"chat", "pipeline", "react"})
+
+
+def _is_mode_command(user_input: str) -> bool:
+    return user_input.startswith(("/mode", "mode ")) or user_input in {"/mode", "mode"}
+
+
+def handle_mode_command(app_state: AppState, user_input: str) -> None:
+    parts = user_input.removeprefix("/").removeprefix("mode").strip().split(maxsplit=1)
+    if not parts or parts == [""]:
+        print_text(f"Active mode: [bold]{app_state.active_mode}[/bold]")
+        return
+
+    new_mode = parts[0].lower()
+    if new_mode not in VALID_MODES:
+        print_error(
+            f"Unknown mode '{new_mode}'. Valid modes: {', '.join(sorted(VALID_MODES))}"
+        )
+        return
+
+    if new_mode == app_state.active_mode:
+        print_text(f"Already in [bold]{new_mode}[/bold] mode.")
+        return
+
+    app_state.active_mode = new_mode
+
+    if new_mode != "chat" and app_state.v2_runtime is None:
+        from harness_poc.v2.wiring import build_v2_runtime  # noqa: PLC0415
+
+        app_state.v2_runtime = build_v2_runtime(
+            app_state.identity, app_state.config, mode=new_mode
+        )
+
+    print_text(f"Switched to [bold]{new_mode}[/bold] mode.")
+
+
+def _handle_v2_mode_input(app_state: AppState, user_input: str) -> None:
+    """Handle a plain-text input when active_mode is pipeline or react."""
+    mode = app_state.active_mode
+    runtime = app_state.v2_runtime
+    if runtime is None:
+        print_error(f"No v2 runtime available for mode '{mode}'. Use /mode first.")
+        return
+
+    print_text(f"[cyan]Running {mode} mode...[/cyan]")
+    print_text(f"Objective: [bold]{user_input}[/bold]")
+    print_text("")
+
+    if mode == "pipeline":
+        _run_pipeline_inline(app_state, runtime, user_input)
+    elif mode == "react":
+        _run_react_inline(app_state, runtime, user_input)
+
+
+def _run_pipeline_inline(app_state: AppState, runtime, user_input: str) -> None:
+    """Run the pipeline synchronously (blocks REPL until done)."""
+    from harness_poc.core.events import ExecutionCompleted, GateCompleted, ProbeCompleted
+
+    orch = runtime.orchestrator
+    if orch is None:
+        print_error("Pipeline orchestrator not available")
+        return
+    bus = runtime.bus
+
+    def on_probe(event: ProbeCompleted) -> None:
+        if event.success:
+            print_text("  Probe: PASSED")
+        else:
+            print_text(f"  Probe: FAILED — {len(event.constraints)} constraint(s)")
+
+    def on_execution(event: ExecutionCompleted) -> None:
+        agents = event.sub_agents
+        if not agents:
+            print_text("  Execution: skipped (no tasks)")
+        elif event.all_passed:
+            print_text(f"  Execution: PASSED — {len(agents)} agent(s)")
+        else:
+            failed = sum(1 for a in agents if a.get("output_label") != "completed")
+            print_text(f"  Execution: FAILED — {failed}/{len(agents)} agent(s)")
+
+    def on_gate(event: GateCompleted) -> None:
+        if event.passed:
+            print_text(f"  Gate: PASSED — {event.test_count} test(s)")
+        else:
+            print_text(f"  Gate: FAILED — {event.test_count} test(s)")
+        print_text("  Done.")
+
+    bus.subscribe(ProbeCompleted, on_probe)
+    bus.subscribe(ExecutionCompleted, on_execution)
+    bus.subscribe(GateCompleted, on_gate)
+
+    orch.run_pipeline_via_bus(
+        spec={"goal": user_input, "tasks": []},
+        persona_id="coder",
+        probe_code=None,
+        workspace_path=None,
+        session_id=app_state.session_id,
+    )
+
+
+def _run_react_inline(app_state: AppState, runtime, user_input: str) -> None:
+    """Run the ReAct loop in a background thread so the REPL stays responsive."""
+    import asyncio
+    import threading
+
+    if runtime.circuit_breaker is None:
+        print_error("CircuitBreaker not available")
+        return
+    if runtime.llm_worker is None:
+        print_error("LlmWorker not available")
+        return
+    if runtime.tool_worker is None:
+        print_error("ToolWorker not available")
+        return
+    if runtime.goal_evaluator is None:
+        print_error("GoalEvaluator not available")
+        return
+
+    session_id = app_state.session_id
+    bus = runtime.bus
+
+    output_parts: list[str] = []
+
+    def _run() -> None:
+        terminal_event = asyncio.Event()
+
+        def on_text(event: LLMTextEmitted) -> None:
+            output_parts.append(event.content)
+            terminal_event.set()
+
+        def on_pause(event: StreamPaused) -> None:
+            terminal_event.set()
+
+        def on_goal(event: GoalEvaluated) -> None:
+            terminal_event.set()
+
+        bus.subscribe(LLMTextEmitted, on_text)
+        bus.subscribe(StreamPaused, on_pause)
+        bus.subscribe(GoalEvaluated, on_goal)
+
+        async def _react():
+            tasks = [
+                asyncio.create_task(runtime.circuit_breaker.run(bus, session_id)),
+                asyncio.create_task(runtime.llm_worker.run(bus, session_id)),
+                asyncio.create_task(runtime.tool_worker.run(bus, session_id)),
+                asyncio.create_task(runtime.goal_evaluator.run(bus, session_id)),
+            ]
+            try:
+                bus.publish(
+                    AgentInputAdded(session_id=session_id, user_content=user_input)
+                )
+                await asyncio.wait_for(terminal_event.wait(), timeout=120.0)
+            except TimeoutError:
+                output_parts.append("Time budget exhausted.")
+            finally:
+                bus.publish(
+                    StreamPaused(session_id=session_id, reason="completed", threshold_breached="50")
+                )
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+        asyncio.run(_react())
+
+    thread = threading.Thread(target=_run, daemon=True, name="react-repl-runner")
+    thread.start()
+    thread.join(timeout=130.0)
+
+    output = "\n".join(output_parts).strip()
+    if output:
+        print_text(output)
+    else:
+        print_text("ReAct loop completed (no text output).")

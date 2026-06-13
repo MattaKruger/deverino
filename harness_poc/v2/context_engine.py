@@ -16,10 +16,12 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from harness_poc.core.events.events import BaseEvent, ContextWarmed, ProbeFailed
+
 if TYPE_CHECKING:
+    from harness_poc.core.events.event_bus import EventBus
     from harness_poc.core.storage.database import BlackboardDatabase
     from harness_poc.v2.contracts.context_map_pipeline import ContextMapMaterializer
-    from harness_poc.v2.contracts.event_runtime import EventBus
 
 logger = logging.getLogger(__name__)
 
@@ -171,14 +173,14 @@ class ContextEngine:
         event_id = str(uuid.uuid4())
 
         # Publish PROBE_FAILED event via the event bus (or fall back to db)
-        probe_payload = {
-            "session_id": session_id,
-            "team_member": "orchestrator",
-            "execution_error": execution_error,
-            "extracted_constraints": constraints,
-            "event_id": event_id,
-        }
-        self._publish_event("PROBE_FAILED", probe_payload)
+        self._publish_event(
+            ProbeFailed(
+                session_id=session_id,
+                team_member="orchestrator",
+                execution_error=execution_error,
+                extracted_constraints=constraints,
+            )
+        )
 
         # Build context delta for the working context
         context_delta = {
@@ -200,13 +202,14 @@ class ContextEngine:
         )
 
         # Publish CONTEXT_WARMED event — signals successful context map update
-        warmed_payload = {
-            "session_id": session_id,
-            "team_member": "orchestrator",
-            "constraint_count": len(constraints),
-            "probe_event_id": event_id,
-        }
-        self._publish_event("CONTEXT_WARMED", warmed_payload)
+        self._publish_event(
+            ContextWarmed(
+                session_id=session_id,
+                team_member="orchestrator",
+                constraint_count=len(constraints),
+                probe_event_id=event_id,
+            )
+        )
 
         return context_delta
 
@@ -214,16 +217,16 @@ class ContextEngine:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _publish_event(self, event_type: str, payload: dict[str, Any]) -> None:
+    def _publish_event(self, event: BaseEvent) -> None:
         """Publish an event through the bus, or fall back to direct db write."""
         if self._event_bus is not None:
-            self._event_bus.publish(event_type, payload)
+            self._event_bus.publish(event)
         else:
             self._db.append_context_event(
-                session_id=payload.get("session_id", "v2-runtime"),
-                team_member=payload.get("team_member", "orchestrator"),
-                event_type=event_type,
-                payload=payload,
+                session_id=event.session_id,
+                team_member=getattr(event, "team_member", "orchestrator"),
+                event_type=event.event_type,
+                payload=event.model_dump(),
             )
 
     def _load_persona(self, persona_id: str) -> str:
