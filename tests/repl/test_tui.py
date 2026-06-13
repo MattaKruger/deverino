@@ -9,8 +9,8 @@ from textual.widgets import OptionList, TextArea
 from harness_poc.app_factory import StreamingContext
 from harness_poc.core.config import TuiConfig
 from harness_poc.tui import (
+    ActivityState,
     ChatApp,
-    _format_spinner_status,
     _is_chat_at_scroll_end,
     _scroll_chat_end_if_following,
     _should_render_markdown,
@@ -60,7 +60,7 @@ async def test_chat_app_composes() -> None:
     async with app.run_test() as pilot:
         assert pilot.app.query_one("#header")
         assert pilot.app.query_one("#chat")
-        assert pilot.app.query_one("#spinner")
+        assert pilot.app.query_one("#status-bar")
         assert pilot.app.query_one("#input")
         assert pilot.app.query_one("#completion-menu")
 
@@ -351,9 +351,17 @@ async def test_vim_chat_pane_ctrl_d_scrolls() -> None:
         assert chat_app._vim.pane.value == "chat"  # still in chat pane
 
 
-def test_spinner_status_combines_independent_icon_phrase_and_dots() -> None:
-    status = _format_spinner_status("(งツ)ว", "doing the thing", "...")
 
-    assert status.startswith("(งツ)ว")
-    assert status.endswith("doing the thing...")
-    assert "  doing the thing" in status
+def test_activity_state_label_includes_phase_and_detail() -> None:
+    """ActivityState.label renders phase, detail, and tokens."""
+    state = ActivityState(phase="idle")
+    assert state.label == ""
+
+    state = ActivityState(phase="streaming")
+    assert state.label == "\u25cf streaming"
+
+    state = ActivityState(phase="tool", detail="skill_view")
+    assert "\u25cf tool: skill_view" in state.label
+
+    state = ActivityState(phase="streaming", token_count=1500)
+    assert "1.5k" in state.label

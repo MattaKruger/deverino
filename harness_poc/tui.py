@@ -3,15 +3,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
-import itertools
 import logging
 import re
 import shutil
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, cast
 
 from textual.app import App, Binding
 from textual.containers import Vertical, VerticalScroll
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
     from textual import events
     from textual.app import ComposeResult
-    from textual.timer import Timer
+    from textual.widget import Widget
 
     from harness_poc.app_factory import AppState
 
@@ -46,31 +46,79 @@ _TOKEN_THOUSAND = 1_000
 
 _SCROLL_END_EPSILON = 1.0
 
-_SPINNER_ICONS = [
-    "( ͡° ͜ʖ ͡°)",
-    "(ง •̀_•́)ง",
-    "¯\\_(ツ)_/¯",
-    "(•̀ᴗ•́)و",
-    "ʕ•ᴥ•ʔ",  # noqa: RUF001
-    "(╯°□°）╯",  # noqa: RUF001
-    "(*￣▽￣)b",
-    "ヽ(•‿•)ノ",  # noqa: RUF001
-    "(◕‿◕)✿",
-    "(งツ)ว",
-]
 
-_SPINNER_PHRASES = [
-    "cooking",
-    "doing the thing",
-    "it depends",
-    "manifesting",
-    "big brain time",
-    "consulting the oracle",
-    "works on my machine",
-    "sending it",
-    "on it chief",
-    "staring into the void",
-]
+@dataclass
+class ActivityState:
+    """Live agent activity shown in the status bar."""
+    phase: Literal["idle", "streaming", "tool", "thinking", "blocked"] = "idle"
+    detail: str = ""
+    token_count: int = 0
+
+    @property
+    def label(self) -> str:
+        if self.phase == "idle":
+            return ""
+        base = f"\u25cf {self.phase}"
+        if self.detail:
+            base += f": {self.detail}"
+        if self.token_count:
+            base += f" \u00b7 {_format_tokens(self.token_count)}"
+        return base
+
+
+class ToolPanel(Static):
+    """Collapsible tool-call event panel mounted in the chat area.
+
+    Displays the last N tool events with status icons. When the agent
+    response finishes, collapses to a one-line summary. When the next
+    user message is submitted, the panel is removed.
+    """
+
+    MAX_VISIBLE = 5
+
+    def __init__(self) -> None:
+        super().__init__("", classes="tool-panel")
+        self._events: list[tuple[str, str]] = []  # (message, status)
+
+    @property
+    def has_events(self) -> bool:
+        return bool(self._events)
+    def add(self, message: str, status: str = "running") -> None:
+        self._events.append((message, status))
+        self._render()
+
+    def finish(self) -> str:
+        """Collapse to summary line. Returns the summary text."""
+        if not self._events:
+            return ""
+        tools = [msg for msg, _ in self._events]
+        unique: list[str] = []
+        for t in tools:
+            if unique and unique[-1] == t:
+                continue
+            unique.append(t)
+        max_summary_tools = 10
+        summary = "\u2713 " + ", ".join(unique[:max_summary_tools])
+        if len(unique) > max_summary_tools:
+            summary += f" +{len(unique) - max_summary_tools} more"
+        self.add_class("finished")
+        return summary
+
+    def dismiss(self) -> None:
+        self._events.clear()
+        self.update("")
+        self.remove_class("finished")
+
+    def _render(self) -> None:
+        lines: list[str] = []
+        for msg, status in self._events[-self.MAX_VISIBLE :]:
+            icon = {"running": "\u2026", "success": "\u2713", "error": "\u2717"}.get(status, "\u2026")
+            lines.append(f"  {icon} {msg}")
+        if len(self._events) > self.MAX_VISIBLE:
+            lines.insert(0, f"  ... ({len(self._events) - self.MAX_VISIBLE} earlier)")
+        self.update("\n".join(lines) if lines else "")
+
+
 
 
 def _format_tokens(count: int) -> str:
@@ -79,10 +127,6 @@ def _format_tokens(count: int) -> str:
     if count >= _TOKEN_THOUSAND:
         return f"{count / _TOKEN_THOUSAND:.1f}k"
     return str(count)
-
-
-def _format_spinner_status(icon: str, phrase: str, dots: str) -> str:
-    return f"{icon:<12}  {phrase}{dots}"
 
 
 _FILE_REF_PATTERN = re.compile(r"\b([\w./-]+\.\w{1,10}):(\d+)(?:-(\d+))?\b")
@@ -231,12 +275,7 @@ class ChatApp(App[None]):
         dock: bottom;
         height: 11;
     }
-    #spinner {
-        height: 1;
-        color: $text-muted;
-        padding: 0 1;
-    }
-    #vim-status {
+    #status-bar {
         height: 1;
         color: $text-muted;
         padding: 0 1;
@@ -250,12 +289,22 @@ class ChatApp(App[None]):
         display: none;
         border: tall $surface;
     }
+    .tool-panel {
+        border: dashed $surface-lighten-1;
+        padding: 0 1;
+        margin: 1 0;
+        color: $text-muted;
+    }
+    .tool-panel.finished {
+        color: $success;
+    }
     """
 
     def __init__(self, app_state: AppState) -> None:
         super().__init__()
         self._app_state = app_state
-        self._spinner_timer: Timer | None = None
+        self._activity = ActivityState()
+        self._tool_panel: ToolPanel | None = None
         self._materializer_task: asyncio.Task[None] | None = None
         tui_cfg = app_state.config.tui
         initial_mode = VimMode(tui_cfg.vim_initial_mode)
@@ -273,13 +322,11 @@ class ChatApp(App[None]):
             copy_last_response=self.action_copy_last_response,
             message_texts=lambda: list(self._chat_messages),
         )
-
     def compose(self) -> ComposeResult:
         yield Static("", id="header")
         yield VerticalScroll(id="chat")
         with Vertical(id="footer"):
-            yield Static("", id="spinner")
-            yield Static("", id="vim-status")
+            yield Static("", id="status-bar")
             yield VimTextArea(
                 "",
                 placeholder="> ",
@@ -351,33 +398,35 @@ class ChatApp(App[None]):
         # All other links (http, https, etc.) → default browser
         self.open_url(event.href)
 
-    def _start_spinner(self) -> None:
-        spinner = self.query_one("#spinner", Static)
-        icon_cycle = itertools.cycle(_SPINNER_ICONS)
-        phrase_cycle = itertools.cycle(_SPINNER_PHRASES)
-        dot_cycle = itertools.cycle([".", "..", "..."])
-        current_icon = [next(icon_cycle)]
-        current_phrase = [next(phrase_cycle)]
-        tick = [0]
+    def _mount_chat(self, widget: Widget, *, scroll: bool = True) -> None:
+        """Mount a widget into the chat area from any thread, preserving scroll position."""
+        def _do() -> None:
+            chat = self.query_one("#chat", VerticalScroll)
+            was_at_end = _is_chat_at_scroll_end(chat) if scroll else False
+            chat.mount(widget)
+            if scroll:
+                _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
+        self.call_from_thread(_do)
 
-        def _tick() -> None:
-            tick[0] += 1
-            if tick[0] % 4 == 0:
-                current_icon[0] = next(icon_cycle)
-            if tick[0] % 8 == 0:
-                current_phrase[0] = next(phrase_cycle)
-            spinner.update(
-                _format_spinner_status(current_icon[0], current_phrase[0], next(dot_cycle))
-            )
+    def _set_activity(self, phase: Literal["idle", "streaming", "tool", "thinking", "blocked"], detail: str = "") -> None:
+        self._activity.phase = phase
+        self._activity.detail = detail
+        self._activity.token_count = self._app_state.streaming.session_tokens
+        self._render_status_bar()
 
-        spinner.update(_format_spinner_status(current_icon[0], current_phrase[0], "."))
-        self._spinner_timer = self.set_interval(0.4, _tick)
+    def _render_status_bar(self) -> None:
+        parts: list[str] = []
+        # Vim mode
+        parts.append(format_status(self._vim))
+        # Active mode
+        parts.append(str(self._app_state.active_mode))
+        # Activity
+        if self._activity.phase != "idle":
+            parts.append(self._activity.label)
+        self.query_one("#status-bar", Static).update(" \u2502 ".join(parts))
 
-    def _stop_spinner(self) -> None:
-        if self._spinner_timer is not None:
-            self._spinner_timer.stop()
-            self._spinner_timer = None
-        self.query_one("#spinner", Static).update("")
+    def _update_vim_status(self) -> None:
+        self._render_status_bar()
 
     def action_submit_editor(self) -> None:
         if self._vim.enabled and self._vim.pane == VimPane.INPUT and self._vim.mode == VimMode.NORMAL:
@@ -397,8 +446,6 @@ class ChatApp(App[None]):
         self.query_one("#input", TextArea).focus()
         self._update_vim_status()
 
-    def _update_vim_status(self) -> None:
-        self.query_one("#vim-status", Static).update(format_status(self._vim))
 
     def handle_vim_text_area_key(self, event: events.Key) -> bool:
         """Route a key event from VimTextArea through the Vim handler.
@@ -587,10 +634,10 @@ class ChatApp(App[None]):
         chat = self.query_one("#chat", VerticalScroll)
         chat.mount(Static(f"[cyan]You:[/cyan] {text}", classes="user-msg", markup=True))
         self._chat_messages.append(f"You: {text}")
-        self._start_spinner()
-        chat.scroll_end(animate=False)
+        self._set_activity("streaming")
+        if self._tool_panel is not None:
+            self._tool_panel.dismiss()
         self.run_worker(self._chat_worker(text, chat))
-
     async def _chat_worker(self, text: str, chat: VerticalScroll) -> None:  # noqa: PLR0915
         from harness_poc.repl import handle_repl_input  # noqa: PLC0415
 
@@ -601,13 +648,15 @@ class ChatApp(App[None]):
         _flush_lock = threading.Lock()
         flush_interval = 0.033  # ~30 fps
 
+        # Tool panel — created lazily on first tool event
+        tool_panel = ToolPanel()
+        self._tool_panel = tool_panel
+
         def _flush_to_ui() -> None:
             current = "".join(buffer)
-
             def _update() -> None:
                 was_at_end = _is_chat_at_scroll_end(chat)
                 if state["widget"] is None:
-                    self._stop_spinner()
                     w = Static(current, markup=False)
                     state["widget"] = w
                     chat.mount(Static("[green]Agent:[/green]", classes="agent-label", markup=True))
@@ -615,7 +664,6 @@ class ChatApp(App[None]):
                 else:
                     state["widget"].update(current)
                 _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
-
             self.call_from_thread(_update)
 
         def on_text_chunk(chunk: str) -> None:
@@ -626,94 +674,65 @@ class ChatApp(App[None]):
                     _last_flush[0] = now
                     _flush_to_ui()
 
-        tool_lines: list[str] = []
-        max_tool_lines = 5  # Show last N tool iterations, collapse older ones
-        tool_state: dict[str, Static | None] = {"widget": None}
-
         def on_tool_event(message: str) -> None:
-            tool_lines.append(message)
-            display_lines = list(tool_lines)
-            if len(display_lines) > max_tool_lines:
-                older = len(display_lines) - max_tool_lines
-                summary = f"  ... ({older} earlier tool calls) ..."
-                display_lines = [summary, *display_lines[-max_tool_lines:]]
-            combined = "\n".join(f"  ⚙ {line}" for line in display_lines)
-
-            def _update_tool() -> None:
+            tool_panel.add(message, status="running")
+            self._set_activity("tool", detail=message.split(":", maxsplit=1)[0] if ":" in message else message)
+            def _mount_tool() -> None:
                 was_at_end = _is_chat_at_scroll_end(chat)
-                if tool_state["widget"] is None:
-                    w = Static(combined, classes="tool-line", markup=False)
-                    tool_state["widget"] = w
-                    chat.mount(w)
-                else:
-                    tool_state["widget"].update(combined)
+                if tool_panel not in chat.children:
+                    chat.mount(tool_panel)
                 _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
+            self.call_from_thread(_mount_tool)
 
-            self.call_from_thread(_update_tool)
+        def _finalize_response(_final_content: str) -> None:
+            """Called by on_finish — flush buffer, render Markdown, collapse tool panel."""
+            def _do() -> None:
+                was_at_end = _is_chat_at_scroll_end(chat)
+                # Collapse tool panel
+                if tool_panel.has_events:
+                    tool_panel.finish()
+                # Flush remaining buffer
+                if buffer and state["widget"] is not None:
+                    state["widget"].update("".join(buffer))
+                # Replace streaming Static with Markdown
+                response = "".join(buffer)
+                if state["widget"] is not None:
+                    state["widget"].remove()
+                if response:
+                    if state["widget"] is None:
+                        label = Static("[green]Agent:[/green]", classes="agent-label", markup=True)
+                        chat.mount(label)
+                    if _should_render_markdown(response):
+                        linkified = _linkify_file_refs(response, str(self._app_state.config.project_root))
+                        chat.mount(Markdown(linkified, open_links=False))
+                    else:
+                        chat.mount(Static(response, markup=False))
+                    self._chat_messages.append(f"Agent: {response}")
+                self._set_activity("idle")
+                _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
+                self._app_state.streaming.reset_callbacks()
+                self._update_header()
+            self.call_from_thread(_do)
 
         self._app_state.streaming.on_text = on_text_chunk
         self._app_state.streaming.on_tool_event = on_tool_event
-        self._app_state.streaming.on_finish = lambda _: None
+        self._app_state.streaming.on_finish = _finalize_response
 
         loop = asyncio.get_running_loop()
         try:
             await loop.run_in_executor(None, handle_repl_input, self._app_state, text)
         except Exception as exc:
             logger.exception("ChatApp worker raised", extra={"text": text})
-            self._stop_spinner()
-            was_at_end = _is_chat_at_scroll_end(chat)
-            await chat.mount(Static(f"[red]Error: {exc}[/red]", markup=True))
-            _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
-
-        # Flush any tokens buffered in the last throttle window
-        if buffer and state["widget"] is not None:
-            state["widget"].update("".join(buffer))
-
-        # Replace live streaming Static with rendered Markdown
-        response = "".join(buffer)
-        was_at_end = _is_chat_at_scroll_end(chat)
-        if state["widget"] is not None:
-            await state["widget"].remove()
-        if response:
-            if state["widget"] is None:
-                # no streaming happened — add the label now
-                label = Static("[green]Agent:[/green]", classes="agent-label", markup=True)
-                await chat.mount(label)
-            if _should_render_markdown(response):
-                linkified = _linkify_file_refs(response, str(self._app_state.config.project_root))
-                await chat.mount(Markdown(linkified, open_links=False))
-            else:
-                await chat.mount(Static(response, markup=False))
-            self._chat_messages.append(f"Agent: {response}")
-        self._stop_spinner()
-        _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
+            self._set_activity("idle")
+            self._mount_chat(Static(f"[red]Error: {exc}[/red]", markup=True))
         self._app_state.streaming.reset_callbacks()
-        self._update_header()
 
     def _tui_print_markdown(self, text: str) -> None:
-        def _mount() -> None:
-            chat = self.query_one("#chat", VerticalScroll)
-            was_at_end = _is_chat_at_scroll_end(chat)
-            linkified = _linkify_file_refs(text, str(self._app_state.config.project_root))
-            chat.mount(Markdown(linkified, open_links=False))
-            _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
-
-        self.call_from_thread(_mount)
+        linkified = _linkify_file_refs(text, str(self._app_state.config.project_root))
+        self._mount_chat(Markdown(linkified, open_links=False))
 
     def _tui_print_error(self, text: str) -> None:
-        def _mount() -> None:
-            chat = self.query_one("#chat", VerticalScroll)
-            was_at_end = _is_chat_at_scroll_end(chat)
-            chat.mount(Static(f"[red]{text}[/red]", markup=True))
-            _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
-
-        self.call_from_thread(_mount)
+        self._mount_chat(Static(f"[red]{text}[/red]", markup=True))
 
     def _tui_print_text(self, text: str, markup: bool = True) -> None:  # noqa: FBT001, FBT002
-        def _mount() -> None:
-            chat = self.query_one("#chat", VerticalScroll)
-            was_at_end = _is_chat_at_scroll_end(chat)
-            chat.mount(Static(text, markup=markup))
-            _scroll_chat_end_if_following(chat, was_at_end=was_at_end)
-
-        self.call_from_thread(_mount)
+        self._mount_chat(Static(text, markup=markup))
