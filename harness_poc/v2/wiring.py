@@ -83,7 +83,7 @@ def build_execution_engine(
         msg = "ExecutionEngine requires an event_bus"
         raise ValueError(msg)
 
-    spawner = _build_spawner_adapter(config)
+    spawner = _build_spawner_adapter(config, db)
     blackboard = _build_blackboard_adapter(db)
 
     return ExecutionEngine(
@@ -154,9 +154,7 @@ def build_v2_runtime(
         exec_engine = build_execution_engine(
             identity.database, config, project_id=project_id, event_bus=bus
         )
-        orch = build_workflow_orchestrator(
-            ctx_engine, exec_engine, project_id=project_id
-        )
+        orch = build_workflow_orchestrator(ctx_engine, exec_engine, project_id=project_id)
         return V2Runtime(
             mode="pipeline",
             bus=bus,
@@ -179,6 +177,7 @@ def build_v2_runtime(
         db = identity.database
         skill_runner = SkillRunner(database=db, config=config)
         from harness_poc.v2.agent_config import set_skill_runner
+
         set_skill_runner(skill_runner)
         # Build context map block for system prompt injection
         context_map_block = build_v2_system_prompt_block(
@@ -316,7 +315,7 @@ def _build_materializer_adapter(  # noqa: ANN202
     return _HarnessMaterializer()
 
 
-def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
+def _build_spawner_adapter(config: HarnessConfig, db: BlackboardDatabase):  # noqa: ANN202
     """Build a SubAgentSpawner adapter that runs real sub-agents via the LLM.
 
     Reads persona templates from ``config.paths.personas``, builds a
@@ -348,9 +347,8 @@ def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
         try:
             serialized = _json.dumps(value, default=str)
             return serialized[:100_000]
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return repr(value)[:1000]
-
 
     max_error_length = 500
 
@@ -363,8 +361,9 @@ def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
 
     def _fallback_model() -> TestModel:
         return TestModel()
+
     class _HarnessSpawner:
-        def spawn(self, task_spec: dict) -> DelegatedTaskResult:
+        def spawn(self, task_spec: dict) -> DelegatedTaskResult:  # noqa: PLR0912
             task_id = task_spec.get("task_id", str(uuid.uuid4()))
             persona = str(task_spec.get("persona", ""))
             objective = str(task_spec.get("objective", ""))
@@ -394,6 +393,27 @@ def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
                     error=f"Failed to load persona '{persona}': {exc}",
                 )
 
+            # Load context map for sub-agent orientation
+            corpus_key = str(task_spec.get("corpus_key") or "")
+            context_map_block = ""
+            if corpus_key:
+                try:
+                    current_map = db.get_context_map(corpus_key) or []
+                    if current_map:
+                        from harness_poc.core.context_map.render import render_context_map
+
+                        cycle_n = db.get_cycle(corpus_key)
+                        context_map_block = render_context_map(
+                            current_map, cycle_n, prompt_mode="structured"
+                        )
+                except Exception:
+                    logger.debug(
+                        "Failed to load context map for sub-agent (corpus_key=%s)",
+                        corpus_key,
+                        exc_info=True,
+                    )
+            if context_map_block:
+                system_prompt += f"\n\n--- Context Map ({corpus_key}) ---\n{context_map_block}\n---"
             # Load agent configuration (tools, permissions)
             tools: list = []
             try:
@@ -401,9 +421,7 @@ def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
                 from harness_poc.v2.agent_config import AgentConfig
 
                 agents_dir = config.project_root / "subagents"
-                agent_cfg = AgentConfig.from_name(
-                    agents_dir, persona, tool_registry=get_registry()
-                )
+                agent_cfg = AgentConfig.from_name(agents_dir, persona, tool_registry=get_registry())
                 tools = agent_cfg.tools
             except FileNotFoundError:
                 logger.debug("No agent config for persona '%s' — running with no tools", persona)
@@ -420,7 +438,7 @@ def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
                 agent = Agent(
                     model,
                     system_prompt=system_prompt,
-                    tools=tools if tools else None,
+                    tools=tools or None,
                 )
                 prompt = f"Objective: {objective}"
                 if context:
@@ -463,6 +481,7 @@ def _build_spawner_adapter(config: HarnessConfig):  # noqa: ANN202
                     status=DELEGATED_STATUS_FAILED,
                     error=f"Sub-agent execution failed: {_format_exception(exc)}",
                 )
+
     return _HarnessSpawner()
 
 

@@ -206,10 +206,10 @@ def _build_task_spec(*, task_id: str, arguments: dict[str, Any]) -> dict[str, An
         "persona": arguments["persona"],
         "objective": arguments["objective"],
         "context": arguments.get("context"),
+        "corpus_key": arguments.get("corpus_key"),
         "tools": arguments.get("tools"),
         "metadata": arguments.get("metadata", {}),
     }
-
 
 def _build_summary(raw: DelegatedTaskResult) -> str:
     """Build a human-readable one-line summary from the raw result."""

@@ -35,6 +35,7 @@ from harness_poc.v2.handlers.delegate_task_handler import (
 # Test doubles (spies)
 # ---------------------------------------------------------------------------
 
+
 class SpawnerSpy:
     """Controllable SubAgentSpawner double.
 
@@ -77,6 +78,7 @@ class BlackboardSpy:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def make_arguments(**overrides) -> dict:
     """Return a minimal valid arguments dict."""
     base = {
@@ -102,6 +104,7 @@ def make_delegated_result(status: str, **overrides) -> DelegatedTaskResult:
 # Tests: failure mode (TDD step 1 — watch it FAIL, then make it PASS)
 # ---------------------------------------------------------------------------
 
+
 class TestFailureModeSpawnerReturnsFailed:
     """When the spawner returns a 'failed' DelegatedTaskResult the handler
     must still write to blackboard and emit an event — just with a
@@ -109,9 +112,7 @@ class TestFailureModeSpawnerReturnsFailed:
     """
 
     def test_blackboard_receives_failed_output(self) -> None:
-        spawner = SpawnerSpy(
-            make_delegated_result(DELEGATED_STATUS_FAILED, error="timeout")
-        )
+        spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_FAILED, error="timeout"))
         event_bus = EventBusSpy()
         blackboard = BlackboardSpy()
 
@@ -129,9 +130,7 @@ class TestFailureModeSpawnerReturnsFailed:
         assert "timeout" in output.summary
 
     def test_event_emitted_on_failure(self) -> None:
-        spawner = SpawnerSpy(
-            make_delegated_result(DELEGATED_STATUS_FAILED, error="tool crash")
-        )
+        spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_FAILED, error="tool crash"))
         event_bus = EventBusSpy()
         blackboard = BlackboardSpy()
 
@@ -153,6 +152,7 @@ class TestFailureModeSpawnerReturnsFailed:
 # ---------------------------------------------------------------------------
 # Tests: edge cases — malformed input (TDD step 3 variant)
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCaseMalformedArgs:
     """Missing required keys must raise MalformedArgumentsError."""
@@ -204,13 +204,12 @@ class TestEdgeCaseMalformedArgs:
 # Tests: success path — full roundtrip
 # ---------------------------------------------------------------------------
 
+
 class TestSuccessPathFullRoundtrip:
     """Happy path: spawner succeeds, all side effects fire."""
 
     def test_output_label_is_completed(self) -> None:
-        spawner = SpawnerSpy(
-            make_delegated_result(DELEGATED_STATUS_SUCCESS, raw_output="all good")
-        )
+        spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS, raw_output="all good"))
         event_bus = EventBusSpy()
         blackboard = BlackboardSpy()
 
@@ -246,9 +245,7 @@ class TestSuccessPathFullRoundtrip:
         assert output.output_label == DELEGATED_OUTPUT_COMPLETED
 
     def test_event_payload_contains_task_id(self) -> None:
-        spawner = SpawnerSpy(
-            make_delegated_result(DELEGATED_STATUS_SUCCESS, task_id="t-99")
-        )
+        spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS, task_id="t-99"))
         event_bus = EventBusSpy()
         blackboard = BlackboardSpy()
 
@@ -285,6 +282,7 @@ class TestSuccessPathFullRoundtrip:
 # ---------------------------------------------------------------------------
 # Tests: status mapping edge case — blocked goal
 # ---------------------------------------------------------------------------
+
 
 class TestStatusMappingBlockedGoal:
     """When original_goal_status='blocked' and the spawner fails, the
@@ -333,6 +331,7 @@ class TestStatusMappingBlockedGoal:
 # Tests: spawner raises unexpected exception
 # ---------------------------------------------------------------------------
 
+
 class TestSpawnerExplodes:
     """If spawner.spawn() raises an exception (not returns a failed result),
     the handler must wrap it in SpawnerFailureError.
@@ -355,3 +354,43 @@ class TestSpawnerExplodes:
         # Nothing should be written to blackboard or event bus on crash
         assert len(blackboard.writes) == 0
         assert len(event_bus.events) == 0
+
+
+class TestCorpusKeyPassthrough:
+    """corpus_key in arguments flows through to the task_spec."""
+
+    def test_corpus_key_forwarded_to_spawner(self) -> None:
+        """_build_task_spec includes corpus_key when provided."""
+        spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS))
+        event_bus = EventBusSpy()
+        blackboard = BlackboardSpy()
+
+        _handle_delegate_task(
+            spawner=spawner,
+            event_bus=event_bus,
+            blackboard=blackboard,
+            session_id="sess-cm",
+            arguments=make_arguments(corpus_key="deverino:docs"),
+        )
+
+        assert len(spawner.calls) == 1
+        task_spec = spawner.calls[0]
+        assert task_spec["corpus_key"] == "deverino:docs"
+
+    def test_corpus_key_absent_when_not_provided(self) -> None:
+        """corpus_key is None in task_spec when not in arguments."""
+        spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS))
+        event_bus = EventBusSpy()
+        blackboard = BlackboardSpy()
+
+        _handle_delegate_task(
+            spawner=spawner,
+            event_bus=event_bus,
+            blackboard=blackboard,
+            session_id="sess-no-cm",
+            arguments=make_arguments(),
+        )
+
+        assert len(spawner.calls) == 1
+        task_spec = spawner.calls[0]
+        assert task_spec.get("corpus_key") is None
