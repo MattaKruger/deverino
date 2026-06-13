@@ -1,7 +1,7 @@
 """V2 Module — event-sourced layering + persona-driven materialization.
 
-Exports the contracts (protocols), handlers (pipeline glue), engines
-(ContextEngine + ExecutionEngine), and schemas (Event, MaterializedContext).
+Exports the contracts (protocols), engines (ContextEngine + ExecutionEngine),
+and workflow orchestrator.
 
 This is the implementation surface for planning_specv2.md.
 """
@@ -59,7 +59,6 @@ from harness_poc.v2.execution_engine import (
     GateFailureError,
     SubAgentPoolFullError,
 )
-from harness_poc.v2.schemas import Event, MaterializedContext
 from harness_poc.v2.workflow_orchestrator import (
     ExecutionResult,
     GateRejectedError,
@@ -102,8 +101,7 @@ __all__ = [
     "DbContextMap",
     "DelegatedTaskOutput",
     "DelegatedTaskResult",
-    # Schemas
-    "Event",
+
     "EventBus",
     "EventHandler",
     "EventStore",
@@ -120,7 +118,6 @@ __all__ = [
     "GoalResult",
     "GoalRunner",
     "MaterializationError",
-    "MaterializedContext",
     "PedagogyNotFoundError",
     "PersonaNotFoundError",
     "ProbeError",

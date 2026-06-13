@@ -138,8 +138,7 @@ class SubAgentSpawner(Protocol):
         The ``on_text`` callback receives incremental output as the
         sub-agent executes, enabling real-time streaming to the user.
         Lifecycle events (started, completed, failed) are emitted by
-        the caller (e.g. delegate_task_streaming handler), not by the
-        spawner itself.
+        the caller, not by the spawner itself.
 
         Args:
             task_spec: A dict describing the task (goal, context, tools).
