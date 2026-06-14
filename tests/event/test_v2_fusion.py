@@ -75,9 +75,7 @@ class TestV2EventPersistence:
 
     def test_gate_passed_and_failed_round_trip(self, db_engine: Engine) -> None:
         bus = EventBus(EventStore(db_engine))
-        passed = GatePassed(
-            session_id="s1", passed=True, detail="all good", project_id="deverino"
-        )
+        passed = GatePassed(session_id="s1", passed=True, detail="all good", project_id="deverino")
         failed = GatePassed(
             session_id="s1", passed=False, detail="3 tests failed", project_id="deverino"
         )
@@ -221,11 +219,7 @@ class TestV2EventDispatch:
             )
 
         bus.subscribe(GateCompleted, handler)
-        bus.publish(
-            GateCompleted(
-                session_id="s1", gate_id="g42", passed=True, test_count=15
-            )
-        )
+        bus.publish(GateCompleted(session_id="s1", gate_id="g42", passed=True, test_count=15))
         assert received == [{"gate_id": "g42", "passed": True, "test_count": 15}]
 
     def test_spec_committed_dispatches(self, db_engine: Engine) -> None:

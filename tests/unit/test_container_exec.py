@@ -9,6 +9,10 @@ from __future__ import annotations
 import pytest
 
 from harness_poc.system_tools.container_exec import container_exec
+from tests.helpers import BLOCKED_BINARIES
+
+
+_BLOCKED_COMMANDS = [(cmd, binary) for binary, cmd in BLOCKED_BINARIES]
 
 
 class TestBlockedBinaries:
@@ -16,18 +20,7 @@ class TestBlockedBinaries:
 
     @pytest.mark.parametrize(
         ("command", "expected_binary"),
-        [
-            ("vim /etc/config", "vim"),
-            ("vi README.md", "vi"),
-            ("nano foo.txt", "nano"),
-            ("sudo apt update", "sudo"),
-            ("ssh user@host", "ssh"),
-            ("top", "top"),
-            ("htop", "htop"),
-            ("watch ls", "watch"),
-            ("less /var/log/syslog", "less"),
-            ("more file.txt", "more"),
-        ],
+        [(binary, binary) for binary, _cmd in BLOCKED_BINARIES],
     )
     def test_blocked_binary_rejected(self, command: str, expected_binary: str) -> None:
         """Each blocked binary returns status='blocked' with the binary name."""
@@ -52,4 +45,3 @@ class TestBlockedBinaries:
         # Not blocked — should fail because no container runtime is available
         assert result.status != "blocked"
         assert "echo" not in (result.artifacts.get("binary") or "")
-

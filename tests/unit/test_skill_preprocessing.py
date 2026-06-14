@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from harness_poc.core.skills.skill_preprocessing import expand_inline_shell
+from tests.helpers import BLOCKED_BINARIES
 
 
 class TestInlineShellBlockedBinaries:
@@ -12,22 +13,9 @@ class TestInlineShellBlockedBinaries:
 
     @pytest.mark.parametrize(
         ("snippet", "expected_binary"),
-        [
-            ("!`vim /etc/config`", "vim"),
-            ("!`vi README.md`", "vi"),
-            ("!`nano foo.txt`", "nano"),
-            ("!`sudo apt update`", "sudo"),
-            ("!`ssh user@host`", "ssh"),
-            ("!`top`", "top"),
-            ("!`htop`", "htop"),
-            ("!`watch ls`", "watch"),
-            ("!`less /var/log/syslog`", "less"),
-            ("!`more file.txt`", "more"),
-        ],
+        [(f"!`{binary}`", binary) for binary, _cmd in BLOCKED_BINARIES],
     )
-    def test_blocked_inline_shell_rejected(
-        self, snippet: str, expected_binary: str
-    ) -> None:
+    def test_blocked_inline_shell_rejected(self, snippet: str, expected_binary: str) -> None:
         """Each blocked binary produces an [inline-shell blocked: ...] marker."""
         result = expand_inline_shell(snippet, skill_dir=None, timeout=5)
         assert "[inline-shell blocked:" in result
