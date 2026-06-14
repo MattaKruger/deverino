@@ -89,9 +89,7 @@ class LlmWorker:
             result = await asyncio.to_thread(llm_runtime.run_text, prompt)
 
             if result.usage is not None:
-                accounting = account_for_model_run(
-                    result.usage, new_messages=result.messages
-                )
+                accounting = account_for_model_run(result.usage, new_messages=result.messages)
                 bus.publish(
                     LLMActionEmitted(
                         session_id=session_id,

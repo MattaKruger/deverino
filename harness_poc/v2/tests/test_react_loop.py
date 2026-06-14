@@ -34,6 +34,7 @@ class EventStoreSpy:
 
     def __init__(self) -> None:
         from harness_poc.core.events.events import BaseEvent
+
         self.events: list[BaseEvent] = []
 
     def persist(self, event: Any) -> None:
@@ -42,9 +43,7 @@ class EventStoreSpy:
     async def persist_async(self, event: Any) -> None:
         self.events.append(event)
 
-    def get_recent_events(
-        self, *, session_id, limit=20, event_types=None
-    ):
+    def get_recent_events(self, *, session_id, limit=20, event_types=None):
         return [e for e in self.events if e.session_id == session_id][-limit:]
 
 
@@ -172,11 +171,7 @@ class TestReActFullLoop:
         eval_task = asyncio.create_task(evaluator.run(bus, session_id))
         await asyncio.sleep(0)
 
-        bus.publish(
-            LLMTextEmitted(
-                session_id=session_id, content="done"
-            )
-        )
+        bus.publish(LLMTextEmitted(session_id=session_id, content="done"))
 
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(task, timeout=2)
@@ -214,11 +209,7 @@ class TestReActFullLoop:
 
         # Publish 3 LLMActionEmitted (not text) to hit max_iterations=2
         for _i in range(3):
-            bus.publish(
-                LLMActionEmitted(
-                    session_id=session_id, model="test", tokens_used=10
-                )
-            )
+            bus.publish(LLMActionEmitted(session_id=session_id, model="test", tokens_used=10))
             await asyncio.sleep(0.01)
 
         with contextlib.suppress(TimeoutError):
@@ -317,21 +308,13 @@ class TestCircuitBreaker:
         await asyncio.sleep(0)
 
         # Fail, fail, succeed, fail — count should reset after success
-        bus.publish(
-            SkillCompleted(session_id=session_id, status="failed", content="err1")
-        )
+        bus.publish(SkillCompleted(session_id=session_id, status="failed", content="err1"))
         await asyncio.sleep(0.01)
-        bus.publish(
-            SkillCompleted(session_id=session_id, status="failed", content="err2")
-        )
+        bus.publish(SkillCompleted(session_id=session_id, status="failed", content="err2"))
         await asyncio.sleep(0.01)
-        bus.publish(
-            SkillCompleted(session_id=session_id, status="success", content="ok")
-        )
+        bus.publish(SkillCompleted(session_id=session_id, status="success", content="ok"))
         await asyncio.sleep(0.01)
-        bus.publish(
-            SkillCompleted(session_id=session_id, status="failed", content="err3")
-        )
+        bus.publish(SkillCompleted(session_id=session_id, status="failed", content="err3"))
 
         # Should NOT have paused (failures not consecutive enough)
         await asyncio.sleep(0.2)

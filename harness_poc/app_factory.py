@@ -228,7 +228,9 @@ def bootstrap_document_index(config: HarnessConfig, database: BlackboardDatabase
     _run_auto_index(config, database, changed_paths)
 
 
-def _changed_auto_index_paths(config: HarnessConfig, database: BlackboardDatabase, paths: list[str]) -> list[str]:
+def _changed_auto_index_paths(
+    config: HarnessConfig, database: BlackboardDatabase, paths: list[str]
+) -> list[str]:
     """Return only auto-index paths whose file hashes are stale or missing."""
     indexer = DocumentIndexer(
         config=config.retrieval,
@@ -361,7 +363,9 @@ def build_identity(
     event_store = EventStore(engine)
     event_bus = EventBus(event_store)
     effective_session_id = _resolve_or_create_session(
-        database, session_id, corpus_key=corpus_key,
+        database,
+        session_id,
+        corpus_key=corpus_key,
     )
     return Identity(
         session_id=effective_session_id,
@@ -392,9 +396,7 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
         )
         cross_body = _render_cross_corpus(identity, config, corpus_key)
         inventory = _render_corpus_inventory(identity, corpus_key)
-        context_map_block = (
-            f"--- Context Map ---\n{map_body}{cross_body}\n---{inventory}"
-        )
+        context_map_block = f"--- Context Map ---\n{map_body}{cross_body}\n---{inventory}"
     else:
         context_map_block = ""
     state_context = build_state_context(project_state, session_state)
@@ -411,6 +413,9 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
 
     skill_runner = SkillRunner(database=identity.database, config=config)
     db_proxy = BlackboardAccessProxy(identity.database, _permissive_for_tools())
+    from harness_poc.v2.agent_config import set_skill_runner
+
+    set_skill_runner(skill_runner)
     tool_runner = ToolRunner(
         config=config,
         skill_runner=skill_runner,
@@ -500,9 +505,7 @@ def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
         )
         cross_body = _render_cross_corpus(identity, config, corpus_key)
         inventory = _render_corpus_inventory(identity, corpus_key)
-        context_map_block = (
-            f"--- Context Map ---\n{map_body}{cross_body}\n---{inventory}"
-        )
+        context_map_block = f"--- Context Map ---\n{map_body}{cross_body}\n---{inventory}"
     else:
         context_map_block = ""
     return {
@@ -628,7 +631,10 @@ def build_app_state(
     config = HarnessConfig.load()
     configure_logging(config.project_root)
     identity = build_identity(
-        config, session_id, database_url=database_url, corpus_key=corpus_key,
+        config,
+        session_id,
+        database_url=database_url,
+        corpus_key=corpus_key,
     )
     runtime = build_runtime_layer(identity, config)
     long_lived = build_long_lived(identity, runtime)

@@ -42,12 +42,14 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 
     template = ctx.read_subagent_template(persona)
     output = _run_subagent(
+        persona_name=persona,
         persona_template=template,
         objective=objective,
         context=context,
         use_mock=use_mock,
         llm_config=ctx.config.llm,
         on_text=ctx.emit_text,
+        agents_dir=ctx.config.project_root / "subagents",
     )
     result = {
         "status": output.status,
@@ -74,13 +76,38 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 
 def _run_subagent(  # noqa: PLR0913
     *,
+    persona_name: str,
     persona_template: str,
     objective: str,
     context: str,
     use_mock: bool = False,
     llm_config: LLMConfig | None = None,
     on_text: Callable[[str], None] | None = None,
+    agents_dir: Any = None,  # noqa: ANN401 — circular import avoidance
 ) -> DelegatedTaskOutput:
+    # Load agent configuration for tools
+    tools: list = []
+    if agents_dir is not None:
+        try:
+            from harness_poc.system_tools import get_registry  # noqa: PLC0415 — lazy for sub-agent isolation
+            from harness_poc.v2.agent_config import AgentConfig  # noqa: PLC0415
+
+            agent_cfg = AgentConfig.from_name(
+                agents_dir, persona_name, tool_registry=get_registry()
+            )
+            tools = agent_cfg.tools
+        except FileNotFoundError:
+            pass  # No config file — run with no tools
+        except Exception:
+            import logging  # noqa: PLC0415
+
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Failed to load agent config for persona '%s' — running with no tools",
+                persona_name,
+                exc_info=True,
+            )
+
     agent = Agent(
         _fallback_model(objective)
         if use_mock
@@ -88,6 +115,7 @@ def _run_subagent(  # noqa: PLR0913
         output_type=DelegatedTaskOutput,
         system_prompt=persona_template,
         output_retries=2,
+        tools=tools if tools else [],
     )
 
     if on_text is not None:

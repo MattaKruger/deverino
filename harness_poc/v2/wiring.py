@@ -415,6 +415,28 @@ def _build_spawner_adapter(config: HarnessConfig, db: BlackboardDatabase):  # no
                 )
             if context_map_block:
                 system_prompt += f"\n\n--- Context Map ({corpus_key}) ---\n{context_map_block}\n---"
+
+            # Also inject the project-level context map so sub-agents have
+            # general project context in addition to their persona-specific map.
+            project_corpus_key = f"{config.project_id}:codebase"
+            if project_corpus_key != corpus_key:
+                try:
+                    project_map = db.get_context_map(project_corpus_key) or []
+                    if project_map:
+                        project_cycle = db.get_cycle(project_corpus_key)
+                        project_block = render_context_map(
+                            project_map, project_cycle, prompt_mode="structured"
+                        )
+                        system_prompt += (
+                            f"\n\n--- Project Context Map ({project_corpus_key}) ---\n"
+                            f"{project_block}\n---"
+                        )
+                except Exception:
+                    logger.debug(
+                        "Failed to load project context map for sub-agent (corpus_key=%s)",
+                        project_corpus_key,
+                        exc_info=True,
+                    )
             # Load agent configuration (tools, permissions)
             tools: list = []
             try:

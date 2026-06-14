@@ -49,6 +49,9 @@ from harness_poc.v2.execution_engine import (
     ExecutionEngineError,
     GateFailureError,
     SubAgentPoolFullError,
+    TaskCancelledError,
+    TaskNotFoundError,
+    TaskNotCompleteError,
 )
 from harness_poc.v2.workflow_orchestrator import (
     ExecutionResult,
@@ -93,9 +96,11 @@ __all__ = [
     "DelegatedTaskOutput",
     "DelegatedTaskResult",
 
-    # Engines — Execution
-    "ExecutionEngine",
-    "ExecutionEngineError",
+    "SubAgentPoolFullError",
+    "SubAgentResult",
+    "TaskCancelledError",
+    "TaskNotFoundError",
+    "TaskNotCompleteError",
     "ExecutionResult",
     "GateFailureError",
     "GateRejectedError",
