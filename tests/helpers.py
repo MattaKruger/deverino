@@ -183,9 +183,7 @@ class TraceAssertions:
 
     def skill_called(self, name: str) -> bool:
         """Return True if any SkillCalled event matches the skill name."""
-        return any(
-            isinstance(e, SkillCalled) and e.tool_name == name for e in self.events
-        )
+        return any(isinstance(e, SkillCalled) and e.tool_name == name for e in self.events)
 
     def skill_completed(self, name: str, *, status: str | None = None) -> bool:
         """Return True if any SkillCompleted event matches name + optional status."""
@@ -315,3 +313,24 @@ class TraceAssertions:
                 f"Missing: {missing}. Answer: {result.content[:300]}"
             )
             raise AssertionError(msg)
+
+
+# ---------------------------------------------------------------------------
+# Shared test constants
+# ---------------------------------------------------------------------------
+
+# Blocked binaries that should be rejected by container_exec and
+# inline-shell preprocessing.  Shared between test_container_exec.py
+# and test_skill_preprocessing.py.
+BLOCKED_BINARIES: list[tuple[str, str]] = [
+    ("vim", "vim"),
+    ("vi", "vi"),
+    ("nano", "nano"),
+    ("sudo", "sudo"),
+    ("ssh", "ssh"),
+    ("top", "top"),
+    ("htop", "htop"),
+    ("watch", "watch"),
+    ("less", "less"),
+    ("more", "more"),
+]

@@ -24,8 +24,6 @@ from harness_poc.core.acdl.ast import (
 
 ACDL_FILES = [
     "deverino_react.acdl",
-    "docs/acdl/deverino_loop_full.acdl",
-    "docs/acdl/deverino_react_renderable.acdl",
 ]
 
 
@@ -72,7 +70,9 @@ def test_deverino_chat_loop_body() -> None:
     source = Path("deverino_react.acdl").read_text()
     ast = parse(source, filename="deverino_react.acdl")
 
-    chat_loop = next(b for b in ast.blocks if isinstance(b, PromptDef) and b.name == "DeverinoChatLoop")
+    chat_loop = next(
+        b for b in ast.blocks if isinstance(b, PromptDef) and b.name == "DeverinoChatLoop"
+    )
     roles = [item for item in chat_loop.body if isinstance(item, RoleMessage)]
     role_values = {r.role for r in roles}
     assert "system" in role_values
@@ -189,12 +189,11 @@ def test_prompt_with_namespace() -> None:
 
 def test_all_acdl_files_in_repo_parse() -> None:
     """Every .acdl file in the repository must parse without errors."""
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parent.parent.parent
     acdl_files = sorted(
-        p for p in repo_root.glob("**/*.acdl")
-        if ".deverino-scratch" not in str(p)
-        and "node_modules" not in str(p)
-        and ".git" not in str(p)
+        p
+        for p in repo_root.glob("**/*.acdl")
+        if ".deverino-scratch" not in str(p) and "node_modules" not in str(p)
     )
     assert acdl_files, "No .acdl files found — check glob pattern"
 

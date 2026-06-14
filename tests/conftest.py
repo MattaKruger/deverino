@@ -1,3 +1,5 @@
+"""Shared fixtures: db_engine (PostgreSQL), in_memory_engine (SQLite), test_config, session_runner."""
+
 from __future__ import annotations
 
 import os
@@ -17,6 +19,7 @@ from harness_poc.core.config import (
 )
 from harness_poc.core.skills import SkillRunner
 from harness_poc.core.storage import BlackboardDatabase, create_db_engine
+
 
 # Skip the Vespa auto-index bootstrap for any test that reaches AppState.
 # Reindexing the docs/ tree takes minutes and is unrelated to anything the

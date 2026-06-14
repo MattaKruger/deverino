@@ -280,3 +280,18 @@ See `docs/superpowers/specs/2026-05-23-create-rubrics-usage.md` for the full
 | Rubrics as `.md` files | Readable as documentation. Parseable as structured data. Same file validates both mock and live sessions. |
 | LLM judge uses a cheap model (haiku) | Scoring doesn't need reasoning depth. Keeps benchmark costs predictable. |
 | `--run-benchmarks` opt-in flag | Prevents accidental token spend during normal test runs. |
+
+
+## Mock Conventions
+
+| Pattern | Use case | Example |
+|---------|----------|---------|
+| `monkeypatch.setattr` | Attribute/syspath/environment patching | `monkeypatch.setattr("module.func", mock_fn)` |
+| `unittest.mock.patch` | Print capture in REPL tests (context manager auto-cleanup) | `with patch("harness_poc.repl.print_text") as p:` |
+| Custom mock classes | Domain object substitution in handler tests | `MockEngine`, `MockDatabase` |
+| `MagicMock` | Only when the caller checks `.assert_called_with()`; never when return value matters | `mock_db.write_memory = MagicMock()` |
+
+- Prefer `monkeypatch.setattr` for simple attribute replacement — it's pytest-native and doesn't leave stale patches.
+- Use `unittest.mock.patch()` only for REPL/handler tests that capture `print_text`/`print_error` output — the context manager ensures cleanup.
+- Custom mock classes (`MockEngine`, `MockDatabase`) should live in the test file that uses them.
+- When a test needs a real PostgreSQL database (not SQLite), use the `db_engine` fixture — it connects to the test container on port 5433.

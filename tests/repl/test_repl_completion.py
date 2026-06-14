@@ -61,6 +61,7 @@ def _completion_texts(text: str) -> set[str]:
 @dataclass(frozen=True, slots=True)
 class _FakeConfig:
     paths: Any
+    project_root: Path = Path.cwd()
 
 
 @dataclass(frozen=True, slots=True)
