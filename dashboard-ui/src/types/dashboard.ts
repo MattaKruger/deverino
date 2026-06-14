@@ -99,6 +99,17 @@ export interface SessionEventRow {
   content_preview: string
 }
 
+export interface EventDetail {
+  event_id: number
+  event_type: string
+  created_at: string
+  skill_name: string
+  status: string
+  tokens_used: number
+  content: string
+  payload: string
+}
+
 export interface DashboardSnapshot {
   summary: DashboardSummary
   skills: SkillPerformance[]

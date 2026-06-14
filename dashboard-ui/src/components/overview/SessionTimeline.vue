@@ -3,7 +3,7 @@
     v-if="chartOption"
     :option="chartOption"
     :autoresize="true"
-    :init-options="{ theme: 'dark' }"
+    :init-options="{}"
     class="w-full h-64"
   />
   <div v-else class="flex items-center justify-center h-64 text-[var(--text-muted)] text-sm">
@@ -20,8 +20,8 @@ import { useOverviewStore } from '@/stores/overview';
 const STATUS_COLORS: Record<string, string> = {
   success: 'var(--accent-green)',
   completed: 'var(--accent-green)',
-  running: 'var(--accent-green)',
-  active: 'var(--accent-green)',
+  running: 'var(--accent-blue)',
+  active: 'var(--accent-blue)',
   failed: 'var(--accent-red)',
   error: 'var(--accent-red)',
   cancelled: 'var(--accent-red)',
@@ -37,12 +37,18 @@ const chartOption = computed(() => {
   const sessions = store.data?.session_activity;
   if (!sessions || sessions.length === 0) return null;
 
-  // SessionTimeline: each session is a horizontal bar
-  const names = sessions.map((s) => (s.session_id || '').slice(0, 12));
-  const colors = sessions.map((s) => STATUS_COLORS[s.status.toLowerCase()] || 'var(--accent-blue)');
+  // Sort by last_seen DESC, limit to top 15
+  const sorted = [...sessions]
+    .sort((a, b) => new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime())
+    .slice(0, 15);
 
-  // Use a synthetic time range: each bar spans a fixed interval rendered as event_count width
-  const values = sessions.map((s) => s.event_count);
+  // Y-axis labels: first 8 chars of session_id + status badge text
+  const names = sorted.map((s) => {
+    const shortId = (s.session_id || '').slice(0, 8);
+    return shortId + ' [' + s.status + ']';
+  });
+  const colors = sorted.map((s) => STATUS_COLORS[s.status.toLowerCase()] || 'var(--accent-blue)');
+  const values = sorted.map((s) => s.event_count);
 
   return {
     tooltip: {
@@ -51,17 +57,18 @@ const chartOption = computed(() => {
       formatter: (params: any) => {
         const idx = params[0]?.dataIndex;
         if (idx == null) return '';
-        const s = sessions[idx];
+        const s = sorted[idx];
         return [
           `Session: ${s.session_id}`,
           `Status: ${s.status}`,
           `Events: ${s.event_count}`,
           `Tokens: ${s.total_tokens.toLocaleString()}`,
           `Goal: ${s.goal || '-'}`,
+          `Last seen: ${s.last_seen}`,
         ].join('<br/>');
       },
     },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    grid: { left: '3%', right: '4%', bottom: '3%', top: '3%', containLabel: true },
     xAxis: {
       type: 'value' as const,
       name: 'events',

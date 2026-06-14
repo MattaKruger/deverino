@@ -3,7 +3,7 @@
     v-if="chartOption"
     :option="chartOption"
     :autoresize="true"
-    :init-options="{ theme: 'dark' }"
+    :init-options="{}"
     class="w-full h-64"
   />
   <div v-else class="flex items-center justify-center h-64 text-[var(--text-muted)] text-sm">
@@ -55,20 +55,20 @@ const chartOption = computed(() => {
       {
         name: 'Input',
         type: 'line',
-        stack: 'tokens',
         areaStyle: {},
         data: input,
         itemStyle: { color: 'var(--accent-green)' },
-        lineStyle: { color: 'var(--accent-green)' },
+        lineStyle: { color: 'var(--accent-green)', width: 2 },
+        smooth: true,
       },
       {
         name: 'Output',
         type: 'line',
-        stack: 'tokens',
         areaStyle: {},
         data: output,
         itemStyle: { color: 'var(--accent-cyan)' },
-        lineStyle: { color: 'var(--accent-cyan)' },
+        lineStyle: { color: 'var(--accent-cyan)', width: 2 },
+        smooth: true,
       },
     ],
   };

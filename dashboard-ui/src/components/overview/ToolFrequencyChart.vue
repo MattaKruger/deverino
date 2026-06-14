@@ -3,7 +3,7 @@
     v-if="chartOption"
     :option="chartOption"
     :autoresize="true"
-    :init-options="{ theme: 'dark' }"
+    :init-options="{}"
     class="w-full h-64"
   />
   <div v-else class="flex items-center justify-center h-64 text-[var(--text-muted)] text-sm">

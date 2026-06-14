@@ -29,12 +29,12 @@
             <th class="py-2 pr-3 font-medium w-[15%]">Key</th>
             <th class="py-2 pr-3 font-medium w-[14%]">Section</th>
             <th class="py-2 pr-3 font-medium w-[12%]">Type</th>
-            <th class="py-2 pr-3 font-medium w-[14%]">Priority</th>
-            <th class="py-2 pr-3 font-medium text-right w-[12%]">Tokens</th>
-            <th class="py-2 font-medium w-[33%]">Summary</th>
+            <th class="py-2 pr-3 font-medium w-[8%]">Priority</th>
+            <th class="py-2 pr-3 font-medium text-right w-[8%]">Tokens</th>
+            <th class="py-2 font-medium w-[43%]">Summary</th>
           </tr>
         </thead>
-        <tbody>
+        <TransitionGroup name="list" tag="tbody">
           <tr
             v-for="entry in entries"
             :key="entry.entry_id"
@@ -56,15 +56,9 @@
               </div>
             </td>
             <td class="py-2 pr-3 text-right font-mono">{{ fmtTokens(entry.token_estimate) }}</td>
-            <td class="py-2">
-              <span
-                class="text-[var(--text-muted)]"
-                :style="{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }"
-                :title="entry.summary"
-              >{{ entry.summary }}</span>
-            </td>
+            <td class="py-2 text-[var(--text-muted)] whitespace-pre-wrap break-words">{{ entry.summary }}</td>
           </tr>
-        </tbody>
+        </TransitionGroup>
       </table>
     </div>
   </div>

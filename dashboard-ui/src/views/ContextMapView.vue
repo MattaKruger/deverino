@@ -1,26 +1,34 @@
 <template>
   <div class="p-6 space-y-6 max-w-screen-2xl mx-auto">
-    <!-- Page header -->
-    <h2 class="text-lg font-semibold text-[var(--text)]">Context Map</h2>
+    <!-- Page header with health indicator -->
+    <div class="flex items-center gap-3">
+      <h2 class="text-lg font-semibold text-[var(--text)]">Context Map</h2>
+      <HealthIndicator
+        :lastFetched="store.lastFetched"
+        :error="store.error"
+      />
+    </div>
 
-    <!-- Corpses loading / error / empty -->
+    <!-- Corpus list loading -->
     <div v-if="store.loading && !store.data" class="animate-pulse space-y-3">
       <div class="h-4 bg-[var(--card-border)] rounded w-1/4"></div>
       <div class="h-10 bg-[var(--card-border)] rounded w-3/4"></div>
     </div>
-    <div
+
+    <!-- Corpus list error -->
+    <ErrorDisplay
       v-else-if="store.error"
-      class="flex items-center gap-2 text-[var(--accent-red)] text-sm"
-    >
-      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      <span>{{ store.error }}</span>
-    </div>
-    <div v-else-if="!store.data || store.data.length === 0" class="text-sm text-[var(--text-muted)]">
-      No context maps available
-    </div>
+      :message="store.error"
+      :retryable="true"
+      @retry="store.fetch()"
+    />
+
+    <!-- Corpus list empty -->
+    <EmptyState
+      v-else-if="!store.data || store.data.length === 0"
+      message="No context maps available"
+      icon="inbox"
+    />
 
     <template v-else>
       <!-- Corpus selector pills -->
@@ -39,67 +47,30 @@
       </div>
 
       <template v-if="selectedCorpus">
-        <!-- Metrics row -->
-        <div class="flex flex-row gap-6 flex-wrap">
-          <div
-            v-for="metric in selectedMetrics"
-            :key="metric.label"
-            class="flex flex-col items-start"
-          >
-            <span
-              class="text-2xl font-bold font-mono"
-              :style="{ color: metric.color || 'var(--accent-blue)' }"
-            >
-              {{ metric.value }}
-            </span>
-            <span class="text-xs text-[var(--text-muted)] uppercase tracking-wider">
-              {{ metric.label }}
-            </span>
-          </div>
-        </div>
+        <!-- Metrics bar -->
+        <MetricBar :metrics="selectedMetrics" />
 
-        <!-- Two panels: table + chart -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <!-- Left: Entries table -->
-          <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg">
-            <div
-              class="flex items-center gap-2 px-4 py-3 border-b border-[var(--card-border)]"
-              :style="{ borderLeft: '3px solid var(--accent-blue)' }"
-            >
-              <h3 class="text-sm font-semibold text-[var(--text)] uppercase tracking-wider">
-                Entries
-              </h3>
-            </div>
-            <div class="p-4">
-              <ContextMapTable
-                :entries="entries"
-                :loading="entriesLoading"
-                :error="entriesError"
-              />
-            </div>
-          </div>
 
-          <!-- Right: Budget chart -->
-          <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg">
-            <div
-              class="flex items-center gap-2 px-4 py-3 border-b border-[var(--card-border)]"
-              :style="{ borderLeft: '3px solid var(--accent-green)' }"
-            >
-              <h3 class="text-sm font-semibold text-[var(--text)] uppercase tracking-wider">
-                Token Budget
-              </h3>
-            </div>
-            <div class="p-4">
-              <ContextMapBudgetChart :entries="entries" />
-            </div>
-          </div>
-        </div>
+        <!-- Full-width entries table -->
+        <Panel
+          title="Entries"
+          :loading="entriesLoading"
+          :error="entriesError"
+        >
+          <ContextMapTable
+            :entries="entries"
+            :loading="false"
+            :error="null"
+          />
+        </Panel>
       </template>
 
       <!-- No selection prompt -->
-      <div v-else class="text-sm text-[var(--text-muted)]">
-        Select a corpus above to view details
-      </div>
+      <EmptyState
+        v-else
+        message="Select a corpus above to view details"
+        icon="search"
+      />
     </template>
   </div>
 </template>
@@ -110,7 +81,11 @@ import { useContextMapsStore } from '@/stores/contextMaps';
 import { fetchContextMapEntries } from '@/api/endpoints';
 import type { ContextMapEntrySummary, ContextMapHealth } from '@/types/dashboard';
 import ContextMapTable from '@/components/contextmap/ContextMapTable.vue';
-import ContextMapBudgetChart from '@/components/contextmap/ContextMapBudgetChart.vue';
+import Panel from '@/components/shared/Panel.vue';
+import MetricBar from '@/components/shared/MetricBar.vue';
+import HealthIndicator from '@/components/shared/HealthIndicator.vue';
+import EmptyState from '@/components/shared/EmptyState.vue';
+import ErrorDisplay from '@/components/shared/ErrorDisplay.vue';
 
 const store = useContextMapsStore();
 

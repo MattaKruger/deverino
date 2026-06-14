@@ -1,20 +1,33 @@
 <template>
-  <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg">
+  <div
+    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg"
+    role="region"
+    :aria-label="title"
+    tabindex="0"
+  >
     <!-- Title bar with accent stripe -->
     <div
-      class="flex items-center gap-2 px-4 py-3 border-b border-[var(--card-border)]"
+      class="flex items-center justify-between gap-2 px-4 py-3 border-b border-[var(--card-border)]"
       :style="{ borderLeft: `3px solid var(--accent-blue)` }"
     >
-      <h3 class="text-sm font-semibold text-[var(--text)] uppercase tracking-wider">
-        {{ title }}
-      </h3>
+      <div class="flex items-center gap-2">
+        <span v-if="health" class="w-2 h-2 rounded-full shrink-0" :class="healthDotClass" />
+        <h3 class="text-sm font-semibold text-[var(--text)] uppercase tracking-wider">
+          {{ title }}
+        </h3>
+        <span v-if="isStale" class="text-xs text-[var(--accent-yellow)] animate-pulse">
+          updating…
+        </span>
+      </div>
+      <span v-if="timeAgoText" class="text-xs text-[var(--text-muted)] shrink-0">{{ timeAgoText }}</span>
     </div>
 
     <div class="p-4">
-      <!-- Loading skeleton -->
-      <div v-if="loading" class="animate-pulse space-y-3">
-        <div class="h-4 bg-[var(--card-border)] rounded w-3/4"></div>
-        <div class="h-32 bg-[var(--card-border)] rounded"></div>
+      <!-- Loading skeleton — first load only -->
+      <div v-if="loading" class="space-y-2">
+        <SkeletonRow :widths="['75%', '50%']" />
+        <SkeletonRow :widths="['60%', '40%', '30%']" />
+        <SkeletonRow :widths="['80%', '35%']" />
       </div>
 
       <!-- Error state -->
@@ -29,16 +42,53 @@
         <span>{{ error }}</span>
       </div>
 
-      <!-- Content -->
+      <!-- Content (may be stale but still shown) -->
       <slot v-else />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue';
+import SkeletonRow from './SkeletonRow.vue';
+
+const props = defineProps<{
   title: string;
   loading?: boolean;
+  isStale?: boolean;
   error?: string | null;
+  lastUpdated?: Date | null;
+  health?: 'fresh' | 'stale' | 'error' | null;
 }>();
+
+const healthDotClass = computed(() => {
+  switch (props.health) {
+    case 'fresh': return 'bg-[var(--accent-green)]';
+    case 'stale': return 'bg-[var(--accent-yellow)]';
+    case 'error': return 'bg-[var(--accent-red)]';
+    default: return '';
+  }
+});
+
+function fmtTimeAgo(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 0) return 'Just now';
+  if (seconds < 60) return `Updated ${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `Updated ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Updated ${hours}h ago`;
+  return `Updated ${Math.floor(hours / 24)}d ago`;
+}
+
+const timeAgoText = computed(() => {
+  if (!props.lastUpdated) return null;
+  return fmtTimeAgo(props.lastUpdated);
+});
+
+// Catch render errors within the panel so one bad chart doesn't crash the page
+function onErrorCaptured(err: unknown) {
+  console.warn(`[Panel "${props.title}"] render error:`, err)
+  return false // prevent propagation
+}
 </script>

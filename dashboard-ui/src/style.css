@@ -59,3 +59,43 @@ body {
 .status-error   { color: var(--accent-red); }
 .status-warning { color: var(--accent-yellow); }
 .status-info    { color: var(--accent-blue); }
+
+/* ── Route transition ──────────────────────────────────────────────────────── */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* ── List transitions ──────────────────────────────────────────────────────── */
+.list-enter-active {
+  transition: all 0.3s ease;
+}
+.list-leave-active {
+  transition: all 0.2s ease;
+  position: absolute;
+}
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
+}
+.list-move {
+  transition: transform 0.3s ease;
+}
+
+/* ── Respect reduced motion preference ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
+}

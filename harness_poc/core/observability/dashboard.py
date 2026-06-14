@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
+_CONTENT_PREVIEW_CHARS: int = 120
+
 
 @dataclass(frozen=True, slots=True)
 class DashboardSummary:
@@ -126,6 +128,18 @@ class SessionEventRow:
 
 
 @dataclass(frozen=True, slots=True)
+class EventDetail:
+    event_id: int
+    event_type: str
+    created_at: str
+    skill_name: str
+    status: str
+    tokens_used: int
+    content: str
+    payload: str
+
+
+@dataclass(frozen=True, slots=True)
 class DashboardSnapshot:
     summary: DashboardSummary
     skills: list[SkillPerformance]
@@ -135,7 +149,6 @@ class DashboardSnapshot:
     session_activity: list[SessionActivity]
     model_token_usage: list[ModelTokenUsage]
     session_token_usage: list[SessionTokenUsage]
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +190,7 @@ class ErrorSummary:
     cancel_count: int
     last_error_at: str
 
+
 def fetch_dashboard_snapshot(engine: Engine, *, limit: int = 12) -> DashboardSnapshot:
     return DashboardSnapshot(
         summary=fetch_summary(engine),
@@ -192,9 +206,10 @@ def fetch_dashboard_snapshot(engine: Engine, *, limit: int = 12) -> DashboardSna
 
 def fetch_summary(engine: Engine) -> DashboardSummary:
     with engine.connect() as conn:
-        row = conn.execute(
-            text(
-                """
+        row = (
+            conn.execute(
+                text(
+                    """
                 select
                     count(distinct scope_id) as total_sessions,
                     count(*) as total_events,
@@ -212,8 +227,11 @@ def fetch_summary(engine: Engine) -> DashboardSummary:
                     ) as skill_failures
                 from state_events
                 """
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
         pending = conn.execute(
             text("select count(*) from context_map_events where processed = 0")
         ).scalar_one()
@@ -325,7 +343,7 @@ def fetch_recent_failures(engine: Engine, *, limit: int = 12) -> list[RecentFail
                     """
                 ),
                 {"limit": limit},
-                )
+            )
             .mappings()
             .all()
         )
@@ -704,6 +722,10 @@ def fetch_session_events(engine: Engine, session_id: str) -> list[SessionEventRo
                             nullif(payload->'payload'->>'result', ''),
                             nullif(payload->'payload'->>'goal', ''),
                             nullif(payload->'payload'->>'reason', ''),
+                            nullif(payload->'payload'->>'user_content', ''),
+                            nullif(payload->'payload'->>'reasoning', ''),
+                            nullif(payload->'payload'->>'final_answer', ''),
+                            payload->'payload'->>'arguments',
                             ''
                         ) as content
                     from state_events
@@ -733,6 +755,7 @@ def fetch_session_events(engine: Engine, session_id: str) -> list[SessionEventRo
     for row in rows:
         ts = _parse_ts(str(row["created_at"]))
         delta = round((ts - first_ts).total_seconds(), 1) if ts and first_ts else 0.0
+        raw_content = str(row["content"] or "")
         result.append(
             SessionEventRow(
                 event_id=int(row["id"]),
@@ -742,10 +765,66 @@ def fetch_session_events(engine: Engine, session_id: str) -> list[SessionEventRo
                 skill_name=str(row["skill_name"] or ""),
                 status=str(row["status"] or ""),
                 tokens_used=int(row["tokens_used"] or 0),
-                content_preview=str(row["content"] or "")[:120],
+                content_preview=raw_content[:_CONTENT_PREVIEW_CHARS],
             )
         )
     return result
+
+
+def fetch_event_detail(engine: Engine, event_id: int) -> EventDetail | None:
+    """Return full detail for a single event, including the un-truncated content."""
+    with engine.connect() as conn:
+        row = (
+            conn.execute(
+                text(
+                    """
+                    select
+                        id,
+                        event_type,
+                        created_at,
+                        coalesce(
+                            nullif(payload->'payload'->>'skill_name', ''),
+                            nullif(payload->'payload'->>'tool_name', ''),
+                            ''
+                        ) as skill_name,
+                        coalesce(payload->'payload'->>'status', '') as status,
+                        coalesce(
+                            nullif(payload->'payload'->>'tokens_used', '')::int,
+                            0
+                        ) as tokens_used,
+                        coalesce(
+                            nullif(payload->'payload'->>'content', ''),
+                            nullif(payload->'payload'->>'result', ''),
+                            nullif(payload->'payload'->>'goal', ''),
+                            nullif(payload->'payload'->>'reason', ''),
+                            nullif(payload->'payload'->>'user_content', ''),
+                            nullif(payload->'payload'->>'reasoning', ''),
+                            nullif(payload->'payload'->>'final_answer', ''),
+                            payload->'payload'->>'arguments',
+                            ''
+                        ) as content,
+                        payload::text as raw_payload
+                    from state_events
+                    where id = :event_id
+                    """
+                ),
+                {"event_id": event_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
+    if row is None:
+        return None
+    return EventDetail(
+        event_id=int(row["id"]),
+        event_type=str(row["event_type"]),
+        created_at=str(row["created_at"]),
+        skill_name=str(row["skill_name"] or ""),
+        status=str(row["status"] or ""),
+        tokens_used=int(row["tokens_used"] or 0),
+        content=str(row["content"] or ""),
+        payload=str(row["raw_payload"] or "{}"),
+    )
 
 
 def fetch_corpus_keys(engine: Engine) -> list[str]:
@@ -757,9 +836,7 @@ def fetch_corpus_keys(engine: Engine) -> list[str]:
     return [str(row[0]) for row in rows]
 
 
-def fetch_context_map_entries(
-    engine: Engine, corpus_key: str
-) -> list[ContextMapEntrySummary]:
+def fetch_context_map_entries(engine: Engine, corpus_key: str) -> list[ContextMapEntrySummary]:
     """Return entry summaries for a given corpus_key.
 
     Reads the serialised map_json blob and deserialises it into
@@ -768,10 +845,7 @@ def fetch_context_map_entries(
     """
     with engine.connect() as conn:
         row = conn.execute(
-            text(
-                "select map_json, schema_version from context_map "
-                "where corpus_key = :key"
-            ),
+            text("select map_json, schema_version from context_map where corpus_key = :key"),
             {"key": corpus_key},
         ).one_or_none()
 
@@ -850,6 +924,7 @@ def fetch_context_map_entries(
         corpus_key,
     )
     return summaries
+
 
 def fetch_recent_events(
     engine: Engine,
@@ -1002,6 +1077,7 @@ def fetch_tool_latency(
         for row in rows
     ]
 
+
 def _compute_duration(started_at: str, completed_at: str) -> float:
     """Compute duration in seconds between two ISO timestamps.
 
@@ -1017,6 +1093,8 @@ def _compute_duration(started_at: str, completed_at: str) -> float:
         return round((end - start).total_seconds(), 1)
     except ValueError:
         return 0.0
+
+
 def fetch_sub_agent_tree(engine: Engine) -> list[SubAgentNode]:
     """Return sub-agent dispatch/completion tree from both event stores.
 
