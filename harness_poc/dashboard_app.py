@@ -117,31 +117,60 @@ def _layout() -> html.Div:
 def _sidebar() -> html.Div:
     return html.Div(
         [
-            html.Div("SESSIONS", style={**HEADER_STYLE, "marginTop": "0"}),
-            html.Div(id="sidebar-sessions", style={"marginBottom": "12px"}),
-            html.Div("SUB-AGENTS", style=HEADER_STYLE),
-            html.Div(id="sidebar-subagents", style={"marginBottom": "12px"}),
-            html.Div("FILTERS", style=HEADER_STYLE),
-            dcc.Dropdown(
-                id="firehose-type-filter",
-                options=[],
-                multi=True,
-                placeholder="Event types…",
-                style={"marginBottom": "6px", "fontSize": "11px"},
-            ),
-            dcc.Dropdown(
-                id="firehose-session-filter",
-                options=[],
-                multi=True,
-                placeholder="Sessions…",
-                style={"marginBottom": "12px", "fontSize": "11px"},
-            ),
-            html.Div("CORPORA", style=HEADER_STYLE),
-            dcc.Dropdown(
-                id="corpus-selector",
-                options=[],
-                placeholder="Select corpus…",
-                style={"marginBottom": "12px", "fontSize": "11px"},
+            dcc.Tabs(
+                [
+                    dcc.Tab(
+                        label="SES",
+                        children=[
+                            html.Div(id="sidebar-sessions", style={"paddingTop": "8px"}),
+                        ],
+                        style=_tab_style(),
+                        selected_style=_tab_selected_style(),
+                    ),
+                    dcc.Tab(
+                        label="SUB",
+                        children=[
+                            html.Div(id="sidebar-subagents", style={"paddingTop": "8px"}),
+                        ],
+                        style=_tab_style(),
+                        selected_style=_tab_selected_style(),
+                    ),
+                    dcc.Tab(
+                        label="FLT",
+                        children=[
+                            dcc.Dropdown(
+                                id="firehose-type-filter",
+                                options=[],
+                                multi=True,
+                                placeholder="Event types…",
+                                style={"marginBottom": "6px", "fontSize": "11px"},
+                            ),
+                            dcc.Dropdown(
+                                id="firehose-session-filter",
+                                options=[],
+                                multi=True,
+                                placeholder="Sessions…",
+                                style={"marginBottom": "6px", "fontSize": "11px"},
+                            ),
+                        ],
+                        style=_tab_style(),
+                        selected_style=_tab_selected_style(),
+                    ),
+                    dcc.Tab(
+                        label="COR",
+                        children=[
+                            dcc.Dropdown(
+                                id="corpus-selector",
+                                options=[],
+                                placeholder="Select corpus…",
+                                style={"marginTop": "8px", "fontSize": "11px"},
+                            ),
+                        ],
+                        style=_tab_style(),
+                        selected_style=_tab_selected_style(),
+                    ),
+                ],
+                style={"marginBottom": "0"},
             ),
         ],
         style={
@@ -152,8 +181,31 @@ def _sidebar() -> html.Div:
             "overflowY": "auto",
             "maxHeight": "calc(100vh - 100px)",
             "fontSize": "12px",
+            "padding": "6px",
         },
     )
+
+
+def _tab_style() -> dict[str, str]:
+    return {
+        "backgroundColor": "#0d1117",
+        "color": TEXT_MUTED,
+        "border": "none",
+        "fontSize": "11px",
+        "fontWeight": "600",
+        "padding": "6px 10px",
+    }
+
+
+def _tab_selected_style() -> dict[str, str]:
+    return {
+        "backgroundColor": "#161b22",
+        "color": ACCENT_BLUE,
+        "borderTop": f"2px solid {ACCENT_BLUE}",
+        "fontSize": "11px",
+        "fontWeight": "600",
+        "padding": "6px 10px",
+    }
 
 
 def _top_bar() -> html.Div:
