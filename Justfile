@@ -27,7 +27,7 @@ dashboard-summary:
 dashboard port="8050":
     uv run harness-poc dashboard serve --port {{port}}
 
-# Start API with auto-reload for development
+# Start API with auto-reload for development (port 8050)
 dashboard-dev port="8050":
     uv run harness-poc dashboard serve --port {{port}} --debug
 
@@ -35,7 +35,7 @@ dashboard-dev port="8050":
 dashboard-build:
     cd dashboard-ui && pnpm install && pnpm build
 
-# Start frontend dev server with hot-reload (use with dashboard-dev for API)
+# Start Vue dev server with hot-reload on :5173 (proxies /api → :8050; run dashboard-dev first)
 dashboard-ui-dev:
     cd dashboard-ui && pnpm install && pnpm dev
 
