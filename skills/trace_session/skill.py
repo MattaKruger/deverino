@@ -16,9 +16,9 @@ _SESSION_QUERY = """
 _EVENTS_QUERY = """
     SELECT
         e.id, e.event_type, e.created_at,
-        e.payload->'payload'->>'skill_name' as skill_name,
-        e.payload->'payload'->>'tool_name' as tool_name,
-        e.payload->'payload'->>'status' as status,
+        coalesce(e.payload->'payload'->>'tool_name', '') as target_name,
+        e.event_type IN ('SkillCalled', 'SkillCompleted') as is_skill,
+        coalesce(e.payload->'payload'->>'status', '') as status,
         coalesce((e.payload->'payload'->>'tokens_used')::int, 0) as tokens_used,
         coalesce(
             nullif(e.payload->'payload'->>'content', ''),
@@ -98,8 +98,8 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     trace["events"] = event_list
 
     # 3. Derived summaries
-    skill_calls = [e for e in event_list if e.get("skill_name")]
-    tool_calls = [e for e in event_list if e.get("tool_name")]
+    skill_calls = [e for e in event_list if e.get("is_skill") and e.get("target_name")]
+    tool_calls = [e for e in event_list if not e.get("is_skill") and e.get("target_name")]
     errors = [e for e in event_list if e.get("status") in ("failed", "error")]
 
     total_tokens = sum(e.get("tokens_used", 0) or 0 for e in event_list)
@@ -115,8 +115,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         "error_log": [
             {
                 "event_type": e.get("event_type"),
-                "skill_name": e.get("skill_name"),
-                "tool_name": e.get("tool_name"),
+                "target_name": e.get("target_name"),
                 "content": _truncate(e.get("content", ""), 300),
             }
             for e in errors
@@ -168,7 +167,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     if summary["error_log"]:
         lines.append("Errors:")
         for err in summary["error_log"]:
-            src = err["skill_name"] or err["tool_name"] or err["event_type"]
+            src = err.get("target_name") or err.get("event_type", "?")
             lines.append(f"  ✗ {src}: {err['content'][:120]}")
         lines.append("")
 
@@ -182,7 +181,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 def _summarize_skills(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     groups: dict[str, dict[str, Any]] = {}
     for c in calls:
-        name = c.get("skill_name", "?")
+        name = c.get("target_name", "?")
         if name not in groups:
             groups[name] = {"name": name, "calls": 0, "tokens": 0, "status": "success"}
         groups[name]["calls"] += 1
@@ -195,7 +194,7 @@ def _summarize_skills(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _summarize_tools(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     groups: dict[str, dict[str, Any]] = {}
     for c in calls:
-        name = c.get("tool_name", "?")
+        name = c.get("target_name", "?")
         if name not in groups:
             groups[name] = {"name": name, "calls": 0, "status": "success"}
         groups[name]["calls"] += 1

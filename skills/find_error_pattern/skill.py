@@ -16,8 +16,10 @@ _DEFAULT_LIMIT = 20
 
 _AGG_QUERY = """
     SELECT
-        coalesce(e.payload->'payload'->>'skill_name', '') as skill_name,
-        coalesce(e.payload->'payload'->>'tool_name', '') as tool_name,
+        coalesce(
+            nullif(e.payload->'payload'->>'tool_name', ''),
+            e.payload->'payload'->>'skill_name'
+        ) as target_name,
         e.event_type,
         count(*) as error_count,
         min(e.created_at) as first_seen,
@@ -25,28 +27,23 @@ _AGG_QUERY = """
     FROM state_events e
     WHERE e.scope = 'session'
       AND e.created_at >= (now() - (:days || ' days')::interval)::text
-      AND (
-          e.event_type ILIKE '%' || :pattern || '%'
-          OR e.payload->'payload'->>'skill_name' ILIKE '%' || :pattern || '%'
-          OR e.payload->'payload'->>'tool_name' ILIKE '%' || :pattern || '%'
-          OR e.payload->'payload'->>'content' ILIKE '%' || :pattern || '%'
-          OR e.payload->'payload'->>'result' ILIKE '%' || :pattern || '%'
-      )
+      {agg_filter}
       AND (
           e.event_type ILIKE '%fail%'
           OR e.event_type ILIKE '%error%'
           OR e.payload->'payload'->>'status' IN ('failed', 'error')
       )
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2
     ORDER BY error_count DESC, last_seen DESC
     LIMIT :agg_limit
 """
-
 _DETAIL_QUERY = """
     SELECT
         e.id, e.event_type, e.created_at, e.scope_id as session_id,
-        coalesce(e.payload->'payload'->>'skill_name', '') as skill_name,
-        coalesce(e.payload->'payload'->>'tool_name', '') as tool_name,
+        coalesce(
+            nullif(e.payload->'payload'->>'tool_name', ''),
+            e.payload->'payload'->>'skill_name'
+        ) as target_name,
         coalesce(e.payload->'payload'->>'status', '') as status,
         coalesce(
             nullif(e.payload->'payload'->>'content', ''),
@@ -83,21 +80,38 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 
     db = ctx.database._db  # noqa: SLF001
     engine = db._engine  # noqa: SLF001
-    # Build the detail filter clause
+    # Build filter clauses
+    agg_filter_parts = []
     extra_parts = []
     detail_event_types: list[str] = []
     params: dict[str, Any] = {
         "days": str(days),
-        "pattern": pattern or "",
         "agg_limit": min(limit * 3, _MAX_LIMIT),
         "detail_limit": limit,
     }
 
+    # Pattern-based search across multiple fields
+    if pattern:
+        agg_filter_parts.append(
+            "AND ("
+            "  e.event_type ILIKE '%' || :pattern || '%'"
+            "  OR e.payload->'payload'->>'tool_name' ILIKE '%' || :pattern || '%'"
+            "  OR e.payload->'payload'->>'skill_name' ILIKE '%' || :pattern || '%'"
+            "  OR e.payload->'payload'->>'content' ILIKE '%' || :pattern || '%'"
+            "  OR e.payload->'payload'->>'result' ILIKE '%' || :pattern || '%'"
+            ")"
+        )
+        params["pattern"] = pattern
+
     if event_type:
+        agg_filter_parts.append("AND e.event_type = :event_type")
+        params["event_type"] = event_type
         detail_event_types.append(event_type)
+
     if skill_name:
-        extra_parts.append("AND e.payload->'payload'->>'skill_name' = :skill_name")
+        agg_filter_parts.append("AND e.payload->'payload'->>'tool_name' = :skill_name")
         params["skill_name"] = skill_name
+        extra_parts.append("AND e.payload->'payload'->>'tool_name' = :skill_name")
 
     # If no specific event_type, search all failure types
     if not detail_event_types:
@@ -130,15 +144,16 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         params[f"et{i}"] = et
 
     # 1. Aggregated error stats
+    agg_filter = "\n      ".join(agg_filter_parts)
+    agg_sql = _AGG_QUERY.format(agg_filter=agg_filter)
     with engine.connect() as conn:
-        agg_rows = conn.execute(sql_text(_AGG_QUERY), params).mappings().all()
+        agg_rows = conn.execute(sql_text(agg_sql), params).mappings().all()
 
     # 2. Detailed recent errors
     detail_sql = _DETAIL_QUERY.format(
         extra_clause=extra_clause,
         event_types=event_type_placeholders,
     )
-
     with engine.connect() as conn:
         detail_rows = conn.execute(sql_text(detail_sql), params).mappings().all()
 
@@ -159,7 +174,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     if agg_list:
         lines.append("By frequency:")
         for a in agg_list[:10]:
-            src = a["skill_name"] or a["tool_name"] or a["event_type"]
+            src = a.get("target_name") or a.get("event_type", "?")
             lines.append(
                 f"  {a['error_count']:>4}×  {src}  "
                 f"(first: {a['first_seen'][:19]}, last: {a['last_seen'][:19]})"
@@ -169,7 +184,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     if detail_list:
         lines.append(f"Most recent ({len(detail_list)}):")
         for d in detail_list:
-            src = d["skill_name"] or d["tool_name"] or d["event_type"]
+            src = d.get("target_name") or d.get("event_type", "?")
             msg = _truncate(str(d.get("message", "")), 100)
             lines.append(f"  [{d['created_at'][:19]}] {src} | {d['session_id'][:8]}... | {msg}")
 
