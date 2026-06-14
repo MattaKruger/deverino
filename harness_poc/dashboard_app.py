@@ -90,6 +90,16 @@ def _layout() -> html.Div:
                                 ],
                                 style=_row_style(4),
                             ),
+                            html.Div(
+                                [
+                                    _panel("CORPUS EXPLORER", dcc.Graph(id="corpus-sunburst", config={"displayModeBar": False})),
+                                    _panel("ENTRY PRIORITY", dcc.Graph(id="corpus-scatter", config={"displayModeBar": False})),
+                                    _panel("STICKINESS", dcc.Graph(id="corpus-stickiness", config={"displayModeBar": False})),
+                                    _panel("ENTRIES", html.Div(id="corpus-entries-table")),
+                                ],
+                                style=_row_style(4),
+                                id="corpus-explorer-row",
+                            ),
                         ],
                         style={"flex": "1", "minWidth": "0"},
                     ),
@@ -98,6 +108,7 @@ def _layout() -> html.Div:
             ),
             dcc.Interval(id="fast-refresh", interval=2_000, n_intervals=0),
             dcc.Interval(id="slow-refresh", interval=10_000, n_intervals=0),
+            dcc.Store(id="selected-corpus"),
         ],
         style=PAGE_STYLE,
     )
@@ -126,7 +137,12 @@ def _sidebar() -> html.Div:
                 style={"marginBottom": "12px", "fontSize": "11px"},
             ),
             html.Div("CORPORA", style=HEADER_STYLE),
-            html.Div(id="sidebar-corpora"),
+            dcc.Dropdown(
+                id="corpus-selector",
+                options=[],
+                placeholder="Select corpus…",
+                style={"marginBottom": "12px", "fontSize": "11px"},
+            ),
         ],
         style={
             **CARD_STYLE,
@@ -250,7 +266,7 @@ def _register_callbacks(engine: Engine) -> None:
         Output("firehose-session-filter", "options"),
         Output("sidebar-sessions", "children"),
         Output("sidebar-subagents", "children"),
-        Output("sidebar-corpora", "children"),
+        Output("corpus-selector", "options"),
         Input("slow-refresh", "n_intervals"),
     )
     def slow_update(_n: int) -> tuple[Any, ...]:
@@ -278,7 +294,7 @@ def _register_callbacks(engine: Engine) -> None:
         session_opts = _session_id_options(engine)
         sidebar_sessions = _sidebar_sessions_html(engine)
         sidebar_subagents = _sidebar_subagents_html(engine)
-        sidebar_corpora = _sidebar_corpora_html(engine)
+        corpus_opts = _corpus_options(engine)
 
         return (
             tool_freq_fig, tool_latency_fig, subagent_tree_fig, token_econ_fig,
@@ -286,7 +302,7 @@ def _register_callbacks(engine: Engine) -> None:
             sessions, f"{throughput:.1f}", f"{db_ms:.1f} ms",
             str(subagents), backlog,
             type_opts, session_opts,
-            sidebar_sessions, sidebar_subagents, sidebar_corpora,
+            sidebar_sessions, sidebar_subagents, corpus_opts,
         )
 
     @callback(
@@ -297,6 +313,19 @@ def _register_callbacks(engine: Engine) -> None:
     )
     def firehose_update(_n: int, types: list[str] | None, sessions: list[str] | None) -> list:
         return _render_firehose(engine, event_types=types, session_ids=sessions)
+
+    @callback(
+        Output("corpus-sunburst", "figure"),
+        Output("corpus-scatter", "figure"),
+        Output("corpus-stickiness", "figure"),
+        Output("corpus-entries-table", "children"),
+        Input("corpus-selector", "value"),
+    )
+    def corpus_explorer_update(corpus_key: str | None) -> tuple[Any, ...]:
+        if not corpus_key:
+            empty = dark_figure()
+            return (empty_state(empty, "Select a corpus"),) * 3 + ([],)
+        return _corpus_detail_panels(engine, corpus_key)
 
 
 # ── Chart builders ───────────────────────────────────────────────────────────
@@ -660,24 +689,155 @@ def _sidebar_subagents_html(engine: Engine) -> list[html.Div]:
     return items or [_sidebar_empty("No sub-agents")]
 
 
-def _sidebar_corpora_html(engine: Engine) -> list[html.Div]:
-    """Render corpus key list for the sidebar."""
+def _corpus_options(engine: Engine) -> list[dict[str, str]]:
+    """Return corpus dropdown options."""
     try:
         keys = fetch_corpus_keys(engine)
+        return [{"label": k, "value": k} for k in keys]
     except Exception:
-        return [_sidebar_empty("No corpora")]
+        return []
 
-    if not keys:
-        return [_sidebar_empty("No corpora")]
 
-    return [
+def _corpus_detail_panels(engine: Engine, corpus_key: str) -> tuple[Any, ...]:
+    """Return (sunburst, scatter, stickiness, entries_table) for a corpus."""
+    from dataclasses import asdict  # noqa: PLC0415
+
+    from harness_poc.core.observability import fetch_context_map_entries  # noqa: PLC0415
+
+    try:
+        entries = fetch_context_map_entries(engine, corpus_key)
+        rows = [asdict(e) for e in entries]
+    except Exception:
+        empty = dark_figure()
+        return (empty_state(empty, "Error loading corpus"),) * 3 + (
+            html.Div("Error loading entries", style={"color": ACCENT_RED}),)
+
+    sunburst = _corpus_sunburst_figure(rows)
+    scatter = _corpus_scatter_figure(rows)
+    stickiness = _corpus_stickiness_figure(rows)
+    table = _corpus_entries_table(rows)
+    return sunburst, scatter, stickiness, table
+
+
+def _corpus_sunburst_figure(rows: list[dict[str, Any]]) -> go.Figure:
+    fig = dark_figure(title="Token Budget by Section")
+    if not rows:
+        return empty_state(fig, "No entries")
+
+    agg: dict[tuple[str, str], int] = defaultdict(int)
+    for r in rows:
+        agg[(r.get("section", "?"), r.get("observation_type", "?"))] += r.get("token_estimate", 0)
+
+    labels: list[str] = []
+    parents: list[str] = []
+    values: list[int] = []
+    seen_sections: set[str] = set()
+
+    for (section, obs), total in sorted(agg.items()):
+        if section not in seen_sections:
+            labels.append(section)
+            parents.append("")
+            section_total = sum(v for (s, _), v in agg.items() if s == section)
+            values.append(section_total)
+            seen_sections.add(section)
+        labels.append(f"{section}\n{obs}")
+        parents.append(section)
+        values.append(total)
+
+    fig.add_trace(go.Sunburst(
+        labels=labels, parents=parents, values=values,
+        branchvalues="total", insidetextorientation="radial",
+    ))
+    fig.update_layout(margin={"l": 0, "r": 0, "t": 36, "b": 0}, height=260)
+    return fig
+
+
+def _corpus_scatter_figure(rows: list[dict[str, Any]]) -> go.Figure:
+    fig = dark_figure(title="Priority vs Token Cost")
+    if not rows:
+        return empty_state(fig, "No entries")
+
+    obs_types = sorted({r.get("observation_type", "?") for r in rows})
+    palette = CHART_PALETTE
+    color_map = {ot: palette[i % len(palette)] for i, ot in enumerate(obs_types)}
+
+    for ot in obs_types:
+        subset = [r for r in rows if r.get("observation_type") == ot]
+        fig.add_trace(go.Scatter(
+            x=[r.get("priority", 0) for r in subset],
+            y=[r.get("token_estimate", 0) for r in subset],
+            mode="markers", name=ot,
+            marker={"size": 8, "color": color_map[ot], "opacity": 0.8},
+            text=[f"{r.get('key','?')[:40]}<br>{r.get('summary','')[:60]}" for r in subset],
+            hovertemplate="%{text}<extra>%{fullData.name}</extra>",
+        ))
+    fig.update_layout(
+        xaxis_title="priority", yaxis_title="tokens",
+        legend={"orientation": "h", "y": -0.2},
+        margin={"l": 50, "r": 12, "t": 36, "b": 60}, height=260,
+    )
+    return fig
+
+
+def _corpus_stickiness_figure(rows: list[dict[str, Any]]) -> go.Figure:
+    fig = dark_figure(title="Entry Stickiness")
+    if not rows:
+        return empty_state(fig, "No entries")
+
+    top = sorted(rows, key=lambda r: r.get("materialization_count", 0), reverse=True)[:20]
+    top = list(reversed(top))
+    palette = CHART_PALETTE
+    obs_types = sorted({r.get("observation_type", "?") for r in top})
+    color_map = {ot: palette[i % len(palette)] for i, ot in enumerate(obs_types)}
+
+    fig.add_trace(go.Bar(
+        orientation="h",
+        x=[r.get("materialization_count", 0) for r in top],
+        y=[r.get("key", "?") for r in top],
+        marker_color=[color_map.get(r.get("observation_type", "?"), TEXT_MUTED) for r in top],
+        text=[r.get("observation_type", "?") for r in top],
+        hovertemplate="<b>%{y}</b><br>count: %{x}<br>type: %{text}<extra></extra>",
+    ))
+    fig.update_layout(
+        xaxis_title="materializations",
+        margin={"l": 180, "r": 12, "t": 36, "b": 28}, height=260,
+    )
+    return fig
+
+
+def _corpus_entries_table(rows: list[dict[str, Any]]) -> list[html.Div]:
+    if not rows:
+        return [html.Div("No entries", style={"color": TEXT_MUTED, "fontSize": "12px"})]
+
+    # Header + 15 most recent rows
+    header = html.Div(
+        [
+            html.Span("key", style={"minWidth": "160px", "fontWeight": "600", "color": TEXT_MUTED}),
+            html.Span("section", style={"minWidth": "100px", "fontWeight": "600", "color": TEXT_MUTED}),
+            html.Span("type", style={"minWidth": "120px", "fontWeight": "600", "color": TEXT_MUTED}),
+            html.Span("pri", style={"minWidth": "30px", "fontWeight": "600", "color": TEXT_MUTED, "textAlign": "right"}),
+            html.Span("mat", style={"minWidth": "30px", "fontWeight": "600", "color": TEXT_MUTED, "textAlign": "right"}),
+            html.Span("tokens", style={"minWidth": "50px", "fontWeight": "600", "color": TEXT_MUTED, "textAlign": "right"}),
+        ],
+        style={"display": "flex", "gap": "8px", "padding": "4px 0", "borderBottom": f"2px solid {GRID_LINE}"},
+    )
+
+    body_rows: list[html.Div] = [header]
+    body_rows.extend(
         html.Div(
-            key[:30],
-            style={"color": TEXT_MUTED, "fontSize": "11px", "padding": "2px 0", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"},
+            [
+                html.Span(str(r.get("key", ""))[:22], style={"minWidth": "160px", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"}),
+                html.Span(str(r.get("section", ""))[:14], style={"minWidth": "100px", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"}),
+                html.Span(str(r.get("observation_type", ""))[:16], style={"minWidth": "120px", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"}),
+                html.Span(str(r.get("priority", "")), style={"minWidth": "30px", "textAlign": "right"}),
+                html.Span(str(r.get("materialization_count", "")), style={"minWidth": "30px", "textAlign": "right"}),
+                html.Span(str(r.get("token_estimate", "")), style={"minWidth": "50px", "textAlign": "right"}),
+            ],
+            style={"display": "flex", "gap": "8px", "padding": "2px 0", "borderBottom": f"1px solid {GRID_LINE}", "fontSize": "11px"},
         )
-        for key in keys[:12]
-    ]
-
+        for r in rows[:15]
+    )
+    return body_rows
 
 def _sidebar_empty(text: str) -> html.Div:
     return html.Div(text, style={"color": TEXT_MUTED, "fontSize": "11px", "fontStyle": "italic"})
