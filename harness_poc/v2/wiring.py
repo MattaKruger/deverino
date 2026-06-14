@@ -226,6 +226,7 @@ def build_v2_system_prompt_block(
     persona_id: str = "coder",
     working_context: dict | None = None,
     project_id: str = "deverino",
+    corpus_path: str = "docs/",
 ) -> str:
     """Build a V2-augmented system prompt block using the ContextEngine.
 
@@ -240,6 +241,7 @@ def build_v2_system_prompt_block(
         persona_id: The persona to use (e.g. "coder", "architect", "reviewer").
         working_context: Optional dict with session context.
         project_id: Project identifier.
+        corpus_path: Path to corpus directory (e.g. "docs/", "dashboard-ui/").
 
     Returns:
         A rendered prompt string ready for system message injection.
@@ -255,7 +257,7 @@ def build_v2_system_prompt_block(
         result = ctx_engine.materialize_context_map(
             working_context=working_context or {},
             persona_id=persona_id,
-            corpus_path="docs/",
+            corpus_path=corpus_path,
         )
         return result["rendered_prompt"]
     except (PersonaNotFoundError, PedagogyNotFoundError) as exc:

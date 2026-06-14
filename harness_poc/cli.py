@@ -1198,6 +1198,10 @@ def v2_context(
         str,
         typer.Option("--persona", "-p", help="Persona to use (e.g. coder, code_reviewer)."),
     ] = "coder",
+    corpus: Annotated[
+        str,
+        typer.Option("--corpus", "-c", help="Corpus path (e.g. docs/, dashboard-ui/)."),
+    ] = "docs/",
 ) -> None:
     """Materialize the context map through a persona+pedagogy lens.
 
@@ -1206,7 +1210,7 @@ def v2_context(
     system message.
     """
     app_state = _new_app_state()
-    _run_command(lambda: _run_v2_context(app_state, persona))
+    _run_command(lambda: _run_v2_context(app_state, persona, corpus))
 
 
 @v2_app.command("run")
@@ -1382,7 +1386,7 @@ def _run_v2_workflow(app_state: AppState, spec_file: str, persona: str) -> None:
     print_text(f"  Context refreshed: {result.context_map_refreshed}")
 
 
-def _run_v2_context(app_state: AppState, persona: str) -> None:
+def _run_v2_context(app_state: AppState, persona: str, corpus: str = "docs/") -> None:
     from harness_poc.v2.wiring import build_v2_system_prompt_block
 
     block = build_v2_system_prompt_block(
@@ -1390,12 +1394,15 @@ def _run_v2_context(app_state: AppState, persona: str) -> None:
         app_state.config,
         persona_id=persona,
         working_context={"session_id": app_state.session_id},
+        corpus_path=corpus,
     )
 
     if block:
         print_text(block)
     else:
-        print_error(f"Could not materialize context for persona '{persona}'.")
+        print_error(
+            f"Could not materialize context for persona '{persona}' with corpus '{corpus}'."
+        )
 
 
 def _run_v2_mode(  # noqa: PLR0913
