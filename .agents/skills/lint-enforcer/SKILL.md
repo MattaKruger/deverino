@@ -40,21 +40,22 @@ uv run ty check path/to/file1.py path/to/file2.py
 5. **Report the result.** After running, state:
    - "Zero new lint errors on <files>"
    - "Zero new type errors on <files>"
-   Or list the errors found and what you did about them.
+     Or list the errors found and what you did about them.
 
 ## When to skip
 
 Skip if:
+
 - The file only had docstring/comment changes (no code)
 - The change was a pure delete (no new logic)
 - The file is a markdown/YAML/config (not Python)
 
 ## Failure modes this prevents
 
-| Failure | Prevention |
-|---------|-----------|
-| Unused import from refactor | Ruff `F401` catches it |
-| Missing type annotation on new function | Ty catches it |
-| Wrong argument count after signature change | Ty catches it |
-| Import of deleted/nonexistent module | Both catch it |
-| Reporting "done" with broken code | Rule 1 forces per-file checks |
+| Failure                                     | Prevention                    |
+| ------------------------------------------- | ----------------------------- |
+| Unused import from refactor                 | Ruff `F401` catches it        |
+| Missing type annotation on new function     | Ty catches it                 |
+| Wrong argument count after signature change | Ty catches it                 |
+| Import of deleted/nonexistent module        | Both catch it                 |
+| Reporting "done" with broken code           | Rule 1 forces per-file checks |

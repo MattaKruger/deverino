@@ -1,0 +1,48 @@
+# Container Smoke Test Spec — verify container operations work
+#
+# Usage:
+#   harness-poc v2 run --mode pipeline --spec specs/container-smoke-test.yaml \
+#     "verify container spawn/exec/destroy cycle"
+#
+# Steps:
+#   1. Probe: Check that docker/podman is available on the host
+#   2. Execution: Run a container-based test
+#   3. Gate: Verify the test output is valid
+
+probe: |
+  import shutil
+  import sys
+
+  for backend in ("podman", "docker"):
+      path = shutil.which(backend)
+      if path:
+          print(f"Container runtime found: {backend} at {path}")
+          break
+  else:
+      print("No container runtime (podman or docker) found on PATH")
+      sys.exit(1)
+
+  # Check the container image exists or can be pulled
+  import subprocess
+  backend = shutil.which("podman") or shutil.which("docker") or ""
+  name = backend.rsplit("/", 1)[-1]
+  result = subprocess.run(
+      [name, "images", "-q", "deverino-python:latest"],
+      capture_output=True, text=True, timeout=10,
+  )
+  if result.stdout.strip():
+      print("Container image is available locally")
+  else:
+      print("Container image not found locally (will be pulled on demand)")
+
+tasks:
+  - agent_type: coder
+    objective: >
+      Run a container smoke test:
+      1. Spawn a container using the default deverino-python image
+      2. Execute 'python -c "print(\"hello from container\")"' inside it
+      3. Verify the output contains "hello from container"
+      4. Destroy the container
+      Use the container_spawn, container_exec, and container_destroy system tools.
+
+workspace: "."

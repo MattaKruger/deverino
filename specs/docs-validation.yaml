@@ -1,0 +1,32 @@
+# Docs Validation Spec — verify documentation is current
+#
+# Usage:
+#   harness-poc v2 run --mode pipeline --spec specs/docs-validation.yaml \
+#     "verify documentation matches codebase"
+#
+# Steps:
+#   1. Probe: Check that the docs directory exists and is readable
+#   2. Execution: Search docs for stale references
+#   3. Gate: Run a doc lint check (e.g., markdown lint or link check)
+
+probe: |
+  import os
+  docs_dir = "docs"
+  if os.path.isdir(docs_dir):
+      files = [f for f in os.listdir(docs_dir) if f.endswith(".md")]
+      print(f"Found {len(files)} markdown files in docs/")
+      for f in sorted(files):
+          print(f"  {f}")
+  else:
+      print("docs/ directory not found")
+      exit(1)
+
+tasks:
+  - agent_type: researcher
+    objective: >
+      Scan the docs/ directory for documentation that references
+      outdated module paths, deprecated functions, or old architecture concepts.
+      Compare against the actual code in harness_poc/.
+      List any mismatches found.
+
+workspace: "."

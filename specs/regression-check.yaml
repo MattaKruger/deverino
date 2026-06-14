@@ -1,0 +1,30 @@
+# Regression Check Spec — 3-step workflow for the v2 module
+#
+# Usage:
+#   harness-poc v2 run --mode pipeline --spec specs/regression-check.yaml \
+#     "run regression checks on the v2 module"
+#
+# Steps:
+#   1. Probe: Quick sandbox test — verify Python imports work
+#   2. Execution: Run the v2 test suite via delegate_task
+#   3. Gate: Run pytest on the v2 tests directory
+
+probe: |
+  import sys
+  print(f"Python {sys.version}")
+  print("Probe: sandbox is operational")
+  # Try importing a key module to detect missing deps early
+  import harness_poc.v2
+  print("v2 module imports cleanly")
+
+tasks:
+  - agent_type: coder
+    objective: Run the v2 test suite and report which tests pass and which fail
+    context: |
+      Focus on these test files:
+        harness_poc/v2/tests/test_event_bus.py
+        harness_poc/v2/tests/test_workflow_orchestrator.py
+        harness_poc/v2/tests/test_execution_engine.py
+      Run: python -m pytest harness_poc/v2/tests/ -v --tb=short 2>&1
+
+workspace: "harness_poc/v2/tests"

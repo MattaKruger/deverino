@@ -14,9 +14,11 @@ accidents, untested multi-file cascades, and silent behavioral changes.
 Before touching any file:
 
 1. **Run the existing test suite** and capture the pass count:
+
    ```bash
    TEST_DATABASE_URL=postgresql://deverino_test:deverino_test@localhost:5433/deverino_test uv run pytest harness_poc/v2/tests/ tests/event/ tests/unit/ -q
    ```
+
    Record the number. If it doesn't match the last known good count,
    investigate before proceeding.
 
@@ -49,9 +51,11 @@ references to code that doesn't exist yet).
 ### After each file
 
 Run the targeted test suite for that file:
+
 ```bash
 TEST_DATABASE_URL=... uv run pytest path/to/tests/ -q
 ```
+
 If anything fails, fix it before touching the next file. Do not accumulate
 failures across files.
 
@@ -60,12 +64,15 @@ failures across files.
 After all files are edited:
 
 1. **Run the full targeted suite:**
+
    ```bash
    TEST_DATABASE_URL=... uv run pytest harness_poc/v2/tests/ tests/event/ tests/unit/ -q
    ```
+
    The pass count must equal the pre-flight count plus any new tests added.
 
 2. **Smoke-test the CLI surface** for every changed command:
+
    ```bash
    uv run harness-poc <new-command> --help
    uv run harness-poc <new-command> <args>
@@ -91,10 +98,11 @@ Copy patterns from existing tests in `tests/event/test_v2_fusion.py` and
 
 ## Phase 4 — Flag behavioral changes
 
-Before finishing, ask: *"Does this change how the user interacts with the
-system in a way they didn't explicitly request?"*
+Before finishing, ask: _"Does this change how the user interacts with the
+system in a way they didn't explicitly request?"_
 
 If yes, surface it explicitly:
+
 > "Note: with this change, plain text input in pipeline mode now executes
 > as a v2 objective. Previously it would have gone to chat. Is this the
 > intended behavior?"
@@ -105,18 +113,19 @@ over generation when exploring new features."
 
 ## Failure modes this protocol prevents
 
-| Failure | How this protocol prevents it |
-|---------|------------------------------|
+| Failure                              | How this protocol prevents it                   |
+| ------------------------------------ | ----------------------------------------------- |
 | Import strip (edit matches too much) | Small `old_text` blocks, read exact lines first |
-| Batch edit JSON parse failure | Avoid bracket notation in multi-line edits |
-| Multi-file cascade breaks silently | Incremental test after each file |
-| Untested new behavior | Phase 3 mandates tests for new paths |
-| Surprising UX change | Phase 4 flags behavioral changes for discussion |
-| Baseline unknown | Phase 0 captures pre-flight pass count |
+| Batch edit JSON parse failure        | Avoid bracket notation in multi-line edits      |
+| Multi-file cascade breaks silently   | Incremental test after each file                |
+| Untested new behavior                | Phase 3 mandates tests for new paths            |
+| Surprising UX change                 | Phase 4 flags behavioral changes for discussion |
+| Baseline unknown                     | Phase 0 captures pre-flight pass count          |
 
 ## When to use this skill
 
 Activate this skill when:
+
 - The user asks for changes spanning 2+ files
 - You're implementing a multi-phase plan
 - You're refactoring a shared interface (dataclass, function signature, import)
