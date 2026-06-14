@@ -1,0 +1,8 @@
+# UX reviewer sub-agent configuration
+# Tools: read/view interfaces — no code mutation needed
+persona: ux_reviewer
+tools:
+  - read_file
+  - search_files
+permissions:
+  workspace: read_only
