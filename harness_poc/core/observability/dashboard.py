@@ -137,6 +137,46 @@ class DashboardSnapshot:
     session_token_usage: list[SessionTokenUsage]
 
 
+
+@dataclass(frozen=True, slots=True)
+class UnifiedEvent:
+    event_id: str
+    event_type: str
+    timestamp: str
+    session_id: str
+    detail_json: str
+    source_table: str
+
+
+@dataclass(frozen=True, slots=True)
+class ToolLatency:
+    skill_name: str
+    session_id: str
+    latency_s: float
+    status: str
+    tokens_used: int
+
+
+@dataclass(frozen=True, slots=True)
+class SubAgentNode:
+    sub_session_id: str
+    parent_session_id: str
+    persona: str
+    objective: str
+    status: str
+    started_at: str
+    completed_at: str
+    duration_s: float
+    summary: str
+
+
+@dataclass(frozen=True, slots=True)
+class ErrorSummary:
+    skill_name: str
+    error_count: int
+    cancel_count: int
+    last_error_at: str
+
 def fetch_dashboard_snapshot(engine: Engine, *, limit: int = 12) -> DashboardSnapshot:
     return DashboardSnapshot(
         summary=fetch_summary(engine),
@@ -810,3 +850,377 @@ def fetch_context_map_entries(
         corpus_key,
     )
     return summaries
+
+def fetch_recent_events(
+    engine: Engine,
+    *,
+    limit: int = 200,
+    session_id: str | None = None,
+    event_types: list[str] | None = None,
+) -> list[UnifiedEvent]:
+    """Return recent events from state_events and context_map_events.
+
+    UNION ALL across the two tables so the dashboard has a single
+    unified timeline.  Optional *session_id* and *event_types*
+    filters apply to both halves independently then merged.
+    """
+    se_conds: list[str] = []
+    cme_conds: list[str] = []
+    params: dict[str, Any] = {"limit": limit}
+
+    if session_id is not None:
+        se_conds.append("scope_id = :session_id")
+        cme_conds.append("session_id = :session_id")
+        params["session_id"] = session_id
+
+    if event_types:
+        se_conds.append("event_type = ANY(:event_types)")
+        cme_conds.append("event_type = ANY(:event_types)")
+        params["event_types"] = event_types
+
+    se_where = (" where " + " and ".join(se_conds)) if se_conds else ""
+    cme_where = (" where " + " and ".join(cme_conds)) if cme_conds else ""
+
+    sql = text(
+        f"select * from ("  # noqa: S608
+        f"  select id::text as event_id, event_type, created_at as timestamp,"
+        f"         scope_id as session_id,"
+        f"         coalesce(payload->'payload', '{{}}'::jsonb)::text as detail_json,"
+        f"         'state_events' as source_table"
+        f"  from state_events"
+        f"  {se_where}"
+        f"  union all"
+        f"  select event_id, event_type, timestamp, session_id,"
+        f"         payload as detail_json, 'context_map_events' as source_table"
+        f"  from context_map_events"
+        f"  {cme_where}"
+        f") combined"
+        f" order by timestamp desc"
+        f" limit :limit"
+    )
+
+    with engine.connect() as conn:
+        rows = conn.execute(sql, params).mappings().all()
+
+    return [
+        UnifiedEvent(
+            event_id=str(row["event_id"] or ""),
+            event_type=str(row["event_type"] or ""),
+            timestamp=str(row["timestamp"] or ""),
+            session_id=str(row["session_id"] or ""),
+            detail_json=str(row["detail_json"] or "{}"),
+            source_table=str(row["source_table"] or ""),
+        )
+        for row in rows
+    ]
+
+
+def fetch_tool_latency(
+    engine: Engine,
+    *,
+    minutes: int = 60,
+) -> list[ToolLatency]:
+    """Match SkillCalled → SkillCompleted pairs to compute latency.
+
+    Pairs are matched on (session_id, skill_name) where the
+    SkillCompleted occurs within 300 seconds of the SkillCalled.
+    Only SkillCalled events in the last *minutes* minutes are
+    considered.
+    """
+    with engine.connect() as conn:
+        rows = (
+            conn.execute(
+                text(
+                    """
+                    with called as (
+                        select
+                            coalesce(
+                                nullif(payload->'payload'->>'skill_name', ''),
+                                nullif(payload->'payload'->>'tool_name', ''),
+                                'unknown'
+                            ) as skill_name,
+                            scope_id as session_id,
+                            created_at
+                        from state_events
+                        where event_type = 'SkillCalled'
+                          and created_at::timestamptz
+                              > now() - (:minutes || ' minutes')::interval
+                    ),
+                    completed as (
+                        select
+                            coalesce(
+                                nullif(payload->'payload'->>'skill_name', ''),
+                                nullif(payload->'payload'->>'tool_name', ''),
+                                'unknown'
+                            ) as skill_name,
+                            scope_id as session_id,
+                            created_at,
+                            coalesce(payload->'payload'->>'status', '') as status,
+                            coalesce(
+                                nullif(payload->'payload'->>'tokens_used', '')::int, 0
+                            ) as tokens_used
+                        from state_events
+                        where event_type = 'SkillCompleted'
+                    )
+                    select
+                        c.skill_name,
+                        c.session_id,
+                        extract(epoch from (
+                            comp.created_at::timestamptz - c.created_at::timestamptz
+                        )) as latency_s,
+                        comp.status,
+                        comp.tokens_used
+                    from called c
+                    join lateral (
+                        select * from completed comp
+                        where comp.skill_name = c.skill_name
+                          and comp.session_id = c.session_id
+                          and comp.created_at::timestamptz
+                              > c.created_at::timestamptz
+                          and comp.created_at::timestamptz
+                              <= c.created_at::timestamptz + interval '300 seconds'
+                        order by comp.created_at asc
+                        limit 1
+                    ) comp on true
+                    order by c.created_at desc
+                    """
+                ),
+                {"minutes": str(minutes)},
+            )
+            .mappings()
+            .all()
+        )
+
+    return [
+        ToolLatency(
+            skill_name=str(row["skill_name"] or ""),
+            session_id=str(row["session_id"] or ""),
+            latency_s=float(row["latency_s"] or 0.0),
+            status=str(row["status"] or ""),
+            tokens_used=int(row["tokens_used"] or 0),
+        )
+        for row in rows
+    ]
+
+def _compute_duration(started_at: str, completed_at: str) -> float:
+    """Compute duration in seconds between two ISO timestamps.
+
+    Returns 0.0 if either timestamp is missing or unparseable.
+    """
+    if not started_at or not completed_at:
+        return 0.0
+    from datetime import datetime  # noqa: PLC0415
+
+    try:
+        start = datetime.fromisoformat(started_at)
+        end = datetime.fromisoformat(completed_at)
+        return round((end - start).total_seconds(), 1)
+    except ValueError:
+        return 0.0
+def fetch_sub_agent_tree(engine: Engine) -> list[SubAgentNode]:
+    """Return sub-agent dispatch/completion tree from both event stores.
+
+    Merges entries from state_events (SubAgentDispatched /
+    SubAgentCompleted) with context_map_events (SubAgentTaskStarted /
+    SubAgentTaskCompleted).  Deduplicates on *sub_session_id*,
+    preferring the state_events entry when both exist.
+    """
+    nodes: dict[str, SubAgentNode] = {}
+
+    with engine.connect() as conn:
+        # ── state_events (Approach A) ──────────────────────────
+        se_rows = (
+            conn.execute(
+                text(
+                    """
+                    select
+                        d.scope_id as parent_session_id,
+                        d.payload->'payload'->>'sub_session_id' as sub_session_id,
+                        d.payload->'payload'->>'persona' as persona,
+                        d.payload->'payload'->>'objective' as objective,
+                        coalesce(
+                            c.payload->'payload'->>'status', 'dispatched'
+                        ) as status,
+                        d.created_at as started_at,
+                        c.created_at as completed_at,
+                        coalesce(
+                            c.payload->'payload'->>'content', ''
+                        ) as summary
+                    from state_events d
+                    left join state_events c
+                        on c.event_type = 'SubAgentCompleted'
+                        and c.payload->'payload'->>'sub_session_id'
+                            = d.payload->'payload'->>'sub_session_id'
+                        and c.scope_id = d.scope_id
+                    where d.event_type = 'SubAgentDispatched'
+                    order by d.created_at desc
+                    """
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+        for row in se_rows:
+            sub_id = str(row["sub_session_id"] or "")
+            if not sub_id:
+                continue
+            started = str(row["started_at"] or "")
+            completed = str(row["completed_at"] or "")
+            nodes[sub_id] = SubAgentNode(
+                sub_session_id=sub_id,
+                parent_session_id=str(row["parent_session_id"] or ""),
+                persona=str(row["persona"] or ""),
+                objective=str(row["objective"] or ""),
+                status=str(row["status"] or ""),
+                started_at=started,
+                completed_at=completed,
+                duration_s=_compute_duration(started, completed),
+                summary=str(row["summary"] or ""),
+            )
+
+        # ── context_map_events (Approach B) ────────────────────
+        cme_rows = (
+            conn.execute(
+                text(
+                    """
+                    select
+                        s.session_id as parent_session_id,
+                        s.payload::json->>'sub_session_id' as sub_session_id,
+                        s.payload::json->>'persona' as persona,
+                        s.payload::json->>'objective' as objective,
+                        coalesce(
+                            c.payload::json->>'status', 'started'
+                        ) as status,
+                        s.timestamp as started_at,
+                        c.timestamp as completed_at,
+                        coalesce(
+                            c.payload::json->>'summary', ''
+                        ) as summary
+                    from context_map_events s
+                    left join context_map_events c
+                        on c.event_type = 'SubAgentTaskCompleted'
+                        and c.payload::json->>'task_id'
+                            = s.payload::json->>'sub_session_id'
+                        and c.session_id = s.session_id
+                    where s.event_type = 'SubAgentTaskStarted'
+                    order by s.timestamp desc
+                    """
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+        for row in cme_rows:
+            sub_id = str(row["sub_session_id"] or "")
+            if not sub_id or sub_id in nodes:
+                continue  # prefer state_events entry
+            started = str(row["started_at"] or "")
+            completed = str(row["completed_at"] or "")
+            nodes[sub_id] = SubAgentNode(
+                sub_session_id=sub_id,
+                parent_session_id=str(row["parent_session_id"] or ""),
+                persona=str(row["persona"] or ""),
+                objective=str(row["objective"] or ""),
+                status=str(row["status"] or ""),
+                started_at=started,
+                completed_at=completed,
+                duration_s=_compute_duration(started, completed),
+                summary=str(row["summary"] or ""),
+            )
+
+    return list(nodes.values())
+
+
+def fetch_event_throughput(engine: Engine, *, window_s: int = 60) -> float:
+    """Return events/second over the last *window_s* seconds."""
+    with engine.connect() as conn:
+        state_count = conn.execute(
+            text(
+                "select count(*) from state_events "
+                "where created_at::timestamptz > now() - (:window || ' seconds')::interval"
+            ),
+            {"window": str(window_s)},
+        ).scalar_one()
+
+        cme_count = conn.execute(
+            text(
+                "select count(*) from context_map_events "
+                "where timestamp::timestamptz > now() - (:window || ' seconds')::interval"
+            ),
+            {"window": str(window_s)},
+        ).scalar_one()
+
+    total = int(state_count or 0) + int(cme_count or 0)
+    return round(total / window_s, 2) if window_s > 0 else 0.0
+
+
+def fetch_error_summary(engine: Engine, *, hours: int = 24) -> list[ErrorSummary]:
+    """Return error/cancel counts grouped by skill_name.
+
+    Aggregates SkillCompleted rows with status in ('failed','error')
+    and SkillCancelled rows, all within the last *hours* hours.
+    """
+    with engine.connect() as conn:
+        rows = (
+            conn.execute(
+                text(
+                    """
+                    with skill_name_extracted as (
+                        select
+                            coalesce(
+                                nullif(payload->'payload'->>'skill_name', ''),
+                                nullif(payload->'payload'->>'tool_name', ''),
+                                'unknown'
+                            ) as skill_name,
+                            coalesce(payload->'payload'->>'status', '') as status,
+                            event_type,
+                            created_at
+                        from state_events
+                        where created_at::timestamptz
+                              > now() - (:hours || ' hours')::interval
+                          and event_type in (
+                              'SkillCompleted', 'SkillCancelled'
+                          )
+                    )
+                    select
+                        skill_name,
+                        coalesce(count(*) filter (
+                            where event_type = 'SkillCompleted'
+                              and status in ('failed', 'error')
+                        ), 0) as error_count,
+                        coalesce(count(*) filter (
+                            where event_type = 'SkillCancelled'
+                        ), 0) as cancel_count,
+                        max(created_at) filter (
+                            where event_type = 'SkillCompleted'
+                              and status in ('failed', 'error')
+                        ) as last_error_at
+                    from skill_name_extracted
+                    group by skill_name
+                    having coalesce(count(*) filter (
+                               where event_type = 'SkillCompleted'
+                                 and status in ('failed', 'error')
+                           ), 0) > 0
+                        or coalesce(count(*) filter (
+                               where event_type = 'SkillCancelled'
+                           ), 0) > 0
+                    order by error_count desc, cancel_count desc, skill_name asc
+                    """
+                ),
+                {"hours": str(hours)},
+            )
+            .mappings()
+            .all()
+        )
+
+    return [
+        ErrorSummary(
+            skill_name=str(row["skill_name"] or ""),
+            error_count=int(row["error_count"] or 0),
+            cancel_count=int(row["cancel_count"] or 0),
+            last_error_at=str(row["last_error_at"] or ""),
+        )
+        for row in rows
+    ]
