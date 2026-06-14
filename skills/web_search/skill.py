@@ -60,6 +60,10 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noq
     count = _clamp_count(arguments.get("count", DEFAULT_COUNT))
     freshness = str(arguments.get("freshness", "noLimit"))
     summary = bool(arguments.get("summary", True))
+    use_mock = bool(arguments.get("use_mock", False))
+
+    if use_mock:
+        return _mock_result(query, count)
 
     settings = LangSearchSettings.load()  # type: ignore[call-arg]
 

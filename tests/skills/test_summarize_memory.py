@@ -47,7 +47,7 @@ def test_summarize_memory_produces_summary_for_existing_memory(
 
     result = runner.execute_skill(
         tool_name="summarize_memory",
-        arguments={"memory_key": "research_key"},
+        arguments={"memory_key": "research_key", "use_mock": True},
         session_id=session_id,
     )
     # Mock LLM (TestModel) produces deterministic output
@@ -65,7 +65,7 @@ def test_summarize_memory_handles_string_payload(
 
     result = runner.execute_skill(
         tool_name="summarize_memory",
-        arguments={"memory_key": "string_key"},
+        arguments={"memory_key": "string_key", "use_mock": True},
         session_id=session_id,
     )
     assert result.status == "success"

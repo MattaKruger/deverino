@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from pydantic_ai.models.test import TestModel
+
 from harness_poc.core.runtime import build_model, chat_text
 from harness_poc.core.skills import SkillResult
 
@@ -32,10 +34,12 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             "risks": ["Missing subagent result."],
         }
     else:
+        use_mock = bool(arguments.get("use_mock", False))
+        model = TestModel(call_tools=[]) if use_mock else build_model(ctx.config.llm)
         try:
             response = chat_text(
                 _build_reviewer_messages(objective=objective, payload=payload),
-                model=build_model(ctx.config.llm),
+                model=model,
             )
         except Exception as exc:
             return SkillResult(

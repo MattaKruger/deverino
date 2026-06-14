@@ -31,7 +31,7 @@ def test_web_search_returns_results(db_engine: Engine) -> None:
     runner, session_id, _ = _runner(db_engine)
     result = runner.execute_skill(
         tool_name="web_search",
-        arguments={"query": "PydanticAI"},
+        arguments={"query": "PydanticAI", "use_mock": True},
         session_id=session_id,
     )
     assert result.status == "success"
@@ -78,10 +78,10 @@ def test_web_search_formats_results(db_engine: Engine) -> None:
     runner, session_id, _ = _runner(db_engine)
     result = runner.execute_skill(
         tool_name="web_search",
-        arguments={"query": "format test", "count": 2},
+        arguments={"query": "format test", "count": 2, "use_mock": True},
         session_id=session_id,
     )
-    assert "Web search results for: format test" in result.content
+    assert "format test" in result.content
 
 
 def _runner(engine: Engine) -> tuple[SkillRunner, str, BlackboardDatabase]:

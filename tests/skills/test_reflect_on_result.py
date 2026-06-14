@@ -56,22 +56,28 @@ def test_reflect_on_result_writes_to_memory(
 ) -> None:
     runner, session_id, database = session_runner
     database.write_memory(
-        session_id, "result_key", {"output": "research completed", "status": "done"}
+        session_id,
+        "evaluation_result",
+        {
+            "verdict": "pass",
+            "summary": "All tests passed.",
+            "risks": ["None identified."],
+        },
     )
 
     result = runner.execute_skill(
         tool_name="reflect_on_result",
         arguments={
-            "objective": "Check completed research",
-            "memory_key": "result_key",
-            "output_key": "reflection_output",
+            "objective": "Evaluate test results",
+            "memory_key": "evaluation_result",
+            "use_mock": True,
         },
         session_id=session_id,
     )
     # Mock LLM produces some reflection
     assert result.status in {"success", "failed"}
 
-    memory = database.read_memory(session_id, "reflection_output")
+    memory = database.read_memory(session_id, "evaluation_result_reflection")
     assert isinstance(memory, dict)
     assert "verdict" in memory
     assert memory["verdict"] in {"pass", "fail"}
@@ -88,6 +94,7 @@ def test_reflect_on_result_uses_default_output_key(
         arguments={
             "objective": "Check default output key",
             "memory_key": "result_key",
+            "use_mock": True,
         },
         session_id=session_id,
     )
