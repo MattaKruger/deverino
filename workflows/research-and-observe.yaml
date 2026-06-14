@@ -1,0 +1,30 @@
+# Research & Observe — investigate a topic then record findings in the context map
+#
+# Usage:
+#   In REPL:  /workflow research-and-observe "how does the materializer work"
+#   Via CLI:  harness-poc workflow run research-and-observe "Vespa indexing design"
+#
+# States:
+#   1. research  — search the web for information on the objective
+#   2. observe   — record a structural observation in the context map
+#
+# Template variables:
+#   {{inputs.objective}}  — the topic to research
+#   {{states.research}}   — SkillResult dict from the web_search skill
+
+states:
+  research:
+    skill: web_search
+    args:
+      query: "{{inputs.objective}}"
+      count: 3
+      summary: true
+    next: observe
+
+  observe:
+    skill: observe
+    args:
+      observation_type: insight
+      summary: "Research insight: {{inputs.objective}}"
+      detail: "Web search found relevant information about {{inputs.objective}}."
+    terminal: true

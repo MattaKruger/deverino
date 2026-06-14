@@ -1,0 +1,9 @@
+# Architect sub-agent configuration
+# Tools: code search and file reading for design-space exploration
+persona: architect
+tools:
+  - read_file
+  - search_files
+  - semble_search
+permissions:
+  workspace: read_only

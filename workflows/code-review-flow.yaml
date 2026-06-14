@@ -1,0 +1,30 @@
+# Code Review Flow — state machine workflow
+#
+# Usage:
+#   In REPL:  /workflow code-review-flow "refactor the execution engine"
+#   Via CLI:  harness-poc workflow run code-review-flow "review the wiring module"
+#
+# States:
+#   1. search    — search codebase for code related to the objective
+#   2. review    — delegate a code review task to the reviewer persona
+#
+# Template variables:
+#   {{inputs.objective}}  — the objective argument passed at invocation
+
+states:
+  search:
+    skill: semble_search
+    args:
+      action: search
+      query: "{{inputs.objective}}"
+      top_k: 5
+    next: review
+
+  review:
+    skill: delegate_task
+    args:
+      persona: reviewer
+      objective: "Review the following code context for issues. Objective: {{inputs.objective}}"
+      context: "Search results from codebase:\n{{states.search.content}}"
+      memory_key: "review-output"
+    terminal: true

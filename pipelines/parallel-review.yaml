@@ -1,0 +1,52 @@
+# Parallel Review Pipeline — fan-out to multiple reviewer agents in parallel
+#
+# Usage:
+#   harness-poc pipeline run parallel-review --input objective="review the execution engine"
+#
+# Structure:
+#   The first wave runs 3 reviewer agents IN PARALLEL (coder, reviewer, security).
+#   The second wave runs an aggregator that depends on all three.
+#
+# Template variables:
+#   {{inputs.objective}}   — the review objective
+#   {{nodes.coder.output}} — output from the coder agent node
+
+nodes:
+  - id: coder
+    type: agent
+    goal: "Review the codebase for implementation quality. Objective: {{inputs.objective}}"
+    allowed_skills:
+      - read_file
+      - search_files
+      - semble_search
+      - web_search
+
+  - id: reviewer
+    type: agent
+    goal: "Review the codebase for design and style issues. Objective: {{inputs.objective}}"
+    allowed_skills:
+      - read_file
+      - search_files
+      - semble_search
+
+  - id: security
+    type: agent
+    goal: "Review the codebase for security vulnerabilities. Objective: {{inputs.objective}}"
+    allowed_skills:
+      - read_file
+      - search_files
+      - semble_search
+
+  - id: aggregate
+    type: agent
+    goal: >
+      Aggregate the following three reviews into a single comprehensive report.
+      Synthesize findings, highlight consensus and disagreements.
+
+      Coder review: {{nodes.coder.output}}
+      Reviewer review: {{nodes.reviewer.output}}
+      Security review: {{nodes.security.output}}
+    depends_on:
+      - coder
+      - reviewer
+      - security

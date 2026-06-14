@@ -1,0 +1,30 @@
+# Index & Reflect — index project documents then evaluate the result
+#
+# Usage:
+#   In REPL:  /workflow index-and-reflect "index the new docs"
+#   Via CLI:  harness-poc workflow run index-and-reflect "index docs/ directory"
+#
+# States:
+#   1. index     — index project documents into Vespa
+#   2. reflect   — evaluate whether the indexing was successful
+#
+# Template variables:
+#   {{inputs.objective}}         — the objective argument
+#   {{states.index.status}}      — "success" or "failed" from index_documents
+#   {{states.index.content}}     — full output content
+
+states:
+  index:
+    skill: index_documents
+    args:
+      paths:
+        - "docs/"
+    next: reflect
+
+  reflect:
+    skill: reflect_on_result
+    args:
+      objective: "{{inputs.objective}}"
+      memory_key: "index-result"
+      output_key: "index-reflection"
+    terminal: true

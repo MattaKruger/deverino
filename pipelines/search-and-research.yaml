@@ -1,0 +1,41 @@
+# Search & Research Pipeline — sequential search then deep research
+#
+# Usage:
+#   harness-poc pipeline run search-and-research --input topic="context map materializer"
+#
+# Structure:
+#   1. search_codebase — skill node: search the codebase for relevant code
+#   2. search_web      — skill node: search the web (parallel with search_codebase)
+#   3. synthesize      — agent node: combines both search results (depends on both)
+
+nodes:
+  - id: search_codebase
+    type: skill
+    skill: semble_search
+    arguments:
+      action: search
+      query: "{{inputs.topic}}"
+      top_k: 5
+
+  - id: search_web
+    type: skill
+    skill: web_search
+    arguments:
+      query: "{{inputs.topic}}"
+      count: 3
+      summary: true
+
+  - id: synthesize
+    type: agent
+    goal: >
+      Synthesize the following codebase and web search results into a concise summary
+      about "{{inputs.topic}}".
+
+      Codebase findings: {{nodes.search_codebase.output}}
+
+      Web findings: {{nodes.search_web.output}}
+
+      Focus on key facts, architecture decisions, and patterns.
+    depends_on:
+      - search_codebase
+      - search_web

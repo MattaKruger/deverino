@@ -1,0 +1,9 @@
+# Test reviewer sub-agent configuration
+# Tools: read files and search for coverage analysis — no mutation needed
+persona: test_reviewer
+tools:
+  - read_file
+  - search_files
+  - run_tests
+permissions:
+  workspace: read_only

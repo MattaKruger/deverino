@@ -1,0 +1,5 @@
+# Web researcher sub-agent configuration
+persona: web_researcher
+tools: []
+permissions:
+  workspace: none

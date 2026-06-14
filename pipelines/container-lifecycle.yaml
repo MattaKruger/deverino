@@ -1,0 +1,37 @@
+# Container Lifecycle Pipeline — spawn, execute, destroy
+#
+# Usage:
+#   harness-poc pipeline run container-lifecycle --input command="python -c 'print(\"hello from container\")'"
+#
+# Structure:
+#   1. spawn — skill node: creates a container
+#   2. run   — skill node: executes a command inside the container (depends on spawn)
+#   3. destroy — skill node: cleans up the container (depends on run)
+#
+# NOTE: This pipeline uses tool nodes which are called via SkillRunner.
+# If container_spawn/container_exec/container_destroy are not registered
+# as skills, this will fail. They're registered as system tools.
+# For now, this is aspirational — the tool registration bridge needs work.
+
+nodes:
+  - id: spawn
+    type: skill
+    skill: container_spawn
+    arguments: {}
+
+  - id: run
+    type: skill
+    skill: container_exec
+    arguments:
+      command: "{{inputs.command}}"
+      container: "{{nodes.spawn.artifacts.container_name}}"
+    depends_on:
+      - spawn
+
+  - id: destroy
+    type: skill
+    skill: container_destroy
+    arguments:
+      container: "{{nodes.spawn.artifacts.container_name}}"
+    depends_on:
+      - run

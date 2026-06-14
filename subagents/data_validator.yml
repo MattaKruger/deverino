@@ -1,0 +1,5 @@
+# Data validator sub-agent configuration
+persona: data_validator
+tools: []
+permissions:
+  workspace: none
