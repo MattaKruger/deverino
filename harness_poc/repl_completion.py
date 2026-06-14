@@ -18,6 +18,11 @@ ROOT_COMMANDS = (
     "/help",
     "/exit",
     "/quit",
+    "/agents",
+    "/spawn",
+    "/tasks",
+    "/result",
+    "/cancel",
     "/workflow",
     "/workflows",
     "/pipeline",
@@ -57,6 +62,7 @@ class ReplCommandCatalog:
     workflows: tuple[str, ...]
     pipelines: tuple[str, ...]
     skills: tuple[str, ...]
+    personas: tuple[str, ...]
 
     @classmethod
     def from_app_state(cls, app_state: AppState) -> ReplCommandCatalog:
@@ -64,6 +70,7 @@ class ReplCommandCatalog:
             workflows=tuple(_workflow_names(app_state)),
             pipelines=tuple(app_state.pipeline_runner.list_pipelines()),
             skills=tuple(_skill_names(app_state)),
+            personas=tuple(_persona_names(app_state)),
         )
 
 
@@ -114,6 +121,13 @@ def completions_for_text(
             len(tokens) == SUBCOMMAND_TOKEN_COUNT and not text_before_cursor.endswith(" ")
         ):
             yield from _word_completions(catalog.workflows, current)
+        return
+
+    if root == "spawn":
+        if len(tokens) == ROOT_TOKEN_COUNT or (
+            len(tokens) == SUBCOMMAND_TOKEN_COUNT and not text_before_cursor.endswith(" ")
+        ):
+            yield from _word_completions(catalog.personas, current)
         return
 
     if root == "pipeline":
@@ -202,3 +216,11 @@ def _skill_names(app_state: AppState) -> list[str]:
         if isinstance(function, dict) and isinstance(function.get("name"), str):
             names.append(function["name"])
     return sorted(names)
+
+
+def _persona_names(app_state: AppState) -> list[str]:
+    """Return sorted persona names from the personas/ directory."""
+    personas_dir = app_state.config.project_root / "personas"
+    if not personas_dir.is_dir():
+        return []
+    return sorted(p.stem for p in personas_dir.glob("*.md"))

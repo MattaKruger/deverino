@@ -62,13 +62,15 @@ WORKFLOW_OBJECTIVE_PARTS = 2
 MIN_PIPELINE_PARTS = 2
 
 # Tools whose results carry structural signal worth extracting as observations.
-_SIGNAL_TOOLS: frozenset[str] = frozenset({
-    "semble_search",
-    "read_file",
-    "search_files",
-    "search_documents",
-    "consolidate_state",
-})
+_SIGNAL_TOOLS: frozenset[str] = frozenset(
+    {
+        "semble_search",
+        "read_file",
+        "search_files",
+        "search_documents",
+        "consolidate_state",
+    }
+)
 
 
 def _track_tokens(accounting: TokenAccounting, app_state: AppState) -> None:
@@ -124,12 +126,36 @@ def handle_repl_input(app_state: AppState, user_input: str) -> None:  # noqa: PL
 
     if _is_copy_command(user_input):
         handle_copy_command(app_state)
+    if _is_agents_command(user_input):
+        handle_agents_command(app_state)
         return
 
+    if _is_spawn_command(user_input):
+        handle_spawn_command(app_state, user_input)
+        return
+
+    if _is_tasks_command(user_input):
+        handle_tasks_command(app_state)
+        return
+
+    if _is_result_command(user_input):
+        handle_result_command(app_state, user_input)
+        return
+
+    if _is_feed_command(user_input):
+        handle_feed_command(app_state, user_input)
+        return
+
+    if _is_cancel_command(user_input):
+        handle_cancel_command(app_state, user_input)
+        return
     if _is_goal_command(user_input):
         handle_goal_command(app_state, user_input)
         return
 
+    if _is_slice_command(user_input):
+        handle_slice_command(app_state, user_input)
+        return
     if _handle_direct_resource_command(app_state, user_input):
         return
 
@@ -161,6 +187,13 @@ def print_repl_help() -> None:
         """REPL commands:
   /mode [chat|pipeline|react]
   /goal <objective>
+  /spawn <persona> [bg] [--feed] <objective>
+  /agents
+  /tasks
+  /result <task_id>
+  /cancel <task_id>
+  /feed <task_id>
+  /slice <task_id>
   /workflow <name> <objective>
   /workflows
   /pipeline <name> [key=value ...]
@@ -750,7 +783,7 @@ def handle_copy_command(app_state: AppState) -> None:
             try:
                 subprocess.run(["pbcopy"], input=content.encode(), check=True)  # noqa: S607
                 print_text("Last response copied to clipboard.")
-            except (FileNotFoundError, subprocess.CalledProcessError):
+            except FileNotFoundError, subprocess.CalledProcessError:
                 print_text(content)
             return
     print_text("No response to copy.")
@@ -880,12 +913,452 @@ def print_skill_help() -> None:
 
 
 # ------------------------------------------------------------------
-# /goal command
+# /agents command
 # ------------------------------------------------------------------
+
+
+def _is_agents_command(user_input: str) -> bool:
+    return user_input in {"/agents", "agents"}
+
+
+# ------------------------------------------------------------------
+# /spawn command
+# ------------------------------------------------------------------
+
+
+def _is_spawn_command(user_input: str) -> bool:
+    return user_input.startswith(("/spawn ", "spawn "))
+
+
+def _parse_spawn_command(user_input: str) -> tuple[str, str, bool, bool]:
+    """Parse "/spawn <persona> [bg] [--feed] <objective>" into (persona, objective, background, feed)."""
+    normalized = user_input.removeprefix("/").removeprefix("spawn").strip()
+    parts = normalized.split(maxsplit=1)
+    if not parts or not parts[0]:
+        return ("", "", False, False)
+    persona = parts[0]
+    if len(parts) < 2:
+        return (persona, "", False, False)
+    rest = parts[1]
+    background = False
+    feed = False
+    if rest.startswith("bg "):
+        background = True
+        rest = rest[3:]
+    elif rest == "bg":
+        return (persona, "", True, False)
+    # Check for --feed flag (position-independent after bg)
+    if rest.startswith("--feed ") or rest == "--feed":
+        feed = True
+        rest = rest[7:] if rest.startswith("--feed ") else ""
+    elif " --feed" in rest:
+        idx = rest.index(" --feed")
+        rest = rest[:idx] + rest[idx + 7 :]
+        feed = True
+    return (persona, rest.strip(), background, feed)
+
+
+# ------------------------------------------------------------------
+# /tasks command
+# ------------------------------------------------------------------
+
+
+def _is_tasks_command(user_input: str) -> bool:
+    return user_input in {"/tasks", "tasks"}
+
+
+# ------------------------------------------------------------------
+# /result command
+# ------------------------------------------------------------------
+
+
+def _is_result_command(user_input: str) -> bool:
+    return user_input.startswith(("/result ", "result "))
+
+
+def _parse_result_command(user_input: str) -> str:
+    """Extract task_id from \"/result <task_id>\"."""
+    normalized = user_input.removeprefix("/").removeprefix("result").strip()
+    return normalized
+
+
+def _get_engine(app_state: AppState):
+    if app_state.v2_runtime and app_state.v2_runtime.execution_engine:
+        return app_state.v2_runtime.execution_engine
+    print_error(
+        "Sub-agent engine not available in chat mode. Use /mode pipeline or /mode react first."
+    )
+    return None
+
+
+def _persona_names(app_state: AppState) -> list[str]:
+    """Return sorted persona names from the personas/ directory."""
+    personas_dir = app_state.config.project_root / "personas"
+    if not personas_dir.is_dir():
+        return []
+    return sorted(p.stem for p in personas_dir.glob("*.md"))
+
+
+def handle_agents_command(app_state: AppState) -> None:
+    """List available persona names from personas/."""
+    names = _persona_names(app_state)
+    if not names:
+        print_text("[dim]No personas found in personas/[/dim]")
+        return
+    print_text("[bold]Available personas:[/bold]")
+    for name in names:
+        print_text(f"  {name}")
+
+
+def handle_spawn_command(app_state: AppState, user_input: str) -> None:
+    """Spawn a sub-agent: /spawn <persona> [bg] [--feed] <objective>."""
+    engine = _get_engine(app_state)
+    if engine is None:
+        return
+
+    persona, objective, background, feed = _parse_spawn_command(user_input)
+    if not persona:
+        print_text("Usage: /spawn <persona> [bg] [--feed] <objective>")
+        return
+    if not objective:
+        print_text("Usage: /spawn <persona> [bg] [--feed] <objective>")
+        return
+
+    valid = _persona_names(app_state)
+    if valid and persona not in valid:
+        print_error(f"Unknown persona '{persona}'. Available: {', '.join(valid)}")
+        return
+
+    mode = "background" if background else "foreground"
+
+    if not background:
+        print_text(f"[dim]Spawning [bold]{persona}[/bold] — {objective}[/dim]")
+
+    try:
+        result = engine.spawn_sub_agent(
+            agent_type=persona,
+            task_payload={"objective": objective},
+            mode=mode,
+            session_id=app_state.session_id,
+        )
+    except Exception as exc:
+        print_error(f"Spawn failed: {exc}")
+        return
+
+    _print_spawn_result(result, persona, background)
+
+    if feed and not background:
+        _feed_task_to_chat(app_state, result["task_id"])
+    elif feed:
+        print_text(
+            "[dim]Use [bold]/feed" + f" {result['task_id']}[/bold]"
+            " to inject findings into chat when ready.[/dim]"
+        )
+
+
+def _print_spawn_result(result: dict[str, Any], persona: str, background: bool) -> None:
+    """Format and print a spawn_sub_agent result dict."""
+    task_id = result.get("task_id", "?")
+    label = result.get("output_label", "?")
+    summary = result.get("summary", "")
+    raw = result.get("raw_output", "")
+
+    if background:
+        print_text(
+            f"[bold]Queued[/bold] background task [cyan]{task_id}[/cyan] ([bold]{persona}[/bold])"
+        )
+        if summary:
+            print_text(f"  {summary}")
+        return
+
+    # Foreground result
+    color = "green" if label == "completed" else "red"
+    print_text(f"[bold]{persona}[/bold] finished: [{color}]{label}[/{color}] ({task_id})")
+
+    # Format and render the actual output as markdown
+    formatted = _format_raw_output(raw)
+    if formatted:
+        print_markdown(formatted)
+    elif summary:
+        print_markdown(summary)
+
+
+def _format_raw_output(raw: Any) -> str:
+    """Parse raw output into a human-readable markdown string.
+
+    If raw is a JSON object with recognizable keys, extract and format
+    them nicely. Falls back to a plain code block for unparseable content.
+    """
+    if raw is None or raw == "":
+        return ""
+
+    # Try JSON parse
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError, TypeError:
+            # Plain text — display in a code block, truncated
+            truncated = str(raw)[:3000]
+            if len(str(raw)) > 3000:
+                truncated += "\n... (truncated)"
+            return f"```\n{truncated}\n```"
+    else:
+        parsed = raw
+
+    # If parsed is a dict with known fields, format them
+    if isinstance(parsed, dict):
+        return _format_parsed_dict(parsed)
+
+    # If it's a list, format each item
+    if isinstance(parsed, list):
+        parts: list[str] = []
+        for item in parsed:
+            if isinstance(item, dict):
+                parts.append(_format_parsed_dict(item))
+            else:
+                parts.append(str(item)[:500])
+        return "\n\n".join(parts)
+
+    # Fallback
+    return f"```\n{str(parsed)[:3000]}\n```"
+
+
+def _format_parsed_dict(data: dict[str, Any]) -> str:
+    """Format a parsed JSON dict into readable markdown sections."""
+    lines: list[str] = []
+
+    # Display named fields in a consistent order
+    _field = lambda key, label=None: (
+        lines.append(f"**{label or key}:** {data[key]}") if data.get(key) else None
+    )
+
+    _field("text")
+    _field("output")
+    _field("result")
+    _field("content")
+    _field("summary", "Result")
+    _field("response")
+    _field("error", "Error")
+
+    # Any remaining fields not individually handled
+    handled = {"text", "output", "result", "content", "summary", "response", "error"}
+    for key, value in data.items():
+        if key in handled:
+            continue
+        if value is None or value == "":
+            continue
+        val_str = str(value)
+        if len(val_str) > 200:
+            val_str = val_str[:200] + "..."
+        lines.append(f"**{key}:** {val_str}")
+
+    return "\n".join(lines) if lines else f"```\n{json.dumps(data, indent=2)[:3000]}\n```"
+
+
+def handle_tasks_command(app_state: AppState) -> None:
+    """List background sub-agent tasks."""
+    engine = _get_engine(app_state)
+    if engine is None:
+        return
+
+    tasks = engine.list_tasks()
+    if not tasks:
+        print_text("[dim]No background tasks.[/dim]")
+        return
+
+    print_text("[bold]Background tasks:[/bold]")
+    for task_id, info in sorted(tasks.items()):
+        status = info.get("status", "?")
+        persona = info.get("persona", "?")
+        summary = info.get("summary", "")[:80]
+        color = {"running": "yellow", "done": "green", "cancelled": "red"}.get(status, "white")
+        print_text(f"  [{color}]{task_id}[/{color}]  {persona:12s}  {status:10s}  {summary}")
+
+
+def handle_result_command(app_state: AppState, user_input: str) -> None:
+    """Retrieve and display a completed background task result."""
+    engine = _get_engine(app_state)
+    if engine is None:
+        return
+
+    task_id = _parse_result_command(user_input)
+    if not task_id:
+        print_text("Usage: /result <task_id>")
+        return
+
+    try:
+        result = engine.result(task_id)
+    except Exception as exc:
+        print_error(str(exc))
+        return
+
+    persona = result.get("metadata", {}).get("agent_type", "unknown")
+    _print_spawn_result(result, persona, background=True)
+    print_text(f"[dim]Task {task_id} removed from pool.[/dim]")
+
+
+def handle_cancel_command(app_state: AppState, user_input: str) -> None:
+    """Cancel a running background sub-agent."""
+    engine = _get_engine(app_state)
+    if engine is None:
+        return
+
+    task_id = _parse_cancel_command(user_input)
+    if not task_id:
+        print_text("Usage: /cancel <task_id>")
+        return
+
+    try:
+        cancelled = engine.cancel(task_id)
+    except Exception as exc:
+        print_error(str(exc))
+        return
+
+    if cancelled:
+        print_text(f"Cancelled task [cyan]{task_id}[/cyan].")
+    else:
+        print_text(f"Task [cyan]{task_id}[/cyan] is already done or cancelled.")
+
+
+def _is_cancel_command(user_input: str) -> bool:
+    return user_input.startswith(("/cancel ", "cancel "))
+
+
+def _parse_cancel_command(user_input: str) -> str:
+    """Extract task_id from \"/cancel <task_id>\"."""
+    normalized = user_input.removeprefix("/").removeprefix("cancel").strip()
+    return normalized
 
 
 def _is_goal_command(user_input: str) -> bool:
     return user_input.startswith(("/goal ", "goal "))
+
+
+# ------------------------------------------------------------------
+# /feed command
+# ------------------------------------------------------------------
+
+
+def _is_feed_command(user_input: str) -> bool:
+    return user_input.startswith(("/feed ", "feed "))
+
+
+def _parse_feed_command(user_input: str) -> str:
+    """Extract task_id from "/feed <task_id>"."""
+    normalized = user_input.removeprefix("/").removeprefix("feed").strip()
+    return normalized
+
+
+def handle_feed_command(app_state: AppState, user_input: str) -> None:
+    """Inject a completed sub-agent result into chat history."""
+    task_id = _parse_feed_command(user_input)
+    if not task_id:
+        print_text("Usage: /feed <task_id>")
+        return
+
+    _feed_task_to_chat(app_state, task_id)
+
+
+def _feed_task_to_chat(app_state: AppState, task_id: str) -> None:
+    """Read a DelegatedTaskOutput from the blackboard and append to chat history."""
+    key = f"delegated:{task_id}"
+    try:
+        value = app_state.database.read_memory(app_state.session_id, key)
+    except Exception:
+        print_error(f"Failed to read blackboard for task {task_id}.")
+        return
+
+    if value is None:
+        print_error(f"No result found for task [cyan]{task_id}[/cyan].")
+        return
+
+    # value is a dict with keys: task_id, output_label, summary, raw_output, metadata
+    if not isinstance(value, dict):
+        print_error(f"Task {task_id} has no feed-able output.")
+        return
+
+    persona = (value.get("metadata", {}) or {}).get("agent_type", "unknown")
+    raw = value.get("raw_output", "")
+    summary = value.get("summary", "")
+
+    formatted = _format_raw_output(raw) if raw else (summary or "(no output)")
+    # Marker prefix enables /slice to find and remove this message later.
+    content = (
+        f"<!--fed:{task_id}-->\n"
+        f"Sub-agent findings from [bold]{persona}[/bold] (task {task_id}):\n\n{formatted}"
+    )
+
+    # Append as synthetic user message to pydantic_messages chat history
+    _inject_context_message(app_state, content)
+
+    print_text(f"Fed [bold]{persona}[/bold] findings (task [cyan]{task_id}[/cyan]) to chat.")
+
+
+def _inject_context_message(app_state: AppState, content: str) -> None:
+    """Append a synthetic user message with injected context into pydantic_messages."""
+    from pydantic_ai.messages import ModelRequest, TextPart
+
+    msg = ModelRequest(parts=[TextPart(content=content)])
+    app_state.pydantic_messages.append(msg)
+    # Bound to prevent unbounded growth from repeated feeds
+    try:
+        app_state.pydantic_messages = _bounded_pydantic_messages(app_state)
+    except AttributeError:
+        pass  # config.runtime not available in some test contexts
+
+
+# ------------------------------------------------------------------
+# /slice command
+# ------------------------------------------------------------------
+
+
+def _is_slice_command(user_input: str) -> bool:
+    return user_input.startswith(("/slice ", "slice "))
+
+
+def _parse_slice_command(user_input: str) -> str:
+    """Extract task_id from "/slice <task_id>"."""
+    normalized = user_input.removeprefix("/").removeprefix("slice").strip()
+    return normalized
+
+
+FEED_MARKER_PREFIX = "<!--fed:"
+FEED_MARKER_SUFFIX = "-->"
+
+
+def handle_slice_command(app_state: AppState, user_input: str) -> None:
+    """Remove a previously-fed sub-agent result from chat history."""
+    task_id = _parse_slice_command(user_input)
+    if not task_id:
+        print_text("Usage: /slice <task_id>")
+        return
+
+    marker = f"{FEED_MARKER_PREFIX}{task_id}{FEED_MARKER_SUFFIX}"
+    removed = 0
+    kept: list[ModelMessage] = []
+
+    for msg in app_state.pydantic_messages:
+        if _message_contains_marker(msg, marker):
+            removed += 1
+        else:
+            kept.append(msg)
+
+    app_state.pydantic_messages[:] = kept
+
+    if removed:
+        print_text(
+            f"Sliced {removed} message(s) for task [cyan]{task_id}[/cyan] from chat history."
+        )
+    else:
+        print_text(f"No fed messages found for task [cyan]{task_id}[/cyan].")
+
+
+def _message_contains_marker(msg: object, marker: str) -> bool:
+    """Check if a pydantic_ai ModelMessage contains the given marker string."""
+    for part in getattr(msg, "parts", []):
+        if hasattr(part, "content") and marker in getattr(part, "content", ""):
+            return True
+    return False
 
 
 def handle_goal_command(app_state: AppState, user_input: str) -> None:
@@ -997,9 +1470,7 @@ def handle_mode_command(app_state: AppState, user_input: str) -> None:
 
     new_mode = parts[0].lower()
     if new_mode not in VALID_MODES:
-        print_error(
-            f"Unknown mode '{new_mode}'. Valid modes: {', '.join(sorted(VALID_MODES))}"
-        )
+        print_error(f"Unknown mode '{new_mode}'. Valid modes: {', '.join(sorted(VALID_MODES))}")
         return
 
     if new_mode == app_state.active_mode:
@@ -1011,9 +1482,7 @@ def handle_mode_command(app_state: AppState, user_input: str) -> None:
     if new_mode != "chat" and app_state.v2_runtime is None:
         from harness_poc.v2.wiring import build_v2_runtime
 
-        app_state.v2_runtime = build_v2_runtime(
-            app_state.identity, app_state.config, mode=new_mode
-        )
+        app_state.v2_runtime = build_v2_runtime(app_state.identity, app_state.config, mode=new_mode)
 
     print_text(f"Switched to [bold]{new_mode}[/bold] mode.")
 
@@ -1136,9 +1605,7 @@ def _run_react_inline(app_state: AppState, runtime: V2Runtime, user_input: str) 
                 asyncio.create_task(ge.run(bus, session_id)),
             ]
             try:
-                bus.publish(
-                    AgentInputAdded(session_id=session_id, user_content=user_input)
-                )
+                bus.publish(AgentInputAdded(session_id=session_id, user_content=user_input))
                 await asyncio.wait_for(terminal_event.wait(), timeout=120.0)
             except TimeoutError:
                 output_parts.append("Time budget exhausted.")
