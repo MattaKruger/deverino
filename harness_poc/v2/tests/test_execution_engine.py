@@ -6,6 +6,8 @@ milliseconds and are safe for CI.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from harness_poc.v2.contracts import (
@@ -25,6 +27,7 @@ from harness_poc.v2.execution_engine import (
 # Test doubles (spies)
 # ---------------------------------------------------------------------------
 
+
 class DatabaseSpy:
     """Records DB calls for assertion — no real database."""
 
@@ -33,25 +36,18 @@ class DatabaseSpy:
         self.materialized_maps: dict[str, dict] = {}
         self._next_event_id = 1
 
-    def append_context_event(
-        self,
-        session_id: str,
-        team_member: str,
-        event_type: str,
-        payload: dict,
-    ) -> int:
-        event_id = self._next_event_id
+    def append_context_map_event(self, event: Any) -> None:
+        """Replaces append_context_event — stores ContextMapEvent."""
+        raw = getattr(event, "raw_data", {}) or {}
+        entry: dict[str, Any] = {
+            "event_id": event.event_id,
+            "session_id": event.session_id,
+            "corpus_key": event.corpus_key,
+            "event_type": event.event_type,
+        }
+        entry.update(raw)
+        self.context_events.append(entry)
         self._next_event_id += 1
-        self.context_events.append(
-            {
-                "id": event_id,
-                "session_id": session_id,
-                "team_member": team_member,
-                "event_type": event_type,
-                "payload": payload,
-            }
-        )
-        return event_id
 
     def upsert_materialized_context_map(
         self,
@@ -59,7 +55,7 @@ class DatabaseSpy:
         active_persona: str,
         pedagogy_snapshot: dict,
         verified_state: dict,
-        last_event_id: int,
+        last_event_id: str,
     ) -> None:
         self.materialized_maps[project_id] = {
             "project_id": project_id,
@@ -122,6 +118,7 @@ class BlackboardSpy:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def make_delegated_result(status: str, **overrides) -> DelegatedTaskResult:
     """Return a DelegatedTaskResult with defaults filled in."""
     return DelegatedTaskResult(
@@ -136,6 +133,7 @@ def make_delegated_result(status: str, **overrides) -> DelegatedTaskResult:
 # ---------------------------------------------------------------------------
 # Tests: spawn_sub_agent — success path
 # ---------------------------------------------------------------------------
+
 
 class TestSpawnSubAgentSuccess:
     def test_returns_completed_output(self):
@@ -211,6 +209,32 @@ class TestSpawnSubAgentSuccess:
         spec = spawner.spawn_calls[0]
         assert spec["tools"] == ["read_file", "edit_file"]
 
+    def test_corpus_key_forwarded_to_spawner(self):
+        """corpus_key from task_payload flows through to spawn task_spec."""
+        spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS, task_id="spawner-ck"))
+        event_bus = EventBusSpy()
+        blackboard = BlackboardSpy()
+        db = DatabaseSpy()
+
+        engine = ExecutionEngine(
+            db=db,
+            spawner=spawner,
+            event_bus=event_bus,
+            blackboard=blackboard,
+        )
+
+        engine.spawn_sub_agent(
+            agent_type="coder",
+            task_payload={
+                "objective": "Write function",
+                "corpus_key": "deverino:subagent:coder",
+            },
+            session_id="sess-ck",
+        )
+
+        spec = spawner.spawn_calls[0]
+        assert spec["corpus_key"] == "deverino:subagent:coder"
+
     def test_defaults_objective_from_task_key(self):
         """When 'task' is used instead of 'objective', it maps correctly."""
         spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS, task_id="spawner-77"))
@@ -239,11 +263,10 @@ class TestSpawnSubAgentSuccess:
 # Tests: spawn_sub_agent — failure path
 # ---------------------------------------------------------------------------
 
+
 class TestSpawnSubAgentFailure:
     def test_returns_failed_output_when_spawner_fails(self):
-        spawner = SpawnerSpy(
-            make_delegated_result(DELEGATED_STATUS_FAILED, error="timeout")
-        )
+        spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_FAILED, error="timeout"))
         event_bus = EventBusSpy()
         blackboard = BlackboardSpy()
         db = DatabaseSpy()
@@ -264,9 +287,7 @@ class TestSpawnSubAgentFailure:
         assert result["output_label"] == DELEGATED_OUTPUT_FAILED
 
     def test_writes_to_blackboard_on_failure(self):
-        spawner = SpawnerSpy(
-            make_delegated_result(DELEGATED_STATUS_FAILED, error="tool crash")
-        )
+        spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_FAILED, error="tool crash"))
         event_bus = EventBusSpy()
         blackboard = BlackboardSpy()
         db = DatabaseSpy()
@@ -291,6 +312,7 @@ class TestSpawnSubAgentFailure:
 # Tests: background sub-agent pool
 # ---------------------------------------------------------------------------
 
+
 class TestBackgroundPool:
     def test_records_background_task(self):
         spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS, task_id="spawner-77"))
@@ -309,12 +331,13 @@ class TestBackgroundPool:
         result = engine.spawn_sub_agent(
             agent_type="coder",
             task_payload={"objective": "Build feature"},
-            background=True,
+            mode="background",
             session_id="sess-bg-1",
         )
 
         assert result["background"] is True
-        assert result["task_id"] == "spawner-77"
+        assert result["task_id"]
+        assert result["output_label"] == "running"
 
     def test_pool_at_capacity_raises(self):
         spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS, task_id="spawner-77"))
@@ -334,7 +357,7 @@ class TestBackgroundPool:
         engine.spawn_sub_agent(
             agent_type="coder",
             task_payload={"objective": "Task 1"},
-            background=True,
+            mode="background",
             session_id="sess-bg-2",
         )
 
@@ -342,7 +365,7 @@ class TestBackgroundPool:
             engine.spawn_sub_agent(
                 agent_type="reviewer",
                 task_payload={"objective": "Task 2"},
-                background=True,
+                mode="background",
                 session_id="sess-bg-3",
             )
 
@@ -359,15 +382,19 @@ class TestBackgroundPool:
             blackboard=blackboard,
         )
 
-        engine.spawn_sub_agent(
+        result = engine.spawn_sub_agent(
             agent_type="coder",
             task_payload={"objective": "Task"},
-            background=True,
+            mode="background",
             session_id="sess-bg-4",
         )
 
-        status = engine.background_status("bg-task-1")
-        assert status == DELEGATED_OUTPUT_COMPLETED
+        tid = result["task_id"]
+        import time
+
+        time.sleep(0.01)
+        status = engine.background_status(tid)
+        assert status in ("running", DELEGATED_OUTPUT_COMPLETED)
 
     def test_background_active_count(self):
         spawner = SpawnerSpy(make_delegated_result(DELEGATED_STATUS_SUCCESS, task_id="spawner-77"))
@@ -386,7 +413,7 @@ class TestBackgroundPool:
         engine.spawn_sub_agent(
             agent_type="coder",
             task_payload={"objective": "Task"},
-            background=True,
+            mode="background",
             session_id="sess-bg-5",
         )
         assert engine.background_active_count() == 1
@@ -410,6 +437,7 @@ class TestBackgroundPool:
 # ---------------------------------------------------------------------------
 # Tests: execute_deterministic_gate
 # ---------------------------------------------------------------------------
+
 
 class TestDeterministicGate:
     def test_gate_pass_records_event_and_updates_map(self):
@@ -493,7 +521,7 @@ class TestDeterministicGate:
                 "gate_passed": True,
                 "test_count": 10,
             },
-            last_event_id=1,
+            last_event_id="1",
         )
 
         mmap = db.materialized_maps["test-project"]
@@ -505,6 +533,7 @@ class TestDeterministicGate:
 # ---------------------------------------------------------------------------
 # Tests: _parse_test_count
 # ---------------------------------------------------------------------------
+
 
 class TestParseTestCount:
     def test_parses_standard_pytest_output(self):

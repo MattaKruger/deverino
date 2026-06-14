@@ -175,21 +175,6 @@ class DbContextMap(SQLModel, table=True):
     schema_version: int = Field(default=1)
 
 
-class DbContextEvent(SQLModel, table=True):
-    """V2 context event stream table."""
-
-    __tablename__ = "context_events_v2"  # type: ignore[assignment]
-    __table_args__ = (
-        Index("idx_context_events_v2_session", "session_id", "event_type"),
-    )
-
-    id: int | None = Field(default=None, primary_key=True)
-    session_id: str = Field(nullable=False)
-    team_member: str = Field(nullable=False)
-    event_type: str = Field(nullable=False)
-    payload: Any = Field(sa_column=Column(_StateJSON, nullable=False))
-    created_at: str
-
 
 class DbMaterializedContextMap(SQLModel, table=True):
     """V2 materialized context map snapshot."""
@@ -200,7 +185,7 @@ class DbMaterializedContextMap(SQLModel, table=True):
     active_persona: str = Field(nullable=False)
     pedagogy_snapshot: Any = Field(sa_column=Column(_StateJSON, nullable=False))
     verified_state: Any = Field(sa_column=Column(_StateJSON, nullable=False))
-    last_event_id: int | None = Field(default=None, foreign_key="context_events_v2.id")
+    last_event_id: str | None = Field(default=None)
     updated_at: str
 
 

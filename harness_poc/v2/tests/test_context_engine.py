@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -26,6 +27,7 @@ from harness_poc.v2.contracts.context_map_pipeline import (
 # Test doubles (spies)
 # ---------------------------------------------------------------------------
 
+
 class DatabaseSpy:
     """Records DB calls for assertion — no real database."""
 
@@ -34,25 +36,19 @@ class DatabaseSpy:
         self.materialized_maps: dict[str, dict] = {}
         self._next_event_id = 1
 
-    def append_context_event(
-        self,
-        session_id: str,
-        team_member: str,
-        event_type: str,
-        payload: dict,
-    ) -> int:
-        event_id = self._next_event_id
+    def append_context_map_event(self, event: Any) -> None:
+        """Replaces append_context_event — stores ContextMapEvent."""
+        raw = getattr(event, "raw_data", {}) or {}
+        entry: dict[str, Any] = {
+            "event_id": event.event_id,
+            "session_id": event.session_id,
+            "corpus_key": event.corpus_key,
+            "event_type": event.event_type,
+        }
+        # Merge raw_data for backward-compatible field access (team_member, etc.)
+        entry.update(raw)
+        self.context_events.append(entry)
         self._next_event_id += 1
-        self.context_events.append(
-            {
-                "id": event_id,
-                "session_id": session_id,
-                "team_member": team_member,
-                "event_type": event_type,
-                "payload": payload,
-            }
-        )
-        return event_id
 
     def get_materialized_context_map(self, project_id: str) -> dict | None:
         return self.materialized_maps.get(project_id)
@@ -63,7 +59,7 @@ class DatabaseSpy:
         active_persona: str,
         pedagogy_snapshot: dict,
         verified_state: dict,
-        last_event_id: int,
+        last_event_id: str,
     ) -> None:
         self.materialized_maps[project_id] = {
             "project_id": project_id,
@@ -77,7 +73,10 @@ class DatabaseSpy:
 class MaterializerSpy:
     """Returns a predictable DbContextMap without running the real pipeline."""
 
-    def __init__(self, rendered: str = "cycle: 1\nsection: context_architecture\n  - [entry:abc123] (p=0.85) Test entry") -> None:
+    def __init__(
+        self,
+        rendered: str = "cycle: 1\nsection: context_architecture\n  - [entry:abc123] (p=0.85) Test entry",
+    ) -> None:
         self._rendered = rendered
         self.calls: list[str] = []
 
@@ -97,6 +96,7 @@ class MaterializerSpy:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def make_temp_persona_dir(persona_files: dict[str, str]) -> Path:
     """Create a temporary personas directory with the given files."""
     tmpdir = Path(tempfile.mkdtemp(prefix="deverino-test-personas-"))
@@ -115,6 +115,7 @@ def make_temp_pedagogy(content: str) -> Path:
 # ---------------------------------------------------------------------------
 # Tests: persona loading
 # ---------------------------------------------------------------------------
+
 
 class TestPersonaLoading:
     def test_loads_existing_persona(self):
@@ -180,6 +181,7 @@ class TestPersonaLoading:
 # ---------------------------------------------------------------------------
 # Tests: materialize_context_map output shape
 # ---------------------------------------------------------------------------
+
 
 class TestMaterializeOutput:
     def test_returns_all_expected_keys(self):
@@ -334,6 +336,7 @@ class TestMaterializeOutput:
 # Tests: warm_up_context_from_failure
 # ---------------------------------------------------------------------------
 
+
 class TestWarmUpFromFailure:
     def test_persists_probe_failed_event(self):
         tmpdir = make_temp_persona_dir({"coder": "# Coder"})
@@ -375,9 +378,7 @@ class TestWarmUpFromFailure:
         # Context delta returned
         assert "discovered_constraints" in result
         assert len(result["discovered_constraints"]) >= 1
-        assert any(
-            c["type"] == "missing_dependency" for c in result["discovered_constraints"]
-        )
+        assert any(c["type"] == "missing_dependency" for c in result["discovered_constraints"])
 
     def test_extracts_type_constraints(self):
         tmpdir = make_temp_persona_dir({"coder": "# Coder"})
@@ -402,9 +403,7 @@ class TestWarmUpFromFailure:
             },
         )
 
-        assert any(
-            c["type"] == "type_constraint" for c in result["discovered_constraints"]
-        )
+        assert any(c["type"] == "type_constraint" for c in result["discovered_constraints"])
 
     def test_extracts_io_boundary(self):
         tmpdir = make_temp_persona_dir({"coder": "# Coder"})
@@ -429,9 +428,7 @@ class TestWarmUpFromFailure:
             },
         )
 
-        assert any(
-            c["type"] == "io_boundary" for c in result["discovered_constraints"]
-        )
+        assert any(c["type"] == "io_boundary" for c in result["discovered_constraints"])
 
     def test_extracts_invariant_violation(self):
         tmpdir = make_temp_persona_dir({"coder": "# Coder"})
@@ -456,9 +453,7 @@ class TestWarmUpFromFailure:
             },
         )
 
-        assert any(
-            c["type"] == "invariant_violation" for c in result["discovered_constraints"]
-        )
+        assert any(c["type"] == "invariant_violation" for c in result["discovered_constraints"])
 
     def test_no_constraints_on_clean_error(self):
         """Errors without recognizable patterns produce empty constraints."""

@@ -176,6 +176,16 @@ class SubAgentTaskCompleted(ContextMapEvent):
     status: str  # "success" | "failed"
     summary: str
 
+
+class ContextEventBridge(ContextMapEvent):
+    """Passthrough for v2 BaseEvents persisted into the context_map_events stream.
+
+    Carries the original event's serialized fields as raw_data so the
+    unified event stream can store any event type without per-type subclasses.
+    """
+    event_type: str  # overrides ContextMapEvent.event_type — dynamic
+    raw_data: dict[str, Any] = Field(default_factory=dict)
+
 CONTEXT_MAP_EVENT_REGISTRY: dict[str, type[ContextMapEvent]] = {
     "corpus_ingested": CorpusIngested,
     "document_retrieved": DocumentRetrieved,

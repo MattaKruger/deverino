@@ -14,6 +14,7 @@ import logging
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from harness_poc.core.events.context_map_events import ContextEventBridge
 from harness_poc.core.events.events import ContextWarmed, ProbeFailed
 
 if TYPE_CHECKING:
@@ -23,7 +24,6 @@ if TYPE_CHECKING:
     from harness_poc.core.events.events import BaseEvent
     from harness_poc.core.storage.database import BlackboardDatabase
     from harness_poc.v2.contracts.context_map_pipeline import ContextMapMaterializer
-
 logger = logging.getLogger(__name__)
 
 
@@ -200,7 +200,7 @@ class ContextEngine:
             active_persona="probe",  # failure warm-up is persona-agnostic
             pedagogy_snapshot={},
             verified_state=context_delta,
-            last_event_id=0,
+            last_event_id="",
         )
 
         # Publish CONTEXT_WARMED event — signals successful context map update
@@ -224,12 +224,13 @@ class ContextEngine:
         if self._event_bus is not None:
             self._event_bus.publish(event)
         else:
-            self._db.append_context_event(
+            ctx_event = ContextEventBridge(
                 session_id=event.session_id,
-                team_member=getattr(event, "team_member", "orchestrator"),
+                corpus_key=f"{self._project_id}:session",
                 event_type=event.event_type,
-                payload=event.model_dump(),
+                raw_data=event.model_dump(),
             )
+            self._db.append_context_map_event(ctx_event)
 
     def _load_persona(self, persona_id: str) -> str:
         """Load a persona markdown file from the personas directory."""

@@ -17,6 +17,7 @@ from harness_poc.v2.workflow_orchestrator import (
 # Test doubles (spies)
 # ---------------------------------------------------------------------------
 
+
 class ContextEngineSpy:
     """Records calls to ContextEngine for assertion."""
 
@@ -30,20 +31,14 @@ class ContextEngineSpy:
         session_id: str,
         execution_error: dict[str, Any],
     ) -> dict[str, Any]:
-        self.warm_up_calls.append(
-            {"session_id": session_id, "execution_error": execution_error}
-        )
+        self.warm_up_calls.append({"session_id": session_id, "execution_error": execution_error})
         # Simulate constraint extraction based on error patterns
         constraints: list[dict[str, str]] = []
         stderr = execution_error.get("stderr", "")
         if "ModuleNotFoundError" in stderr:
-            constraints.append(
-                {"type": "missing_dependency", "detail": "Fake constraint"}
-            )
+            constraints.append({"type": "missing_dependency", "detail": "Fake constraint"})
         if "TypeError" in stderr:
-            constraints.append(
-                {"type": "type_constraint", "detail": "Fake constraint"}
-            )
+            constraints.append({"type": "type_constraint", "detail": "Fake constraint"})
         event_id = self._next_event_id
         self._next_event_id += 1
         return {
@@ -124,9 +119,7 @@ class ExecutionEngineSpy:
         session_id: str | None = None,
         **kwargs: Any,
     ) -> bool:
-        self.gate_calls.append(
-            {"workspace_path": workspace_path, "session_id": session_id}
-        )
+        self.gate_calls.append({"workspace_path": workspace_path, "session_id": session_id})
 
         if self._gate_should_pass:
             self._db._materialized_maps["deverino"] = {
@@ -177,8 +170,8 @@ class _FakeDB:
     def upsert_materialized_context_map(self, **kwargs: Any) -> None:
         self._materialized_maps[kwargs.get("project_id", "deverino")] = kwargs
 
-    def append_context_event(self, **kwargs: Any) -> int:
-        return 1
+    def append_context_map_event(self, **kwargs: Any) -> None:
+        pass
 
 
 class EventBusSpy:
@@ -205,6 +198,7 @@ class EventBusSpy:
 # ---------------------------------------------------------------------------
 # Tests: Full pipeline
 # ---------------------------------------------------------------------------
+
 
 class TestFullPipeline:
     def test_all_three_steps_succeed(self):
@@ -312,6 +306,7 @@ class TestFullPipeline:
 # Tests: Step #1 — Fail-Fast Probe
 # ---------------------------------------------------------------------------
 
+
 class TestFailFastProbe:
     def test_successful_code_returns_success(self):
         context = ContextEngineSpy()
@@ -365,9 +360,7 @@ class TestFailFastProbe:
 
         assert result.success is False
         assert len(result.discovered_constraints) >= 1
-        assert any(
-            c["type"] == "missing_dependency" for c in result.discovered_constraints
-        )
+        assert any(c["type"] == "missing_dependency" for c in result.discovered_constraints)
 
     def test_probe_timeout_handled(self):
         context = ContextEngineSpy()
@@ -392,6 +385,7 @@ class TestFailFastProbe:
 # ---------------------------------------------------------------------------
 # Tests: Step #2 — Spec Execution
 # ---------------------------------------------------------------------------
+
 
 class TestSpecExecution:
     def test_spawns_agents_for_all_tasks(self):
@@ -499,6 +493,7 @@ class TestSpecExecution:
 # Tests: Step #3 — Review Gate
 # ---------------------------------------------------------------------------
 
+
 class TestReviewGate:
     def test_gate_pass_returns_true(self):
         context = ContextEngineSpy()
@@ -584,6 +579,7 @@ class TestReviewGate:
 # Tests: _extract_traceback_lines
 # ---------------------------------------------------------------------------
 
+
 class TestExtractTracebackLines:
     def test_extracts_traceback_entries(self):
         stderr = (
@@ -609,6 +605,7 @@ class TestExtractTracebackLines:
 # ---------------------------------------------------------------------------
 # Tests: Integration — probe failure → execution still proceeds
 # ---------------------------------------------------------------------------
+
 
 class TestIntegrationFlows:
     def test_probe_failure_does_not_block_execution(self):

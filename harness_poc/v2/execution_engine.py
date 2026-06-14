@@ -478,7 +478,7 @@ class ExecutionEngine:
                     "test_output_summary": result.stdout[:1000] if result.stdout else "",
                     "test_count": self._parse_test_count(result.stdout or ""),
                 },
-                last_event_id=0,  # will be updated by context engine
+                last_event_id="",  # will be populated by context engine
             )
             return True
 

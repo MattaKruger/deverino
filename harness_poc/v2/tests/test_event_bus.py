@@ -41,9 +41,7 @@ class EventStoreSpy:
     async def persist_async(self, event: Any) -> None:
         self.events.append(event)
 
-    def get_recent_events(
-        self, *, session_id, limit=20, event_types=None
-    ):
+    def get_recent_events(self, *, session_id, limit=20, event_types=None):
         return [e for e in self.events if e.session_id == session_id][-limit:]
 
 
@@ -68,9 +66,7 @@ class TestEventBusPublish:
         store = EventStoreSpy()
         bus = _make_bus(store)
 
-        bus.publish(
-            AgentInputAdded(session_id="sess-1", user_content="value")
-        )
+        bus.publish(AgentInputAdded(session_id="sess-1", user_content="value"))
 
         assert len(store.events) == 1
         event = store.events[0]
@@ -82,9 +78,7 @@ class TestEventBusPublish:
         store = EventStoreSpy()
         bus = _make_bus(store)
 
-        bus.publish(
-            AgentInputAdded(session_id="sess-default", user_content="data")
-        )
+        bus.publish(AgentInputAdded(session_id="sess-default", user_content="data"))
 
         assert store.events[0].session_id == "sess-default"
 
@@ -92,9 +86,7 @@ class TestEventBusPublish:
         store = EventStoreSpy()
         bus = _make_bus(store)
 
-        bus.publish(
-            ProbeFailed(session_id="sess-2", execution_error={"key": "val"})
-        )
+        bus.publish(ProbeFailed(session_id="sess-2", execution_error={"key": "val"}))
 
         assert isinstance(store.events[0], ProbeFailed)
         assert store.events[0].session_id == "sess-2"
@@ -224,9 +216,7 @@ class TestAsyncSessionSubscription:
 
         task = asyncio.create_task(collector())
         await asyncio.sleep(0)  # let subscriber start
-        bus.publish(
-            AgentInputAdded(session_id="sess-async", user_content="hello")
-        )
+        bus.publish(AgentInputAdded(session_id="sess-async", user_content="hello"))
         await asyncio.wait_for(task, timeout=2)
 
         assert len(received) == 1
@@ -253,9 +243,7 @@ class TestAsyncSessionSubscription:
         task_a = asyncio.create_task(collector_a())
         task_b = asyncio.create_task(collector_b())
         await asyncio.sleep(0)
-        bus.publish(
-            AgentInputAdded(session_id="sess-B", user_content="for B")
-        )
+        bus.publish(AgentInputAdded(session_id="sess-B", user_content="for B"))
         await asyncio.wait_for(task_b, timeout=2)
 
         assert len(received_a) == 0
@@ -294,8 +282,9 @@ class TestPipelineEventsViaBus:
         class DatabaseSpy:
             def __init__(self) -> None:
                 pass
-            def append_context_event(self, **kw: Any) -> int:
-                return 1
+
+            def append_context_map_event(self, event: Any) -> None:
+                pass
 
         engine = ContextEngine(
             db=DatabaseSpy(),
@@ -324,13 +313,16 @@ class TestPipelineEventsViaBus:
         class DatabaseSpy:
             def __init__(self) -> None:
                 self.events: list[dict] = []
-            def append_context_event(self, session_id, team_member, event_type, payload) -> int:
-                self.events.append(
-                    {"session_id": session_id, "team_member": team_member,
-                     "event_type": event_type, "payload": payload}
-                )
-                return 1
 
+            def append_context_map_event(self, event: Any) -> None:
+                raw = getattr(event, "raw_data", {}) or {}
+                entry = {
+                    "session_id": event.session_id,
+                    "corpus_key": event.corpus_key,
+                    "event_type": event.event_type,
+                }
+                entry.update(raw)
+                self.events.append(entry)
         db = DatabaseSpy()
 
         engine = ContextEngine(
@@ -370,6 +362,7 @@ class TestPipelineStepRunnerEventChain:
         class OrchSpy:
             class ExecSpy:
                 _event_bus = bus
+
             _execution = ExecSpy()
 
             def run_exploration_probe(self, code, session_id):
@@ -412,14 +405,13 @@ class TestPipelineStepRunnerEventChain:
         class OrchSpy:
             class ExecSpy:
                 _event_bus = bus
+
             _execution = ExecSpy()
 
             def run_exploration_probe(self, code, session_id):
                 from harness_poc.v2.workflow_orchestrator import ProbeResult
 
-                return ProbeResult(
-                    probe_id="p1", success=True, exit_code=0, stdout="", stderr=""
-                )
+                return ProbeResult(probe_id="p1", success=True, exit_code=0, stdout="", stderr="")
 
         runner = PipelineStepRunner(OrchSpy(), bus)
         bus.subscribe(WorkflowStarted, runner.handle_workflow_started)
@@ -436,12 +428,8 @@ class TestPipelineStepRunnerEventChain:
         )
 
         # Only one ProbeCompleted and ExecutionCompleted should appear
-        probe_count = sum(
-            1 for e in store.events if isinstance(e, ProbeCompleted)
-        )
-        exec_count = sum(
-            1 for e in store.events if isinstance(e, ExecutionCompleted)
-        )
+        probe_count = sum(1 for e in store.events if isinstance(e, ProbeCompleted))
+        exec_count = sum(1 for e in store.events if isinstance(e, ExecutionCompleted))
         assert probe_count == 1
         assert exec_count == 1
 
@@ -458,14 +446,13 @@ class TestPipelineStepRunnerEventChain:
         class OrchSpy:
             class ExecSpy:
                 _event_bus = bus
+
             _execution = ExecSpy()
 
             def run_exploration_probe(self, code, session_id):
                 from harness_poc.v2.workflow_orchestrator import ProbeResult
 
-                return ProbeResult(
-                    probe_id="p1", success=True, exit_code=0, stdout="", stderr=""
-                )
+                return ProbeResult(probe_id="p1", success=True, exit_code=0, stdout="", stderr="")
 
             def run_review_gate(self, workspace_path, session_id):
                 return GateResult(gate_id="g1", passed=True, test_count=5)
@@ -506,14 +493,13 @@ class TestPipelineStepRunnerEventChain:
         class OrchSpy:
             class ExecSpy:
                 _event_bus = bus
+
             _execution = ExecSpy()
 
             def run_exploration_probe(self, code, session_id):
                 from harness_poc.v2.workflow_orchestrator import ProbeResult
 
-                return ProbeResult(
-                    probe_id="p2", success=True, exit_code=0, stdout="", stderr=""
-                )
+                return ProbeResult(probe_id="p2", success=True, exit_code=0, stdout="", stderr="")
 
             def run_review_gate(self, workspace_path, session_id):
                 return GateResult(gate_id="g2", passed=False, test_count=3)

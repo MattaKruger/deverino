@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 from harness_poc.core.context_map.schema import MapEntry
 from harness_poc.core.storage.db_engine import create_db_engine
 from harness_poc.core.storage.models import (
-    DbContextEvent,
     DbContextMap,
     DbContextMapCycle,
     DbContextMapEvent,
@@ -720,56 +719,8 @@ class BlackboardDatabase:
             )
 
     # ------------------------------------------------------------------
-    # V2 context events and materialized context maps
+    # V2 materialized context maps
     # ------------------------------------------------------------------
-
-    def append_context_event(
-        self,
-        session_id: str,
-        team_member: str,
-        event_type: str,
-        payload: dict[str, Any],
-    ) -> int:
-        """Persist a context event and return its auto-generated id."""
-        with Session(self._engine) as session:
-            row = DbContextEvent(
-                session_id=session_id,
-                team_member=team_member,
-                event_type=event_type,
-                payload=payload,
-                created_at=self._utc_now(),
-            )
-            session.add(row)
-            session.commit()
-            session.refresh(row)
-            return row.id or 0
-
-    def get_recent_context_events(
-        self,
-        session_id: str,
-        *,
-        event_type: str | None = None,
-        limit: int = 20,
-    ) -> list[dict[str, Any]]:
-        """Return recent context events for a session, optionally filtered by type."""
-        with Session(self._engine) as session:
-            stmt = select(DbContextEvent).where(DbContextEvent.session_id == session_id)
-            if event_type:
-                stmt = stmt.where(DbContextEvent.event_type == event_type)
-            stmt = stmt.order_by(col(DbContextEvent.id).desc()).limit(limit)
-            rows = session.exec(stmt).all()
-
-        return [
-            {
-                "id": row.id,
-                "session_id": row.session_id,
-                "team_member": row.team_member,
-                "event_type": row.event_type,
-                "payload": row.payload,
-                "created_at": row.created_at,
-            }
-            for row in rows
-        ]
 
     def upsert_materialized_context_map(
         self,
@@ -777,7 +728,7 @@ class BlackboardDatabase:
         active_persona: str,
         pedagogy_snapshot: dict[str, Any],
         verified_state: dict[str, Any],
-        last_event_id: int,
+        last_event_id: str,
     ) -> None:
         """Insert or update a materialized context map snapshot."""
         with Session(self._engine) as session:
