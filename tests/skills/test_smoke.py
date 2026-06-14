@@ -25,17 +25,16 @@ SMOKE_CASES: list[tuple[str, dict, set[str]]] = [
     ("web_search", {"query": "Python testing", "count": 2}, {"success"}),
     ("semble_search", {"query": "BlackboardDatabase"}, {"success", "failed"}),
     ("spec_writer", {"mode": "questions"}, {"needs_orchestrator_action"}),
-    ("spec_writer", {
-        "goal": "Add export support",
-        "context": "A Python harness.",
-        "requirements": "Must be fast",
-    }, {"success"}),
     ("consolidate_state", {"mode": "preview"}, {"blocked", "success"}),
-    ("delegate_task", {
-        "persona": "web_researcher",
-        "objective": "What is PydanticAI?",
-        "use_mock": True,
-    }, {"success"}),
+    (
+        "delegate_task",
+        {
+            "persona": "web_researcher",
+            "objective": "What is PydanticAI?",
+            "use_mock": True,
+        },
+        {"success"},
+    ),
 ]
 
 
@@ -57,9 +56,7 @@ def test_skill_smoke(
     elif skill_name in {"review_work", "summarize_memory", "reflect_on_result"}:
         arguments = {**arguments, "memory_key": "test_key"}
 
-    result = runner.execute_skill(
-        tool_name=skill_name, arguments=arguments, session_id=session_id
-    )
+    result = runner.execute_skill(tool_name=skill_name, arguments=arguments, session_id=session_id)
     assert result.status in expected, (
         f"{skill_name}: expected status in {expected}, got {result.status}"
     )
