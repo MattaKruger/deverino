@@ -60,11 +60,15 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult: 
 
     current_map: list[MapEntry] = db.get_context_map(corpus_key) or []
     cycle_n = db.get_and_bump_cycle(corpus_key)
-    distiller_model = build_model(ctx.config.llm, fallback_model=None)  # resolved_model handles the fallback
+    distiller_model = build_model(
+        ctx.config.llm, fallback_model=None
+    )  # resolved_model handles the fallback
 
     events = _events_from_rows(pending, ctx.config.runtime.materializer_max_event_tokens)
     try:
-        distilled = await run_distiller(events, distiller_model, ctx.config.distiller)
+        distilled = await run_distiller(
+            events, distiller_model, ctx.config.distiller, current_map=current_map
+        )
     except Exception as exc:
         return SkillResult(
             status="failed",
@@ -159,7 +163,9 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult: 
 
     return SkillResult(
         status="success",
-        content=(f"Materialized {len(pending)} event(s) for {corpus_key}. Map now {token_count} tokens."),
+        content=(
+            f"Materialized {len(pending)} event(s) for {corpus_key}. Map now {token_count} tokens."
+        ),
         artifacts={
             "corpus_key": corpus_key,
             "events_processed": len(pending),
@@ -203,6 +209,10 @@ def _map_changed(old_map: list[MapEntry], new_map: list[MapEntry]) -> bool:
     def _key(entry: MapEntry) -> str:
         return entry.key
 
-    old_normalized = [entry.model_dump(exclude={"last_updated"}) for entry in sorted(old_map, key=_key)]
-    new_normalized = [entry.model_dump(exclude={"last_updated"}) for entry in sorted(new_map, key=_key)]
+    old_normalized = [
+        entry.model_dump(exclude={"last_updated"}) for entry in sorted(old_map, key=_key)
+    ]
+    new_normalized = [
+        entry.model_dump(exclude={"last_updated"}) for entry in sorted(new_map, key=_key)
+    ]
     return old_normalized != new_normalized

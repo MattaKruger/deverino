@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_USER: deverino
       POSTGRES_PASSWORD: deverino
@@ -16,7 +16,7 @@ services:
       retries: 5
 
   postgres_test:
-    image: postgres:18-alpine
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_USER: deverino_test
       POSTGRES_PASSWORD: deverino_test

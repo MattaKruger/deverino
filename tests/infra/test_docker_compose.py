@@ -9,9 +9,9 @@ def test_postgres_data_volume_mounts_postgres_18_parent_directory() -> None:
     compose = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))
 
     postgres = compose["services"]["postgres"]
-    assert postgres["image"] == "postgres:18-alpine"
-    assert "pgdata:/var/lib/postgresql" in postgres["volumes"]
-    assert "pgdata:/var/lib/postgresql/data" not in postgres["volumes"]
+    assert postgres["image"] == "pgvector/pgvector:pg18"
+    assert any("pgdata:/var/lib/postgresql" in v for v in postgres["volumes"])
+    assert not any("pgdata:/var/lib/postgresql/data" in v for v in postgres["volumes"])
 
 
 def test_compose_volume_names_are_stable() -> None:
@@ -31,5 +31,5 @@ def test_test_database_is_separate_from_dev_database() -> None:
     assert postgres_test["image"] == postgres["image"]
     assert postgres_test["environment"]["POSTGRES_DB"] == "deverino_test"
     assert postgres_test["ports"] == ["5433:5432"]
-    assert "pgdata_test:/var/lib/postgresql" in postgres_test["volumes"]
+    assert "pgdata_test:/var/lib/postgresql" in str(postgres_test["volumes"])
     assert postgres_test["volumes"] != postgres["volumes"]

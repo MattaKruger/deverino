@@ -59,6 +59,15 @@ class BlackboardDatabase:
         self._ensure_sessions_active_corpus_column()
         self.copt_ensure_schema()
 
+    def wipe_tables(self) -> None:
+        """Drop all tables (including orphans) and recreate from metadata."""
+        SQLModel.metadata.drop_all(self._engine)
+        # Orphaned tables no longer in metadata (e.g. after model deletion)
+        with Session(self._engine) as s:
+            s.exec(text("DROP TABLE IF EXISTS context_events_v2 CASCADE"))  # type: ignore[arg-type]
+            s.commit()
+        self.create_tables()
+
     def start_session(
         self,
         objective: str,
@@ -774,9 +783,30 @@ class BlackboardDatabase:
     # CopT Gate -- pgvector embedding dedup (plans/09-copt-gate-plan.md)
     # ------------------------------------------------------------------
 
+    _copt_available: bool | None = None
+
     def copt_is_available(self) -> bool:
-        """Return True if the CopT gate can run (PostgreSQL with pgvector)."""
-        return self._engine.dialect.name == "postgresql"
+        """Return True if the CopT gate can run (pgvector + table exists)."""
+        if self._copt_available is not None:
+            return self._copt_available
+        if self._engine.dialect.name != "postgresql":
+            self._copt_available = False
+            return False
+        # Check if the embeddings table actually exists.
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        "SELECT EXISTS ("
+                        "  SELECT FROM information_schema.tables "
+                        "  WHERE table_name = 'context_map_embeddings'"
+                        ")"
+                    )
+                ).scalar()
+                self._copt_available = bool(row)
+        except Exception:
+            self._copt_available = False
+        return self._copt_available
 
     def copt_ensure_schema(self) -> None:
         """Create pgvector extension and embeddings table on PostgreSQL only.
@@ -785,7 +815,8 @@ class BlackboardDatabase:
         installed. Uses separate transactions for extension creation and table
         creation so a missing extension doesn't abort the table setup.
         """
-        if not self.copt_is_available():
+        if self._engine.dialect.name != "postgresql":
+            self._copt_available = False
             return
         import logging
 
@@ -800,6 +831,7 @@ class BlackboardDatabase:
                 "pgvector extension not available — CopT gate disabled.",
                 exc_info=True,
             )
+            self._copt_available = False
             return
 
         # Attempt table creation in a separate transaction
@@ -815,11 +847,13 @@ class BlackboardDatabase:
                         ")"
                     )
                 )
+            self._copt_available = True
         except Exception:
             _log.warning(
                 "pgvector embeddings table creation failed — CopT gate disabled.",
                 exc_info=True,
             )
+            self._copt_available = False
 
     def copt_upsert_embeddings(
         self,
@@ -839,7 +873,7 @@ class BlackboardDatabase:
                         "ON CONFLICT (corpus_key, entry_key) "
                         "DO UPDATE SET embedding = :emb"
                     ),
-                    {"ck": corpus_key, "ek": entry_key, "emb": str(embedding)},
+                    {"ck": corpus_key, "ek": entry_key, "emb": _serialize_embedding(embedding)},
                 )
 
     def copt_query_similarity(
@@ -858,7 +892,7 @@ class BlackboardDatabase:
                     "WHERE corpus_key = :ck "
                     "ORDER BY embedding <=> :query LIMIT 1"
                 ),
-                {"ck": corpus_key, "query": str(embedding)},
+                {"ck": corpus_key, "query": _serialize_embedding(embedding)},
             ).first()
         return float(row[0]) if row is not None else 0.0
 
@@ -875,6 +909,15 @@ class BlackboardDatabase:
         if isinstance(decoded, dict):
             return decoded
         return payload
+
+
+def _serialize_embedding(embedding: list[float]) -> str:
+    """Serialize a list of floats to pgvector-compatible string.
+
+    Converts numpy scalars to native Python floats so str() produces
+    ``[0.1, 0.2, …]`` instead of ``[np.float64(0.1), …]``.
+    """
+    return str([float(x) for x in embedding])
 
 
 def _legacy_to_entries(raw: dict[str, Any], _corpus_key: str) -> list[MapEntry]:
