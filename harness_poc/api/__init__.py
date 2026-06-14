@@ -31,3 +31,11 @@ def create_app(database_url: str) -> FastAPI:
         app.mount("/", StaticFiles(directory=str(dist_path), html=True))
 
     return app
+
+
+def create_app_from_config() -> FastAPI:
+    """Factory for uvicorn reload mode — reads config and creates the app."""
+    from harness_poc.core.config import HarnessConfig  # noqa: PLC0415
+
+    config = HarnessConfig.load()
+    return create_app(config.runtime.database_url)

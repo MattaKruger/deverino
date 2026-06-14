@@ -139,7 +139,8 @@ def main_callback(
     corpus: Annotated[
         str | None,
         typer.Option(
-            "--corpus", "-c",
+            "--corpus",
+            "-c",
             help=(
                 "Active corpus key for new sessions (default: "
                 "<project_id>:codebase). Must contain ':'. Unknown keys "
@@ -173,7 +174,8 @@ def repl(
     corpus: Annotated[
         str | None,
         typer.Option(
-            "--corpus", "-c",
+            "--corpus",
+            "-c",
             help=(
                 "Active corpus key for new sessions (default: "
                 "<project_id>:codebase). Must contain ':'. Unknown keys "
@@ -200,7 +202,8 @@ def run_command(  # noqa: PLR0913
     mode: Annotated[
         str,
         typer.Option(
-            "--mode", "-m",
+            "--mode",
+            "-m",
             help="Execution mode: 'pipeline' (default) or 'react'.",
         ),
     ] = "pipeline",
@@ -215,21 +218,24 @@ def run_command(  # noqa: PLR0913
     max_iterations: Annotated[
         int,
         typer.Option(
-            "--max-iterations", "-n",
+            "--max-iterations",
+            "-n",
             help="Max loop iterations (react mode, default 50).",
         ),
     ] = 50,
     max_seconds: Annotated[
         float | None,
         typer.Option(
-            "--max-seconds", "-t",
+            "--max-seconds",
+            "-t",
             help="Max wall-clock seconds (react mode).",
         ),
     ] = None,
     max_tokens: Annotated[
         int | None,
         typer.Option(
-            "--max-tokens", "-k",
+            "--max-tokens",
+            "-k",
             help="Max cumulative tokens (react mode).",
         ),
     ] = None,
@@ -787,12 +793,21 @@ def dashboard_serve(
     """Serve the read-only dashboard (FastAPI + uvicorn)."""
     import uvicorn
 
-    config = HarnessConfig.load()
-    from harness_poc.api import create_app
-
-    app = create_app(config.runtime.database_url)
     console.print(f"Dashboard: http://{host}:{port}")
-    uvicorn.run(app, host=host, port=port, reload=debug)
+    if debug:
+        uvicorn.run(
+            "harness_poc.api:create_app_from_config",
+            host=host,
+            port=port,
+            reload=True,
+            factory=True,
+        )
+    else:
+        config = HarnessConfig.load()
+        from harness_poc.api import create_app
+
+        app = create_app(config.runtime.database_url)
+        uvicorn.run(app, host=host, port=port)
 
 
 def _print_dashboard_summary(snapshot: DashboardSnapshot) -> None:
@@ -852,7 +867,9 @@ def _event_log_entry(event: BaseEvent) -> dict[str, str]:
 def _append_state(command: str, text: str) -> None:
     app_state = _new_app_state()
     _run_command(lambda: append_session_state(app_state, command, text))
-    console.print("[dim]This was added to a one-shot session. Use the REPL for multi-step propose/approve flows.[/dim]")
+    console.print(
+        "[dim]This was added to a one-shot session. Use the REPL for multi-step propose/approve flows.[/dim]"
+    )
 
 
 def _index_documents(
@@ -975,7 +992,9 @@ def pipeline_run(
 
     status_style = {"completed": "green", "failed": "red"}
     color = status_style.get(result.status, "white")
-    console.print(f"\n[{color}]Pipeline '{name}': {result.status}[/{color}] ({result.duration_s:.1f}s)\n")
+    console.print(
+        f"\n[{color}]Pipeline '{name}': {result.status}[/{color}] ({result.duration_s:.1f}s)\n"
+    )
 
     for node_id, node_result in result.node_results.items():
         node_color = {
@@ -1199,7 +1218,8 @@ def v2_run(  # noqa: PLR0913
     mode: Annotated[
         str,
         typer.Option(
-            "--mode", "-m",
+            "--mode",
+            "-m",
             help="Execution mode: 'pipeline' (default) or 'react'.",
         ),
     ] = "pipeline",
@@ -1214,21 +1234,24 @@ def v2_run(  # noqa: PLR0913
     max_iterations: Annotated[
         int,
         typer.Option(
-            "--max-iterations", "-n",
+            "--max-iterations",
+            "-n",
             help="Max loop iterations (react mode, default 50).",
         ),
     ] = 50,
     max_seconds: Annotated[
         float | None,
         typer.Option(
-            "--max-seconds", "-t",
+            "--max-seconds",
+            "-t",
             help="Max wall-clock seconds (react mode).",
         ),
     ] = None,
     max_tokens: Annotated[
         int | None,
         typer.Option(
-            "--max-tokens", "-k",
+            "--max-tokens",
+            "-k",
             help="Max cumulative tokens (react mode).",
         ),
     ] = None,
@@ -1475,9 +1498,7 @@ def _run_v2_pipeline_mode(
         elif success:
             print_text("  Probe: PASSED")
         else:
-            print_text(
-                f"  Probe: FAILED — {len(constraints)} constraint(s) discovered"
-            )
+            print_text(f"  Probe: FAILED — {len(constraints)} constraint(s) discovered")
 
     def on_execution(event: ExecutionCompleted) -> None:
         agents = event.sub_agents
@@ -1487,9 +1508,7 @@ def _run_v2_pipeline_mode(
         elif all_passed:
             print_text(f"  Execution: PASSED — {len(agents)} agent(s)")
         else:
-            failed = sum(
-                1 for a in agents if a.get("output_label") != "completed"
-            )
+            failed = sum(1 for a in agents if a.get("output_label") != "completed")
             print_text(f"  Execution: FAILED — {failed}/{len(agents)} agent(s)")
 
     def on_gate(event: GateCompleted) -> None:
@@ -1586,18 +1605,10 @@ async def _run_v2_react_mode(  # noqa: PLR0913
     bus.subscribe(SkillCompleted, on_tool_complete)
 
     tasks = [
-        asyncio.create_task(
-            runtime.circuit_breaker.run(bus, session_id)
-        ),
-        asyncio.create_task(
-            runtime.llm_worker.run(bus, session_id)
-        ),
-        asyncio.create_task(
-            runtime.tool_worker.run(bus, session_id)
-        ),
-        asyncio.create_task(
-            runtime.goal_evaluator.run(bus, session_id)
-        ),
+        asyncio.create_task(runtime.circuit_breaker.run(bus, session_id)),
+        asyncio.create_task(runtime.llm_worker.run(bus, session_id)),
+        asyncio.create_task(runtime.tool_worker.run(bus, session_id)),
+        asyncio.create_task(runtime.goal_evaluator.run(bus, session_id)),
     ]
 
     try:
@@ -1610,9 +1621,7 @@ async def _run_v2_react_mode(  # noqa: PLR0913
         )
         await asyncio.wait_for(terminal_event.wait(), timeout=max_seconds)
     except TimeoutError:
-        output_parts.append(
-            f"Time budget ({max_seconds}s) exhausted before the goal completed."
-        )
+        output_parts.append(f"Time budget ({max_seconds}s) exhausted before the goal completed.")
     finally:
         bus.publish(
             StreamPaused(
