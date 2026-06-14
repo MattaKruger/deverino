@@ -19,13 +19,25 @@ skills:
 state:
     uv run harness-poc state show project
 
-# Show lightweight dashboard snapshot
+# Show terminal dashboard snapshot
 dashboard-summary:
     uv run harness-poc dashboard summary
 
-# Run Dash dashboard server: just dashboard 8050
+# Start FastAPI dashboard server (API + static frontend): just dashboard 8050
 dashboard port="8050":
     uv run harness-poc dashboard serve --port {{port}}
+
+# Start API with auto-reload for development
+dashboard-dev port="8050":
+    uv run harness-poc dashboard serve --port {{port}} --debug
+
+# Build dashboard frontend for production
+dashboard-build:
+    cd dashboard-ui && pnpm install && pnpm build
+
+# Start frontend dev server with hot-reload (use with dashboard-dev for API)
+dashboard-ui-dev:
+    cd dashboard-ui && pnpm install && pnpm dev
 
 # Start the local ACDL playground: just acdl-playground 8765
 # Then open http://127.0.0.1:8765/acdl-preview.html
