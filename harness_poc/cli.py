@@ -781,23 +781,18 @@ def dashboard_serve(
     port: Annotated[int, typer.Option("--port", "-p", help="Port to bind.")] = 8050,
     debug: Annotated[  # noqa: FBT002
         bool,
-        typer.Option("--debug/--no-debug", help="Run Dash in debug mode."),
+        typer.Option("--debug/--no-debug", help="Run with auto-reload."),
     ] = False,
 ) -> None:
-    """Serve the read-only Dash dashboard."""
-    try:
-        config = HarnessConfig.load()
-        from harness_poc.dashboard_app import create_dashboard_app
+    """Serve the read-only dashboard (FastAPI + uvicorn)."""
+    import uvicorn
 
-        console.print(f"Dashboard: http://{host}:{port}")
-        dash_app = create_dashboard_app(config.runtime.database_url)
-        dash_app.run(host=host, port=port, debug=debug)
-    except KeyboardInterrupt:
-        raise typer.Exit from None
-    except Exception as exc:
-        logger.exception("Dashboard server failed")
-        print_error(str(exc))
-        raise typer.Exit(1) from exc
+    config = HarnessConfig.load()
+    from harness_poc.api import create_app
+
+    app = create_app(config.runtime.database_url)
+    console.print(f"Dashboard: http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, reload=debug)
 
 
 def _print_dashboard_summary(snapshot: DashboardSnapshot) -> None:

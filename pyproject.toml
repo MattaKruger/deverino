@@ -21,12 +21,13 @@ dependencies = [
     "matplotlib>=3.10.9",
     "networkx>=3.6.1",
     "pyvespa>=0.43.0",
-    "docling>=2.0.0",
-    "dash>=4.1.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
     "sentence-transformers>=5.5.1",
     "pgvector>=0.4.2",
     "tool>=0.8.0",
     "semble>=0.3.4",
+    "docling>=2.0.0",
     "docling-core[chunking]>=2.77.0",
 ]
 
@@ -228,6 +229,7 @@ max-positional-args = 5
 "harness_poc/core/skills/skill_catalog.py" = ["PLW0603", "TC003"]
 "harness_poc/core/skills/skill_preprocessing.py" = ["S105", "S603", "S607", "TC003"]
 "harness_poc/system_tools/container_destroy.py" = ["ERA001", "TC001"]
+"harness_poc/api/routes.py" = ["TC001", "TC002", "ANN202"]
 "harness_poc/system_tools/container_spawn.py" = ["TC001"]
 "harness_poc/system_tools/knowledge_tools.py" = [
     "E402",
