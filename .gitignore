@@ -16,3 +16,4 @@ docs/papers/
 docs/papers_2/
 node_modules/
 .vite/
+dist/
