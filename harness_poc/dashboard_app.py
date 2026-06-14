@@ -14,6 +14,7 @@ from dash import Dash, Input, Output, callback, dcc, html
 from plotly import graph_objects as go
 
 from harness_poc.core.observability import (
+    fetch_corpus_keys,
     fetch_dashboard_snapshot,
     fetch_event_throughput,
     fetch_recent_events,
@@ -57,38 +58,85 @@ def create_dashboard_app(database_url: str) -> Dash:
 
 # ── Layout ───────────────────────────────────────────────────────────────────
 
-
 def _layout() -> html.Div:
     return html.Div(
         [
             _top_bar(),
             html.Div(
                 [
-                    _panel("TOOL FREQUENCY", dcc.Graph(id="tool-freq", config={"displayModeBar": False})),
-                    _panel("TOOL LATENCY", dcc.Graph(id="tool-latency", config={"displayModeBar": False})),
-                    _panel("SUB-AGENT TREE", dcc.Graph(id="subagent-tree", config={"displayModeBar": False})),
-                    _panel("TOKEN ECONOMICS", dcc.Graph(id="token-econ", config={"displayModeBar": False})),
+                    _sidebar(),
+                    html.Div(
+                        [
+                            html.Div(
+                                [
+                                    _panel("TOOL FREQUENCY", dcc.Graph(id="tool-freq", config={"displayModeBar": False})),
+                                    _panel("TOOL LATENCY", dcc.Graph(id="tool-latency", config={"displayModeBar": False})),
+                                    _panel("SUB-AGENT TREE", dcc.Graph(id="subagent-tree", config={"displayModeBar": False})),
+                                    _panel("TOKEN ECONOMICS", dcc.Graph(id="token-econ", config={"displayModeBar": False})),
+                                ],
+                                style=_row_style(4),
+                            ),
+                            html.Div(
+                                [
+                                    _panel("EVENT FIREHOSE", _event_firehose(), span=2),
+                                    _panel("CONTEXT MAP HEALTH", dcc.Graph(id="ctx-health", config={"displayModeBar": False})),
+                                    _panel("ERROR DISTRIBUTION", dcc.Graph(id="error-dist", config={"displayModeBar": False})),
+                                ],
+                                style=_row_style(4, cols=[2, 1, 1]),
+                            ),
+                            html.Div(
+                                [
+                                    _panel("SESSION TIMELINE", dcc.Graph(id="session-gantt", config={"displayModeBar": False}), span=4),
+                                ],
+                                style=_row_style(4),
+                            ),
+                        ],
+                        style={"flex": "1", "minWidth": "0"},
+                    ),
                 ],
-                style=_row_style(4),
-            ),
-            html.Div(
-                [
-                    _panel("EVENT FIREHOSE", _event_firehose(), span=2),
-                    _panel("CONTEXT MAP HEALTH", dcc.Graph(id="ctx-health", config={"displayModeBar": False})),
-                    _panel("ERROR DISTRIBUTION", dcc.Graph(id="error-dist", config={"displayModeBar": False})),
-                ],
-                style=_row_style(4, cols=[2, 1, 1]),
-            ),
-            html.Div(
-                [
-                    _panel("SESSION TIMELINE", dcc.Graph(id="session-gantt", config={"displayModeBar": False}), span=4),
-                ],
-                style=_row_style(4),
+                style={"display": "flex", "gap": "10px"},
             ),
             dcc.Interval(id="fast-refresh", interval=2_000, n_intervals=0),
             dcc.Interval(id="slow-refresh", interval=10_000, n_intervals=0),
         ],
         style=PAGE_STYLE,
+    )
+
+
+def _sidebar() -> html.Div:
+    return html.Div(
+        [
+            html.Div("SESSIONS", style={**HEADER_STYLE, "marginTop": "0"}),
+            html.Div(id="sidebar-sessions", style={"marginBottom": "12px"}),
+            html.Div("SUB-AGENTS", style=HEADER_STYLE),
+            html.Div(id="sidebar-subagents", style={"marginBottom": "12px"}),
+            html.Div("FILTERS", style=HEADER_STYLE),
+            dcc.Dropdown(
+                id="firehose-type-filter",
+                options=[],
+                multi=True,
+                placeholder="Event types…",
+                style={"marginBottom": "6px", "fontSize": "11px"},
+            ),
+            dcc.Dropdown(
+                id="firehose-session-filter",
+                options=[],
+                multi=True,
+                placeholder="Sessions…",
+                style={"marginBottom": "12px", "fontSize": "11px"},
+            ),
+            html.Div("CORPORA", style=HEADER_STYLE),
+            html.Div(id="sidebar-corpora"),
+        ],
+        style={
+            **CARD_STYLE,
+            "width": "240px",
+            "minWidth": "240px",
+            "flexShrink": "0",
+            "overflowY": "auto",
+            "maxHeight": "calc(100vh - 100px)",
+            "fontSize": "12px",
+        },
     )
 
 
@@ -159,37 +207,14 @@ def _panel(title: str, *children: object, span: int = 1) -> html.Div:
 
 def _event_firehose() -> html.Div:
     return html.Div(
-        [
-            html.Div(
-                [
-                    dcc.Dropdown(
-                        id="firehose-type-filter",
-                        options=[],
-                        multi=True,
-                        placeholder="Filter by type…",
-                        style={"flex": "1", "minWidth": "200px"},
-                    ),
-                    dcc.Dropdown(
-                        id="firehose-session-filter",
-                        options=[],
-                        multi=True,
-                        placeholder="Filter by session…",
-                        style={"flex": "1", "minWidth": "200px"},
-                    ),
-                ],
-                style={"display": "flex", "gap": "8px", "marginBottom": "8px"},
-            ),
-            html.Div(
-                id="firehose-rows",
-                style={
-                    "maxHeight": "340px",
-                    "overflowY": "auto",
-                    "fontFamily": "SF Mono, Fira Code, monospace",
-                    "fontSize": "11px",
-                    "lineHeight": "1.5",
-                },
-            ),
-        ]
+        id="firehose-rows",
+        style={
+            "maxHeight": "340px",
+            "overflowY": "auto",
+            "fontFamily": "SF Mono, Fira Code, monospace",
+            "fontSize": "11px",
+            "lineHeight": "1.5",
+        },
     )
 
 
@@ -223,6 +248,9 @@ def _register_callbacks(engine: Engine) -> None:
         Output("metric-backlog", "children"),
         Output("firehose-type-filter", "options"),
         Output("firehose-session-filter", "options"),
+        Output("sidebar-sessions", "children"),
+        Output("sidebar-subagents", "children"),
+        Output("sidebar-corpora", "children"),
         Input("slow-refresh", "n_intervals"),
     )
     def slow_update(_n: int) -> tuple[Any, ...]:
@@ -248,6 +276,9 @@ def _register_callbacks(engine: Engine) -> None:
 
         type_opts = _EVENT_TYPE_OPTIONS
         session_opts = _session_id_options(engine)
+        sidebar_sessions = _sidebar_sessions_html(engine)
+        sidebar_subagents = _sidebar_subagents_html(engine)
+        sidebar_corpora = _sidebar_corpora_html(engine)
 
         return (
             tool_freq_fig, tool_latency_fig, subagent_tree_fig, token_econ_fig,
@@ -255,6 +286,7 @@ def _register_callbacks(engine: Engine) -> None:
             sessions, f"{throughput:.1f}", f"{db_ms:.1f} ms",
             str(subagents), backlog,
             type_opts, session_opts,
+            sidebar_sessions, sidebar_subagents, sidebar_corpora,
         )
 
     @callback(
@@ -567,3 +599,85 @@ def _session_id_options(engine: Engine) -> list[dict[str, str]]:
         return [{"label": f"{label[:30]}", "value": sid} for sid, label in ids]
     except Exception:
         return []
+
+
+# ── Sidebar helpers ──────────────────────────────────────────────────────────
+
+
+def _sidebar_sessions_html(engine: Engine) -> list[html.Div]:
+    """Render compact session list for the sidebar."""
+    try:
+        ids = fetch_session_ids(engine, limit=15)
+    except Exception:
+        return [_sidebar_empty("No sessions")]
+
+    if not ids:
+        return [_sidebar_empty("No sessions")]
+
+    return [
+        html.Div(
+            [
+                html.Span("●", style={"color": ACCENT_GREEN, "marginRight": "6px", "fontSize": "8px"}),
+                html.Span(sid[:12], style={"color": TEXT_MUTED, "fontSize": "11px"}),
+                html.Span(label[:20] if label else "", style={"fontSize": "11px", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"}),
+            ],
+            style={"display": "flex", "alignItems": "center", "gap": "4px", "padding": "2px 0"},
+        )
+        for sid, label in ids[:10]
+    ]
+
+
+def _sidebar_subagents_html(engine: Engine) -> list[html.Div]:
+    """Render sub-agent tree summary for the sidebar."""
+    try:
+        nodes = fetch_sub_agent_tree(engine)
+    except Exception:
+        return [_sidebar_empty("No sub-agents")]
+
+    if not nodes:
+        return [_sidebar_empty("No sub-agents")]
+
+    active = [n for n in nodes if n.status in ("dispatched", "running", "active", "pending")]
+    completed = [n for n in nodes if n.status in ("completed", "success")]
+    failed = [n for n in nodes if n.status in ("failed", "error", "cancelled")]
+
+    items: list[html.Div] = []
+
+    if active:
+        items.append(html.Div(f"▸ {len(active)} active", style={"color": ACCENT_GREEN, "fontSize": "12px", "padding": "2px 0"}))
+        for n in active[:5]:
+            label = n.persona or "sub"
+            if n.objective:
+                label += f": {n.objective[:20]}"
+            items.append(html.Div(f"  {label}", style={"color": TEXT_MUTED, "fontSize": "11px", "paddingLeft": "8px"}))
+
+    if completed:
+        items.append(html.Div(f"▸ {len(completed)} completed", style={"color": ACCENT_BLUE, "fontSize": "12px", "padding": "2px 0"}))
+
+    if failed:
+        items.append(html.Div(f"▸ {len(failed)} failed", style={"color": ACCENT_RED, "fontSize": "12px", "padding": "2px 0"}))
+
+    return items or [_sidebar_empty("No sub-agents")]
+
+
+def _sidebar_corpora_html(engine: Engine) -> list[html.Div]:
+    """Render corpus key list for the sidebar."""
+    try:
+        keys = fetch_corpus_keys(engine)
+    except Exception:
+        return [_sidebar_empty("No corpora")]
+
+    if not keys:
+        return [_sidebar_empty("No corpora")]
+
+    return [
+        html.Div(
+            key[:30],
+            style={"color": TEXT_MUTED, "fontSize": "11px", "padding": "2px 0", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"},
+        )
+        for key in keys[:12]
+    ]
+
+
+def _sidebar_empty(text: str) -> html.Div:
+    return html.Div(text, style={"color": TEXT_MUTED, "fontSize": "11px", "fontStyle": "italic"})
