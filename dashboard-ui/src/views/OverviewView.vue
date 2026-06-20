@@ -9,12 +9,12 @@
         v-for="card in alertCards"
         :key="card.label"
         :to="card.link"
-        class="block bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-4 hover:border-[var(--accent-blue)]/50 transition-colors"
+        class="block bg-[var(--color-cbg)] border border-[var(--color-border)] rounded-lg p-4 hover:border-[var(--color-blue)]/50 transition-colors"
       >
         <div class="text-2xl font-mono font-bold" :style="{ color: card.color }">
           {{ card.value }}
         </div>
-        <div class="text-xs text-[var(--text-muted)] mt-1 uppercase tracking-wider">
+        <div class="text-xs text-[var(--color-muted)] mt-1 uppercase tracking-wider">
           {{ card.label }}
         </div>
       </router-link>
@@ -183,7 +183,7 @@ const alertCards = computed(() => {
     cards.push({
       label: 'Recent failures',
       value: String(failures),
-      color: 'var(--accent-red)',
+      color: 'var(--color-red)',
       link: '/',
     });
   }
@@ -193,7 +193,7 @@ const alertCards = computed(() => {
     cards.push({
       label: 'Pending context events',
       value: String(pending),
-      color: 'var(--accent-yellow)',
+      color: 'var(--color-yellow)',
       link: '/context-map',
     });
   }
@@ -229,12 +229,12 @@ const summaryMetrics = computed(() => {
   const corporaCount = contextMaps.data?.length ?? 0;
 
   return [
-    { label: 'Sessions', value: String(s.total_sessions), color: 'var(--accent-blue)' },
-    { label: 'Active', value: String(activeCount.value), color: 'var(--accent-green)' },
-    { label: 'Tokens', value: fmtNum(s.total_tokens), color: 'var(--accent-cyan)' },
-    { label: 'Errors', value: String(s.skill_failures), color: 'var(--accent-red)' },
-    { label: 'Uptime', value: '100%', color: 'var(--accent-green)' },
-    { label: 'Corpora', value: String(corporaCount), color: 'var(--accent-blue)' },
+    { label: 'Sessions', value: String(s.total_sessions), color: 'var(--color-blue)' },
+    { label: 'Active', value: String(activeCount.value), color: 'var(--color-green)' },
+    { label: 'Tokens', value: fmtNum(s.total_tokens), color: 'var(--color-cyan)' },
+    { label: 'Errors', value: String(s.skill_failures), color: 'var(--color-red)' },
+    { label: 'Uptime', value: '100%', color: 'var(--color-green)' },
+    { label: 'Corpora', value: String(corporaCount), color: 'var(--color-blue)' },
   ];
 });
 </script>

@@ -211,7 +211,9 @@ def _run_rg(args: list[str], cwd: Path | None = None, timeout: int = 60) -> tupl
         return result.stdout, result.returncode
 
 
-def _run_find(path: str, pattern: str, limit: int, offset: int, cwd: Path | None) -> tuple[list[str], int]:
+def _run_find(
+    path: str, pattern: str, limit: int, offset: int, cwd: Path | None
+) -> tuple[list[str], int]:
     """Fallback: find files by name pattern (no ripgrep)."""
     find_path = shutil.which("find")
     if find_path is None:
@@ -577,7 +579,9 @@ def patch(  # noqa: PLR0911
         return {"error": f"Failed to read: {e}"}
 
     # Fuzzy find-and-replace
-    new_content, match_count, strategy = _fuzzy_find_and_replace(content, old_string, new_string, replace_all)
+    new_content, match_count, strategy = _fuzzy_find_and_replace(
+        content, old_string, new_string, replace_all
+    )
 
     if match_count == 0:
         error_msg = f"Could not find match for old_string in {path}"
@@ -585,7 +589,9 @@ def patch(  # noqa: PLR0911
         lower_old = old_string.strip().lower()
         lower_content = content.lower()
         if lower_old in lower_content:
-            error_msg += " (hint: a case-insensitive match exists — verify exact whitespace and indentation)"
+            error_msg += (
+                " (hint: a case-insensitive match exists — verify exact whitespace and indentation)"
+            )
         return {"error": error_msg}
 
     if not replace_all and match_count > 1 and strategy is None:
@@ -798,6 +804,16 @@ _register(
         "files. NOTE: Cannot read images or binary files — "
         "use vision_analyze for images."
     ),
+    model_description=(
+        "Read a text file with line numbers and pagination. "
+        "Use view_file instead when you already know which line range you need "
+        "— it enforces a 200-line cap per call. Use read_file for large files "
+        "or when you need to paginate (offset/limit). "
+        "First use search_files or search_in_file to locate the file and "
+        "line, then use read_file or view_file to inspect. "
+        "Example: read_file(path='src/main.py', offset=100, limit=50) "
+        "reads lines 100-149. Cannot read binary files or images."
+    ),
     parameters={
         "type": "object",
         "properties": {
@@ -833,6 +849,16 @@ _register(
         ".py/.json/.yaml/.toml files; only NEW errors introduced by "
         "this write are surfaced."
     ),
+    model_description=(
+        "Write content to a file, completely replacing existing content. "
+        "Always prefer apply_diff or patch for editing EXISTING files — "
+        "they only change the lines you specify and validate the result. "
+        "Use write_file only for creating NEW files or when you need a full "
+        "rewrite. Automatically creates parent directories. "
+        "Example: write_file(path='src/hello.py', content='print(\"hi\")'). "
+        "Auto-runs syntax checks on Python/JSON/YAML/TOML files; only NEW "
+        "errors introduced by this write are reported."
+    ),
     parameters={
         "type": "object",
         "properties": {
@@ -860,6 +886,15 @@ _register(
         "minor whitespace differences won't break it. Returns a unified "
         "diff. Auto-runs syntax checks after editing."
     ),
+    model_description=(
+        "Find-and-replace edits with fuzzy matching. Use apply_diff for "
+        "structured unified-diff edits; use patch for simpler find-and-replace "
+        "operations. Fuzzy matching handles minor whitespace differences "
+        "between old_string and the actual file content. "
+        "Example: patch(path='src/main.py', old_string='x = 1', new_string='x = 2'). "
+        "The old_string must be unique in the file unless replace_all=True. "
+        "Use view_file or read_file first to see the exact text to replace."
+    ),
     parameters={
         "type": "object",
         "properties": {
@@ -881,7 +916,9 @@ _register(
             },
             "replace_all": {
                 "type": "boolean",
-                "description": ("Replace all occurrences instead of requiring a unique match (default: false)"),
+                "description": (
+                    "Replace all occurrences instead of requiring a unique match (default: false)"
+                ),
                 "default": False,
             },
         },
@@ -900,22 +937,37 @@ _register(
         "Output modes: 'content' (matches with line numbers), "
         "'files_only' (file paths), 'count' (match counts per file)."
     ),
+    model_description=(
+        "Fast project-wide search using ripgrep. Use search_in_file instead "
+        "when you already know which file to search. Use search_files for "
+        "broad project scans: find files by glob (target='files'), search "
+        "file contents with regex (target='content'), or count matches. "
+        "Example: search_files(pattern='def main', target='content', file_glob='*.py') "
+        "finds function definitions across all Python files. "
+        "Respects .gitignore and requires an absolute path."
+    ),
     parameters={
         "type": "object",
         "properties": {
             "pattern": {
                 "type": "string",
-                "description": ("Regex pattern for content search, or glob pattern (e.g., '*.py') for file search"),
+                "description": (
+                    "Regex pattern for content search, or glob pattern (e.g., '*.py') for file search"
+                ),
             },
             "target": {
                 "type": "string",
                 "enum": ["content", "files"],
-                "description": ("'content' searches inside file contents, 'files' searches for files by name"),
+                "description": (
+                    "'content' searches inside file contents, 'files' searches for files by name"
+                ),
                 "default": "content",
             },
             "path": {
                 "type": "string",
-                "description": ("Directory or file to search in (default: current working directory)"),
+                "description": (
+                    "Directory or file to search in (default: current working directory)"
+                ),
                 "default": ".",
             },
             "file_glob": {
@@ -950,4 +1002,397 @@ _register(
         "required": ["pattern"],
     },
     handler=search_files,
+)
+
+
+# ---------------------------------------------------------------------------
+# Constrained tool interfaces (ACI Phase 1.2)
+# ---------------------------------------------------------------------------
+
+
+def view_file(
+    path: str,
+    start_line: int = 1,
+    end_line: int | None = None,
+    project_root: str | None = None,
+) -> dict[str, Any]:
+    """View a file with line numbers, max 200 lines per view.
+
+    Constrained read: the model must explicitly request the range it needs
+    rather than dumping entire files into context.
+    """
+    project = Path(project_root) if project_root else None
+    abs_path = _resolve_abs(path, project)
+    str_path = str(abs_path)
+
+    start_line = max(1, int(start_line))
+    limit = 200
+    if end_line is not None:
+        limit = min(max(1, int(end_line) - start_line + 1), 200)
+
+    if not abs_path.exists():
+        similar = _suggest_similar_files(path, project or Path.cwd())
+        return {"error": f"File not found: {path}", "similar_files": similar}
+
+    if not abs_path.is_file():
+        return {"error": f"Not a file: {path}"}
+
+    file_size = abs_path.stat().st_size
+
+    # Binary guard
+    if _is_binary_by_extension(str_path) or _is_image_by_extension(str_path):
+        return {
+            "is_binary": True,
+            "file_size": file_size,
+            "hint": f"Binary file (extension {Path(str_path).suffix}). Cannot read as text.",
+        }
+
+    try:
+        raw = abs_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        return {"error": f"Failed to read: {e}"}
+
+    if _is_likely_binary_content(raw[:1000]):
+        return {"is_binary": True, "file_size": file_size, "error": "Binary file content detected."}
+
+    lines = raw.split("\n")
+    total_lines = len(lines)
+
+    start_idx = start_line - 1
+    end_idx = min(start_idx + limit, total_lines)
+    page_lines = lines[start_idx:end_idx]
+    page_content = "\n".join(page_lines)
+
+    numbered = _add_line_numbers(page_content, start_line)
+    result: dict[str, Any] = {
+        "content": numbered,
+        "total_lines": total_lines,
+        "file_size": file_size,
+        "lines_shown": f"{start_line}-{end_idx}",
+    }
+
+    if end_idx < total_lines:
+        result["truncated"] = True
+        result["hint"] = (
+            f"Showing lines {start_line}-{end_idx} of {total_lines}. "
+            f"Use start_line={end_idx + 1} to continue reading."
+        )
+
+    return result
+
+
+def search_in_file(
+    path: str,
+    pattern: str,
+    context_lines: int = 2,
+    project_root: str | None = None,
+) -> dict[str, Any]:
+    """Search within a single file for a pattern, returning matched lines with context.
+
+    Constrained search: explicitly limited to one file so the model
+    must target its queries instead of doing broad searches.
+    """
+    project = Path(project_root) if project_root else None
+    abs_path = _resolve_abs(path, project)
+    str_path = str(abs_path)
+
+    context_lines = max(0, min(int(context_lines), 5))
+
+    if not abs_path.exists():
+        return {"error": f"File not found: {path}"}
+
+    if not abs_path.is_file():
+        return {"error": f"Not a file: {path}"}
+
+    try:
+        raw = abs_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        return {"error": f"Failed to read: {e}"}
+
+    lines = raw.split("\n")
+    compiled = re.compile(pattern)
+    matches: list[dict[str, Any]] = []
+
+    for i, line in enumerate(lines):
+        if compiled.search(line):
+            ctx_start = max(0, i - context_lines)
+            ctx_end = min(len(lines), i + context_lines + 1)
+            match_entry: dict[str, Any] = {
+                "line": i + 1,
+                "content": line[:500],
+                "context": {
+                    str(ln): lines[ln][:500] for ln in range(ctx_start, ctx_end) if ln != i
+                },
+            }
+            matches.append(match_entry)
+
+    return {
+        "matches": matches[:50],
+        "total_matches": len(matches),
+    }
+
+
+def apply_diff(  # noqa: PLR0911
+    path: str,
+    diff: str,
+    project_root: str | None = None,
+) -> dict[str, Any]:
+    """Apply a unified diff to a file, with Python AST validation.
+
+    The model provides a unified diff instead of rewriting entire files.
+    For Python files (.py), the result is validated via AST — edits that
+    would leave the file unparseable are rejected.
+
+    Returns ``{applied: true, new_line_count: N, path: "..."}`` on
+    success or ``{applied: false, error: "..."}`` on failure.
+    """
+    project = Path(project_root) if project_root else None
+    abs_path = _resolve_abs(path, project)
+    abs_path_str = str(abs_path)
+
+    if _is_protected(abs_path_str):
+        return {"applied": False, "error": f"Write denied: '{path}' is a protected path."}
+
+    if not abs_path.exists():
+        return {
+            "applied": False,
+            "error": f"File not found: {path}. Create it with write_file first.",
+        }
+
+    # Read current content
+    try:
+        original = abs_path.read_text(encoding="utf-8")
+    except OSError as e:
+        return {"applied": False, "error": f"Failed to read: {e}"}
+
+    original_lines = original.split("\n")
+
+    # Apply diff
+    try:
+        patched = _apply_unified_diff(original_lines, diff)
+    except (ValueError, IndexError) as e:
+        return {"applied": False, "error": f"Diff application failed: {e}"}
+
+    if patched is None:
+        return {
+            "applied": False,
+            "error": "Diff could not be applied — hunk context did not match file content.",
+            "hint": "Re-read the file with view_file to get current line numbers and content.",
+        }
+
+    new_content = "\n".join(patched)
+
+    # AST validation for Python files
+    ext = abs_path.suffix.lower()
+    if ext == ".py":
+        try:
+            _ast.parse(new_content)
+        except SyntaxError as e:
+            loc = f" (line {e.lineno}, col {e.offset})" if e.lineno else ""
+            return {
+                "applied": False,
+                "error": f"Edit would leave file unparseable: SyntaxError{loc}: {e.msg}",
+                "hint": "Fix the syntax error in your diff before retrying.",
+            }
+
+    # Write
+    try:
+        abs_path.write_text(new_content, encoding="utf-8")
+    except OSError as e:
+        return {"applied": False, "error": f"Failed to write: {e}"}
+
+    return {
+        "applied": True,
+        "new_line_count": len(patched),
+        "path": abs_path_str,
+    }
+
+
+def _apply_unified_diff(original_lines: list[str], diff_text: str) -> list[str] | None:
+    """Apply a unified diff to original lines.
+
+    Returns modified lines on success, None if any hunk context doesn't match.
+    """
+    hunk_pattern = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+    # Parse hunks
+    hunks: list[dict[str, Any]] = []
+    current_hunk: dict[str, Any] | None = None
+
+    for line in diff_text.split("\n"):
+        m = hunk_pattern.match(line)
+        if m:
+            if current_hunk is not None:
+                hunks.append(current_hunk)
+            old_count = int(m.group(2)) if m.group(2) else 1
+            current_hunk = {
+                "old_start": int(m.group(1)) - 1,  # 0-indexed
+                "old_end": int(m.group(1)) - 1 + old_count,
+                "ops": [],
+            }
+        elif current_hunk is not None:
+            if line.startswith("-"):
+                current_hunk["ops"].append(("-", line[1:]))
+            elif line.startswith("+"):
+                current_hunk["ops"].append(("+", line[1:]))
+            elif line.startswith(" ") or line == "":
+                ctx = line[1:] if line.startswith(" ") else line
+                current_hunk["ops"].append((" ", ctx))
+
+    if current_hunk is not None:
+        hunks.append(current_hunk)
+
+    # Apply hunks in reverse to preserve line offsets
+    result = list(original_lines)
+    for hunk in reversed(hunks):
+        old_start = hunk["old_start"]
+        old_end = hunk["old_end"]
+        ops = hunk["ops"]
+
+        # Build new segment
+        new_segment: list[str] = []
+        src_idx = old_start
+        for op, text in ops:
+            if op == " ":
+                if src_idx >= len(result) or result[src_idx] != text:
+                    return None  # context mismatch
+                new_segment.append(text)
+                src_idx += 1
+            elif op == "-":
+                if src_idx >= len(result) or result[src_idx] != text:
+                    return None
+                src_idx += 1  # skip this line
+            elif op == "+":
+                new_segment.append(text)
+
+        # Replace the original segment
+        result[old_start:old_end] = new_segment
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Constrained tool registrations
+# ---------------------------------------------------------------------------
+
+_register(
+    name="view_file",
+    description=(
+        "View a file with line numbers, maximum 200 lines per call. "
+        "Use instead of read_file when you know which section you need. "
+        "Example: view_file(path='src/main.py', start_line=100, end_line=150) "
+        "shows lines 100-150. To read more, call again with a higher "
+        "start_line. Edge case: requesting past end-of-file shows up to "
+        "the last line without error."
+    ),
+    model_description=(
+        "View a file with line numbers, max 200 lines per call. "
+        "Use this for precise line-range reads. Never request more than "
+        "200 lines at once — if you need more context, make multiple "
+        "targeted calls. Use search_in_file first to find relevant lines, "
+        "then view_file to read the surrounding context. "
+        "Example: view_file(path='src/main.py', start_line=50, end_line=80)"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Absolute path to the file.",
+            },
+            "start_line": {
+                "type": "integer",
+                "description": "Line to start reading from (1-indexed, default: 1)",
+                "default": 1,
+            },
+            "end_line": {
+                "type": "integer",
+                "description": (
+                    "Line to stop reading at (inclusive). If omitted, reads up to "
+                    "200 lines from start_line."
+                ),
+            },
+        },
+        "required": ["path"],
+    },
+    handler=view_file,
+)
+
+_register(
+    name="search_in_file",
+    description=(
+        "Search within a single file for a regex pattern. Returns matching "
+        "lines with surrounding context. Use this BEFORE view_file to "
+        "find relevant line numbers. Example: "
+        "search_in_file(path='src/main.py', pattern='def handle_request') "
+        "returns all matches with 2 lines of context each."
+    ),
+    model_description=(
+        "Search inside one file for a pattern. Use this to locate relevant "
+        "code sections before reading them with view_file. Always does "
+        "regex matching. Returns up to 50 matches with surrounding context "
+        "lines. Max 5 context lines per match."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Absolute path to the file to search.",
+            },
+            "pattern": {
+                "type": "string",
+                "description": "Regex pattern to search for.",
+            },
+            "context_lines": {
+                "type": "integer",
+                "description": "Lines of context before/after each match (default: 2, max: 5)",
+                "default": 2,
+            },
+        },
+        "required": ["path", "pattern"],
+    },
+    handler=search_in_file,
+)
+
+_register(
+    name="apply_diff",
+    description=(
+        "Apply a unified diff to edit a file. Safer than write_file: only "
+        "changes the specified lines, validates Python syntax before "
+        "applying, and rejects edits that would break the file. "
+        "Format: standard unified diff with @@ hunk headers. "
+        "Example: apply_diff(path='src/main.py', diff='@@ -10,5 +10,7 @@...') "
+        "Returns {applied: true, new_line_count: N} on success."
+    ),
+    model_description=(
+        "Apply a unified diff to edit a file. This is the PRIMARY tool for "
+        "making code changes. Always use this over write_file for editing "
+        "existing files. Provide a standard unified diff: lines starting with "
+        "'-' are removed, '+' are added, ' ' are context. Each change block "
+        "starts with '@@ -old_start,old_count +new_start,new_count @@'. "
+        "Python files get AST validation before applying — edits that create "
+        "syntax errors are rejected. "
+        "Edge cases: the file must already exist (create new files with "
+        "write_file). Protected paths are rejected."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Absolute path to the file to edit.",
+            },
+            "diff": {
+                "type": "string",
+                "description": (
+                    "Unified diff content. Format: lines starting with '-' are "
+                    "removed, '+' are added, ' ' (space) are context. Hunks "
+                    "start with '@@ -old_start,old_count +new_start,new_count @@'."
+                ),
+            },
+        },
+        "required": ["path", "diff"],
+    },
+    handler=apply_diff,
 )

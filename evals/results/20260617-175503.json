@@ -1,0 +1,94 @@
+{
+  "run_id": "20260617-175503",
+  "timestamp": "2026-06-17T17:55:03.805106+00:00",
+  "tasks_total": 6,
+  "tasks_passed": 6,
+  "tasks_failed": 0,
+  "average_score": 4.5,
+  "results": [
+    {
+      "task": "code_explain_config_model",
+      "category": "code_understanding",
+      "score": 5.0,
+      "passed": true,
+      "explanation": "Trait check: 5/5 traits matched (need ≥3). ✓ HarnessPaths; ✓ RuntimeConfig; ✓ LLMConfig; ✓ harness.yaml; ✓ project_root",
+      "trait_results": {
+        "HarnessPaths": true,
+        "RuntimeConfig": true,
+        "LLMConfig": true,
+        "harness.yaml": true,
+        "project_root": true
+      },
+      "elapsed_seconds": 10.46,
+      "error": null,
+      "output_preview": "The `HarnessConfig` class in `harness_poc/core/config.py` is a frozen dataclass that holds all configuration for the harness system. Its top-level fields are:\n\n- **`project_root`** (`Path`): The root directory of the project (parent of the config file).\n- **`config_path`** (`Path`): The resolved path to the YAML config file (e.g. `harness.yaml`).\n- **`paths`** (`HarnessPaths`): Sub-config mapping logical names to filesystem paths.\n- **`llm`** (`LLMConfig`): Sub-config for the LLM provider and mo"
+    },
+    {
+      "task": "code_explain_guard_pipeline",
+      "category": "code_understanding",
+      "score": 5.0,
+      "passed": true,
+      "explanation": "Trait check: 5/5 traits matched (need ≥3). ✓ GuardPipeline; ✓ validate; ✓ GuardResult; ✓ guard; ✓ error",
+      "trait_results": {
+        "GuardPipeline": true,
+        "validate": true,
+        "GuardResult": true,
+        "guard": true,
+        "error": true
+      },
+      "elapsed_seconds": 6.32,
+      "error": null,
+      "output_preview": "The `GuardPipeline` class aggregates multiple `ToolGuard` instances (e.g., `PathGuard`, `SizeGuard`) and exposes a `validate()` method that iterates through each guard, calling it with the tool name and arguments. Each guard returns a `GuardResult` with `ok=False` and a list of actionable error strings on rejection, or `None` to pass. `validate()` collects all non-`None` results and merges their errors into a single `GuardResult` (with `ok=False` if any guard failed). The combined errors are ret"
+    },
+    {
+      "task": "code_trace_tool_execution",
+      "category": "code_understanding",
+      "score": 4.0,
+      "passed": true,
+      "explanation": "Trait check: 4/5 traits matched (need ≥3). ✗ _register; ✓ discover_tools; ✓ execute_tool; ✓ GuardPipeline; ✓ validate",
+      "trait_results": {
+        "_register": false,
+        "discover_tools": true,
+        "execute_tool": true,
+        "GuardPipeline": true,
+        "validate": true
+      },
+      "elapsed_seconds": 14.51,
+      "error": null,
+      "output_preview": "## Full Call Path for Tool Execution in the Deverino Harness\n\n### 1. Registration (`register()` in `harness_poc/system_tools/__init__.py`)\n- **`register(name, description, parameters, handler, ...)`**: Adds a tool to the global `_registry` dictionary. Each entry contains `name`, `description`, `parameters`, `handler`, `model_description`, and any extra flags (e.g., `_skill_backed`).\n- **`get_registry()`**: Returns a shallow copy of `_registry` for safe external access.\n\n### 2. Tool Discovery (`T"
+    },
+    {
+      "task": "explain_tool_runner",
+      "category": "code_understanding",
+      "score": 3.0,
+      "passed": true,
+      "explanation": "Heuristic score 3.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 11.06,
+      "error": null,
+      "output_preview": "## How `execute_tool()` Works\n\n### 1. Two Classes of Tools and Dispatch Path\n`execute_tool()` dispatches to either:\n- **Built-in tools** — registered at import time via `harness_poc.system_tools.register()`. These are pure functions, no sub-agent spawning, no LLM involvement. They live in `system_tools/`.\n- **Skill-backed tools** — found in `project_skills/` as `SKILL.md` files with `type: tool`. These are executed through `SkillRunner` (which creates a `SkillContext`).\n\nThe decision is made by "
+    },
+    {
+      "task": "identify_bug",
+      "category": "code_understanding",
+      "score": 5.0,
+      "passed": true,
+      "explanation": "Heuristic score 5.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 35.61,
+      "error": null,
+      "output_preview": "The provided file content is sufficient to derive the answer. The `_ensure_history_consistent` function is not present in the snippet, but the problem is described generically: it inserts a hardcoded assistant reply when a tool call is interrupted mid-stream. This can cause the LLM to see a fabricated message that does not reflect the actual tool output, leading to incorrect reasoning, broken context, or hallucinations. The condition is when a tool call completes after the repair—the LLM will se"
+    },
+    {
+      "task": "trace_call_path",
+      "category": "code_understanding",
+      "score": 5.0,
+      "passed": true,
+      "explanation": "Heuristic score 5.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 14.32,
+      "error": null,
+      "output_preview": "## Call Chain for `harness-poc pipeline run parallel-review --input objective=\"review the execution engine\"`\n\n### 1. CLI Dispatch to Pipeline Runner\n- The `harness-poc` command is a `typer.Typer` instance defined in `cli.py`.\n- Sub-commands are organized via separate `typer.Typer` instances. The `pipeline_app` is created at line 66:\n  ```python\n  pipeline_app = typer.Typer(help=\"Run declarative DAG pipeline YAML files.\")\n  ```\n- This `pipeline_app` is attached to the main app via `app.add_typer("
+    }
+  ]
+}

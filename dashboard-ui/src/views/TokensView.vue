@@ -1,7 +1,7 @@
 <template>
   <div class="p-6 space-y-6 max-w-screen-2xl mx-auto">
     <div class="flex items-center gap-3">
-      <h2 class="text-lg font-semibold text-[var(--text)]">Token Usage</h2>
+      <h2 class="text-lg font-semibold text-[var(--color-text)]">Token Usage</h2>
       <HealthIndicator
         :lastFetched="store.lastFetched"
         :error="store.error"
@@ -13,13 +13,13 @@
 
     <!-- Loading state -->
     <div v-if="store.loading && !store.data" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="animate-pulse space-y-3 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-4">
-        <div class="h-4 bg-[var(--card-border)] rounded w-1/3"></div>
-        <div v-for="n in 5" :key="n" class="h-6 bg-[var(--card-border)] rounded" />
+      <div class="animate-pulse space-y-3 bg-[var(--color-cbg)] border border-[var(--color-border)] rounded-lg p-4">
+        <div class="h-4 bg-[var(--color-border)] rounded w-1/3"></div>
+        <div v-for="n in 5" :key="n" class="h-6 bg-[var(--color-border)] rounded" />
       </div>
-      <div class="animate-pulse space-y-3 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-4">
-        <div class="h-4 bg-[var(--card-border)] rounded w-1/3"></div>
-        <div v-for="n in 5" :key="n" class="h-6 bg-[var(--card-border)] rounded" />
+      <div class="animate-pulse space-y-3 bg-[var(--color-cbg)] border border-[var(--color-border)] rounded-lg p-4">
+        <div class="h-4 bg-[var(--color-border)] rounded w-1/3"></div>
+        <div v-for="n in 5" :key="n" class="h-6 bg-[var(--color-border)] rounded" />
       </div>
     </div>
 
@@ -38,7 +38,7 @@
         <div v-if="store.data.models.length > 0" class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="border-b border-[var(--card-border)] text-left text-xs text-[var(--text-muted)] uppercase tracking-wider">
+              <tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)] uppercase tracking-wider">
                 <th class="px-3 py-2 font-medium">Model</th>
                 <th class="px-3 py-2 font-medium text-right">Actions</th>
                 <th class="px-3 py-2 font-medium text-right">Sessions</th>
@@ -52,27 +52,27 @@
               <tr
                 v-for="model in sortedModels"
                 :key="model.model"
-                class="border-b border-[var(--grid-line)] hover:bg-[var(--card-border)] transition-colors"
+                class="border-b border-[var(--color-grid)] hover:bg-[var(--color-border)] transition-colors"
               >
-                <td class="px-3 py-2 font-mono text-xs text-[var(--text)]">
+                <td class="px-3 py-2 font-mono text-xs text-[var(--color-text)]">
                   {{ model.model }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text-muted)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-muted)]">
                   {{ model.actions }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text-muted)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-muted)]">
                   {{ model.sessions }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-text)]">
                   {{ fmtNum(model.tokens) }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text-muted)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-muted)]">
                   {{ fmtNum(model.input_tokens) }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text-muted)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-muted)]">
                   {{ fmtNum(model.output_tokens) }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--accent-green)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-green)]">
                   {{ fmtNum(model.billable_tokens) }}
                 </td>
               </tr>
@@ -87,7 +87,7 @@
         <div v-if="store.data.sessions.length > 0" class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="border-b border-[var(--card-border)] text-left text-xs text-[var(--text-muted)] uppercase tracking-wider">
+              <tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)] uppercase tracking-wider">
                 <th class="px-3 py-2 font-medium">Session</th>
                 <th class="px-3 py-2 font-medium">Models</th>
                 <th class="px-3 py-2 font-medium text-right">Actions</th>
@@ -101,32 +101,32 @@
               <tr
                 v-for="session in sortedSessions"
                 :key="session.session_id"
-                class="border-b border-[var(--grid-line)] hover:bg-[var(--card-border)] transition-colors"
+                class="border-b border-[var(--color-grid)] hover:bg-[var(--color-border)] transition-colors"
               >
                 <td class="px-3 py-2 font-mono text-xs">
                   <router-link
                     :to="`/sessions/${session.session_id}`"
-                    class="text-[var(--accent-blue)] hover:underline"
+                    class="text-[var(--color-blue)] hover:underline"
                   >
                     {{ truncateId(session.session_id) }}
                   </router-link>
                 </td>
-                <td class="px-3 py-2 text-xs text-[var(--text-muted)] max-w-[120px] truncate">
+                <td class="px-3 py-2 text-xs text-[var(--color-muted)] max-w-[120px] truncate">
                   {{ session.models }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text-muted)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-muted)]">
                   {{ session.actions }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-text)]">
                   {{ fmtNum(session.tokens) }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text-muted)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-muted)]">
                   {{ fmtNum(session.input_tokens) }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text-muted)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-muted)]">
                   {{ fmtNum(session.output_tokens) }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--accent-green)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-green)]">
                   {{ fmtNum(session.billable_tokens) }}
                 </td>
               </tr>
@@ -164,11 +164,11 @@ const totals = computed(() => {
 const totalMetrics = computed(() => {
   if (!totals.value) return [];
   return [
-    { label: 'Total Tokens', value: fmtNum(totals.value.totalTokens), color: 'var(--accent-blue)' },
-    { label: 'Input', value: fmtNum(totals.value.totalInput), color: 'var(--accent-cyan)' },
-    { label: 'Output', value: fmtNum(totals.value.totalOutput), color: 'var(--accent-green)' },
-    { label: 'Billable', value: fmtNum(totals.value.totalBillable), color: 'var(--accent-purple)' },
-    { label: 'Models', value: String(totals.value.modelCount), color: 'var(--text-muted)' },
+    { label: 'Total Tokens', value: fmtNum(totals.value.totalTokens), color: 'var(--color-blue)' },
+    { label: 'Input', value: fmtNum(totals.value.totalInput), color: 'var(--color-cyan)' },
+    { label: 'Output', value: fmtNum(totals.value.totalOutput), color: 'var(--color-green)' },
+    { label: 'Billable', value: fmtNum(totals.value.totalBillable), color: 'var(--color-purple)' },
+    { label: 'Models', value: String(totals.value.modelCount), color: 'var(--color-muted)' },
   ];
 });
 

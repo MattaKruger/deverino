@@ -1,0 +1,26 @@
+# Eval task: Explain the HarnessConfig model
+name: code_explain_config_model
+description: >
+  Given the HarnessConfig class in harness_poc/core/config.py,
+  explain its structure, key sub-configs, and how the harness loads
+  configuration at startup.
+category: code_understanding
+input:
+  prompt: >
+    Explain the HarnessConfig class in harness_poc/core/config.py.
+    Describe its top-level fields, the sub-config objects it contains
+    (HarnessPaths, RuntimeConfig, LLMConfig, ObservabilityConfig),
+    and how the harness loads configuration from harness.yaml at startup.
+  context:
+    file: harness_poc/core/config.py
+    class: HarnessConfig
+evaluation:
+  type: trait_check
+  expected_traits:
+    - HarnessPaths
+    - RuntimeConfig
+    - LLMConfig
+    - harness.yaml
+    - project_root
+  min_score: 2.5
+  min_traits: 3

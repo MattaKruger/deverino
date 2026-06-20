@@ -18,9 +18,7 @@ _PREVIEW_EXCERPT_CHARS = 80
 logger = logging.getLogger(__name__)
 
 
-def _validate_arguments(
-    arguments: dict[str, Any], ctx: SkillContext
-) -> SkillResult | None:
+def _validate_arguments(arguments: dict[str, Any], ctx: SkillContext) -> SkillResult | None:
     """Return an error SkillResult if arguments are invalid, or None if valid."""
     if not ctx.config.retrieval.enabled:
         return SkillResult(
@@ -47,7 +45,7 @@ def _validate_arguments(
 
     try:
         int(arguments.get("hits") or ctx.config.retrieval.default_hits)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return SkillResult(
             status="failed",
             content="Invalid hits value. Provide a positive integer.",
@@ -95,8 +93,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         return SkillResult(
             status="success",
             content=(
-                "No results found. If you haven't indexed documents yet, "
-                "run index_documents first."
+                "No results found. If you haven't indexed documents yet, run index_documents first."
             ),
             artifacts={"query": query, "mode": mode, "results": []},
         )
@@ -125,7 +122,7 @@ def _parse_expand_indices(expand: object, max_results: int) -> list[int]:
     elif isinstance(expand, str):
         try:
             parsed = json.loads(expand)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             return []
         raw = list(parsed) if isinstance(parsed, list) else []
     else:
@@ -135,7 +132,7 @@ def _parse_expand_indices(expand: object, max_results: int) -> list[int]:
     for item in raw:
         try:
             idx = int(str(item))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         zero_based = idx - 1  # 1-based → 0-based
         if 0 <= zero_based < max_results and zero_based not in indices:
@@ -158,9 +155,7 @@ def _format_preview(
         excerpt = result.text[:_PREVIEW_EXCERPT_CHARS].replace("\n", " ")
         if len(result.text) > _PREVIEW_EXCERPT_CHARS:
             excerpt += "..."
-        lines.append(
-            f'{index}. {result.uri} (score {result.relevance:.2f}) — "{excerpt}"'
-        )
+        lines.append(f'{index}. {result.uri} (score {result.relevance:.2f}) — "{excerpt}"')
 
     lines.extend(
         [
@@ -266,7 +261,7 @@ def _append_document_retrieved_event(
                 retrieval_strategy=mode,
             )
         )
-    except (AttributeError, PermissionError):
+    except AttributeError, PermissionError:
         logger.debug("Skipping document_retrieved context-map event", exc_info=True)
 
 
@@ -286,5 +281,5 @@ def _append_search_failed_event(
                 error=str(exc),
             )
         )
-    except (AttributeError, PermissionError):
+    except AttributeError, PermissionError:
         logger.debug("Skipping search_failed context-map event", exc_info=True)

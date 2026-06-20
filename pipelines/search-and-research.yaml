@@ -6,7 +6,8 @@
 # Structure:
 #   1. search_codebase — skill node: search the codebase for relevant code
 #   2. search_web      — skill node: search the web (parallel with search_codebase)
-#   3. synthesize      — agent node: combines both search results (depends on both)
+#   3. search_docs     — skill node: search indexed project documents (parallel with other searches)
+#   4. synthesize      — agent node: combines all three search results (depends on all three)
 
 nodes:
   - id: search_codebase
@@ -25,17 +26,28 @@ nodes:
       count: 3
       summary: true
 
+  - id: search_docs
+    type: skill
+    skill: search_documents
+    arguments:
+      action: search
+      query: "{{inputs.topic}}"
+      top_k: 5
+
   - id: synthesize
     type: agent
     goal: >
-      Synthesize the following codebase and web search results into a concise summary
+      Synthesize the following codebase, web, and document search results into a concise summary
       about "{{inputs.topic}}".
 
       Codebase findings: {{nodes.search_codebase.output}}
 
       Web findings: {{nodes.search_web.output}}
 
+      Document findings: {{nodes.search_docs.output}}
+
       Focus on key facts, architecture decisions, and patterns.
     depends_on:
       - search_codebase
       - search_web
+      - search_docs

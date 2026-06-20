@@ -136,6 +136,47 @@ class BlackboardDatabase:
         with Session(self._engine) as session:
             return session.get(DbSession, session_id) is not None
 
+    def list_recent_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Return the most recent active sessions with message counts."""
+        rows = []
+        with Session(self._engine) as session:
+            result = session.exec(
+                text(
+                    "SELECT s.session_id, s.global_objective, s.created_at, "
+                    "COALESCE("
+                    "  (SELECT COUNT(*) FROM session_messages m WHERE m.session_id = s.session_id), 0"
+                    ") as message_count "
+                    "FROM sessions s "
+                    "WHERE s.status = 'active' "
+                    "ORDER BY s.created_at DESC "
+                    "LIMIT :limit"
+                ).bindparams(limit=limit),
+            ).all()
+            for row in result:
+                rows.append(
+                    {
+                        "session_id": row[0],
+                        "objective": row[1],
+                        "created_at": row[2],
+                        "message_count": row[3],
+                    }
+                )
+        return rows
+
+    def delete_session(self, session_id: str) -> bool:
+        """Soft-delete a session by setting its status to 'archived'.
+
+        Returns True if the session was found and archived, False otherwise.
+        """
+        with Session(self._engine) as session_obj:
+            db_session = session_obj.get(DbSession, session_id)
+            if db_session is None:
+                return False
+            db_session.status = "archived"
+            session_obj.add(db_session)
+            session_obj.commit()
+        return True
+
     def write_memory(self, session_id: str, key: str, payload: str | dict[str, Any]) -> None:
         data_payload = json.dumps(payload, sort_keys=True) if isinstance(payload, dict) else payload
         with Session(self._engine) as session:

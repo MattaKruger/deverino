@@ -66,6 +66,7 @@ _VIM_INITIAL_MODES = frozenset({"insert", "normal"})
 class TuiConfig:
     vim_enabled: bool = False
     vim_initial_mode: str = "insert"
+    models: list[str] = field(default_factory=list)  # Phase 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +83,7 @@ class RetrievalConfig:
     max_feed_workers: int = 8
     max_file_bytes: int = 5 * 1024 * 1024
     query_timeout_seconds: int = 5
+    ocr_service_url: str | None = None
     auto_index_paths: list[str] = field(default_factory=lambda: ["docs/"])
     auto_index_ignore_paths: list[str] = field(default_factory=list)
 
@@ -116,6 +118,24 @@ class APISettings(BaseSettings):
 
 
 @dataclass(frozen=True, slots=True)
+class CompilerConfig:
+    """Skill compiler configuration — feature flags and LLM overrides."""
+
+    enabled: bool = True
+    model: str | None = None
+    """Override model for compilation.  None = use ``llm.model``."""
+
+    provider: str | None = None
+    """Override provider for compilation.  None = use ``llm.provider``."""
+
+    be_enabled: bool = False
+    """Stage 5: Binding Evidence — LLM prunes spurious call-sites."""
+
+    rc_enabled: bool = False
+    """Stage 6: Residual Cleanup — LLM fixes prose-contract mismatches."""
+
+
+@dataclass(frozen=True, slots=True)
 class HarnessConfig:
     project_root: Path
     config_path: Path
@@ -127,6 +147,7 @@ class HarnessConfig:
     tui: TuiConfig = field(default_factory=TuiConfig)
     distiller: DistillerConfig = field(default_factory=DistillerConfig)
     cartographer: CartographerConfig = field(default_factory=CartographerConfig)
+    compiler: CompilerConfig = field(default_factory=CompilerConfig)
     project_id: str = field(default="default")
 
     @classmethod
@@ -179,13 +200,9 @@ class HarnessConfig:
             materializer_max_event_tokens=int(
                 runtime_raw.get("materializer_max_event_tokens", 8000)
             ),
-            materializer_freeze_threshold=int(
-                runtime_raw.get("materializer_freeze_threshold", 3)
-            ),
+            materializer_freeze_threshold=int(runtime_raw.get("materializer_freeze_threshold", 3)),
             materializer_freeze_seconds=int(runtime_raw.get("materializer_freeze_seconds", 300)),
-            materializer_copt_threshold=float(
-                runtime_raw.get("materializer_copt_threshold", 0.92)
-            ),
+            materializer_copt_threshold=float(runtime_raw.get("materializer_copt_threshold", 0.92)),
         )
         observability = ObservabilityConfig(
             logfire_enabled=bool(observability_raw.get("logfire", False)),
@@ -211,9 +228,8 @@ class HarnessConfig:
             max_feed_workers=int(retrieval_raw.get("max_feed_workers", 8)),
             max_file_bytes=int(retrieval_raw.get("max_file_bytes", 5 * 1024 * 1024)),
             query_timeout_seconds=int(retrieval_raw.get("query_timeout_seconds", 5)),
-            auto_index_paths=_parse_string_list(
-                retrieval_raw.get("auto_index_paths", ["docs/"])
-            ),
+            ocr_service_url=retrieval_raw.get("ocr_service_url"),  # None if absent or null
+            auto_index_paths=_parse_string_list(retrieval_raw.get("auto_index_paths", ["docs/"])),
             auto_index_ignore_paths=_parse_string_list(
                 retrieval_raw.get("auto_index_ignore_paths", [])
             ),
@@ -230,6 +246,7 @@ class HarnessConfig:
         tui = TuiConfig(
             vim_enabled=bool(tui_raw.get("vim_enabled", False)),
             vim_initial_mode=vim_initial_mode,
+            models=_parse_string_list(tui_raw.get("models", [])),
         )
 
         distiller_raw = _mapping(raw.get("distiller"), "distiller")
@@ -237,6 +254,15 @@ class HarnessConfig:
 
         cartographer_raw = _mapping(raw.get("cartographer"), "cartographer")
         cartographer_cfg = load_cartographer_config(cartographer_raw)
+
+        compiler_raw = _mapping(raw.get("compiler"), "compiler")
+        compiler_cfg = CompilerConfig(
+            enabled=bool(compiler_raw.get("enabled", True)),
+            model=compiler_raw.get("model"),  # None is fine — use llm.model
+            provider=compiler_raw.get("provider"),  # None is fine
+            be_enabled=bool(compiler_raw.get("be_enabled", False)),
+            rc_enabled=bool(compiler_raw.get("rc_enabled", False)),
+        )
 
         project_raw = _mapping(raw.get("project"), "project")
         project_id = str(project_raw.get("id") or "")
@@ -257,6 +283,7 @@ class HarnessConfig:
             tui=tui,
             distiller=distiller_cfg,
             cartographer=cartographer_cfg,
+            compiler=compiler_cfg,
             project_id=project_id,
         )
 

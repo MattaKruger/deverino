@@ -5,8 +5,8 @@
       <button
         class="px-3 py-1 text-xs font-medium rounded border transition-colors"
         :class="paused
-          ? 'bg-[var(--accent-yellow)] bg-opacity-20 border-[var(--accent-yellow)] text-[var(--accent-yellow)]'
-          : 'bg-[var(--card-bg)] border-[var(--card-border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--text-muted)]'"
+          ? 'bg-[var(--color-yellow)] bg-opacity-20 border-[var(--color-yellow)] text-[var(--color-yellow)]'
+          : 'bg-[var(--color-cbg)] border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-muted)]'"
         @click="togglePause"
       >
         {{ paused ? '▶ Resume' : '⏸ Pause' }}
@@ -14,7 +14,7 @@
 
       <span
         v-if="paused"
-        class="text-xs font-semibold text-[var(--accent-yellow)] uppercase tracking-wider"
+        class="text-xs font-semibold text-[var(--color-yellow)] uppercase tracking-wider"
       >
         PAUSED
       </span>
@@ -23,7 +23,7 @@
 
       <select
         v-model="filter"
-        class="px-2 py-1 text-xs rounded border border-[var(--card-border)] bg-[var(--card-bg)] text-[var(--text)]"
+        class="px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-cbg)] text-[var(--color-text)]"
       >
         <option value="all">All events</option>
         <option value="errors">Errors only</option>
@@ -31,7 +31,7 @@
         <option value="subagents">Sub-agents only</option>
       </select>
 
-      <span class="text-xs text-[var(--text-muted)] font-mono tabular-nums">
+      <span class="text-xs text-[var(--color-muted)] font-mono tabular-nums">
         {{ filteredEvents.length }} event{{ filteredEvents.length !== 1 ? 's' : '' }}
       </span>
     </div>
@@ -40,7 +40,7 @@
     <div
       v-if="filteredEvents.length > 0"
       v-bind="containerProps"
-      class="max-h-96 overflow-y-auto border border-[var(--card-border)] rounded-lg bg-[var(--card-bg)]"
+      class="max-h-96 overflow-y-auto border border-[var(--color-border)] rounded-lg bg-[var(--color-cbg)]"
     >
       <div v-bind="wrapperProps">
         <FirehoseRow
@@ -54,7 +54,7 @@
     <!-- Empty state -->
     <div
       v-else
-      class="flex items-center justify-center py-8 text-sm text-[var(--text-muted)] border border-[var(--card-border)] rounded-lg bg-[var(--card-bg)]"
+      class="flex items-center justify-center py-8 text-sm text-[var(--color-muted)] border border-[var(--color-border)] rounded-lg bg-[var(--color-cbg)]"
     >
       No events yet
     </div>

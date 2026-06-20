@@ -7,11 +7,11 @@
     >
       <span
         class="text-2xl font-bold font-mono"
-        :style="{ color: metric.color || 'var(--accent-blue)' }"
+        :style="{ color: metric.color || 'var(--color-blue)' }"
       >
         {{ metric.value }}
       </span>
-      <span class="text-xs text-[var(--text-muted)] uppercase tracking-wider">
+      <span class="text-xs text-[var(--color-muted)] uppercase tracking-wider">
         {{ metric.label }}
       </span>
     </div>

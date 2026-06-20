@@ -1,0 +1,33 @@
+# Eval task: Delegate a research subtask and synthesize result
+name: skill_delegation_research
+description: >
+  Investigate how the harness handles tool registration and discovery,
+  then produce a summary suitable for a new developer.
+category: skill_delegation
+input:
+  prompt: >
+    Investigate how the Deverino harness registers and discovers tools.
+    Look at:
+    - harness_poc/system_tools/__init__.py for the _register() function
+    - harness_poc/core/tools/tool_runner.py for discover_tools()
+    - harness_poc/system_tools/file_tools.py for examples of registration
+
+    Produce a summary covering: (1) what _register() accepts as arguments,
+    (2) how tools are stored in the registry after registration, (3) how
+    discover_tools() returns them to the LLM, and (4) the difference
+    between description and model_description.
+  context:
+    files:
+      - harness_poc/system_tools/__init__.py
+      - harness_poc/core/tools/tool_runner.py
+      - harness_poc/system_tools/file_tools.py
+evaluation:
+  type: trait_check
+  expected_traits:
+    - _register
+    - get_registry
+    - discover_tools
+    - model_description
+    - description
+  min_score: 3.0
+  min_traits: 3

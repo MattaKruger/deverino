@@ -3,7 +3,7 @@
     <!-- Back link -->
     <router-link
       to="/sessions"
-      class="inline-flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+      class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
     >
       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
@@ -13,10 +13,10 @@
 
     <!-- Loading state -->
     <div v-if="loading" class="animate-pulse space-y-4">
-      <div class="h-6 bg-[var(--card-border)] rounded w-1/3"></div>
-      <div class="h-4 bg-[var(--card-border)] rounded w-1/4"></div>
+      <div class="h-6 bg-[var(--color-border)] rounded w-1/3"></div>
+      <div class="h-4 bg-[var(--color-border)] rounded w-1/4"></div>
       <div class="space-y-2">
-        <div v-for="n in 8" :key="n" class="h-12 bg-[var(--card-border)] rounded" />
+        <div v-for="n in 8" :key="n" class="h-12 bg-[var(--color-border)] rounded" />
       </div>
     </div>
 
@@ -38,7 +38,7 @@
     <template v-else-if="events">
       <!-- Session header -->
       <div class="flex items-center gap-3 flex-wrap">
-        <h2 class="text-lg font-semibold text-[var(--text)] font-mono text-sm">
+        <h2 class="text-lg font-semibold text-[var(--color-text)] font-mono text-sm">
           {{ sessionId }}
         </h2>
         <StatusBadge v-if="sessionStatus" :status="sessionStatus" />
@@ -49,14 +49,14 @@
 
       <!-- Event timeline -->
       <Panel title="Event Timeline">
-        <div class="divide-y divide-[var(--grid-line)]">
+        <div class="divide-y divide-[var(--color-grid)]">
           <div
             v-for="event in events"
             :key="event.event_id"
           >
             <div
-              class="flex items-start gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-[var(--card-border)] transition-colors"
-              :class="expandedId === event.event_id ? 'bg-[var(--card-border)]' : ''"
+              class="flex items-start gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-[var(--color-border)] transition-colors"
+              :class="expandedId === event.event_id ? 'bg-[var(--color-border)]' : ''"
               :style="{ borderLeft: `3px solid ${eventColor(event.event_type, event.status)}` }"
               role="button"
               tabindex="0"
@@ -66,34 +66,34 @@
               @keydown.enter.prevent="toggleExpand(event)"
               @keydown.space.prevent="toggleExpand(event)"
             >
-              <span class="text-xs text-[var(--text-muted)] font-mono whitespace-nowrap pt-0.5">
+              <span class="text-xs text-[var(--color-muted)] font-mono whitespace-nowrap pt-0.5">
                 {{ fmtTimestamp(event.created_at) }}
               </span>
 
               <div class="flex items-center gap-2 min-w-0 flex-1">
                 <StatusBadge :status="event.event_type" />
-                <span class="text-[var(--text-muted)] truncate">
+                <span class="text-[var(--color-muted)] truncate">
                   {{ event.content_preview || event.skill_name || event.event_type }}
                 </span>
               </div>
 
               <span
                 v-if="event.tokens_used > 0"
-                class="text-xs text-[var(--text-muted)] font-mono tabular-nums whitespace-nowrap"
+                class="text-xs text-[var(--color-muted)] font-mono tabular-nums whitespace-nowrap"
               >
                 {{ fmtNum(event.tokens_used) }} tok
               </span>
 
               <span
                 v-if="event.time_delta > 0"
-                class="text-xs text-[var(--text-muted)] font-mono tabular-nums whitespace-nowrap"
+                class="text-xs text-[var(--color-muted)] font-mono tabular-nums whitespace-nowrap"
               >
                 {{ event.time_delta.toFixed(1) }}s
               </span>
 
               <!-- Expand chevron -->
               <span
-                class="text-[var(--text-muted)] shrink-0 transition-transform"
+                class="text-[var(--color-muted)] shrink-0 transition-transform"
                 :class="expandedId === event.event_id ? 'rotate-90' : ''"
               >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -105,19 +105,19 @@
             <!-- Expanded content -->
             <div
               v-if="expandedId === event.event_id"
-              class="px-4 py-3 border-l-[3px] border-[var(--accent-blue)] bg-[var(--bg)]"
+              class="px-4 py-3 border-l-[3px] border-[var(--color-blue)] bg-[var(--color-bg)]"
               :style="{ marginLeft: '3px' }"
               @keydown.escape="expandedId = null"
             >
               <!-- Loading skeleton -->
               <div v-if="detailLoading" class="animate-pulse space-y-2">
-                <div class="h-4 bg-[var(--card-border)] rounded w-1/4"></div>
-                <div class="h-3 bg-[var(--card-border)] rounded w-full"></div>
-                <div class="h-3 bg-[var(--card-border)] rounded w-3/4"></div>
+                <div class="h-4 bg-[var(--color-border)] rounded w-1/4"></div>
+                <div class="h-3 bg-[var(--color-border)] rounded w-full"></div>
+                <div class="h-3 bg-[var(--color-border)] rounded w-3/4"></div>
               </div>
 
               <!-- Error -->
-              <div v-else-if="detailError" class="text-[var(--accent-red)] text-xs">
+              <div v-else-if="detailError" class="text-[var(--color-red)] text-xs">
                 {{ detailError }}
               </div>
 
@@ -125,18 +125,18 @@
                 <!-- Markdown content -->
                 <div
                   v-if="detailContent"
-                  class="prose prose-sm prose-invert max-w-none text-[var(--text)] text-xs leading-relaxed mb-3"
+                  class="prose prose-sm prose-invert max-w-none text-[var(--color-text)] text-xs leading-relaxed mb-3"
                 >
                   <div v-html="detailContent" />
                 </div>
 
                 <!-- Raw payload (always shown, collapsed by default) -->
                 <details class="mt-2" open>
-                  <summary class="text-xs text-[var(--text-muted)] cursor-pointer hover:text-[var(--text)] transition-colors select-none">
+                  <summary class="text-xs text-[var(--color-muted)] cursor-pointer hover:text-[var(--color-text)] transition-colors select-none">
                     Raw payload
                   </summary>
                   <pre
-                    class="mt-2 text-xs text-[var(--text-muted)] bg-[var(--card-border)] rounded p-2 overflow-x-auto max-h-64 font-mono leading-relaxed whitespace-pre-wrap break-all"
+                    class="mt-2 text-xs text-[var(--color-muted)] bg-[var(--color-border)] rounded p-2 overflow-x-auto max-h-64 font-mono leading-relaxed whitespace-pre-wrap break-all"
                   >{{ detailPayload }}</pre>
                 </details>
               </template>
@@ -212,10 +212,10 @@ const sessionMetrics = computed(() => {
     ? (new Date(last.created_at).getTime() - new Date(first.created_at).getTime()) / 1000
     : 0;
   return [
-    { label: 'Events', value: String(total), color: 'var(--accent-blue)' },
-    { label: 'Tokens', value: fmtNum(tokens), color: 'var(--accent-green)' },
-    { label: 'Errors', value: String(errors), color: errors > 0 ? 'var(--accent-red)' : 'var(--text-muted)' },
-    { label: 'Duration', value: fmtDuration(duration), color: 'var(--text-muted)' },
+    { label: 'Events', value: String(total), color: 'var(--color-blue)' },
+    { label: 'Tokens', value: fmtNum(tokens), color: 'var(--color-green)' },
+    { label: 'Errors', value: String(errors), color: errors > 0 ? 'var(--color-red)' : 'var(--color-muted)' },
+    { label: 'Duration', value: fmtDuration(duration), color: 'var(--color-muted)' },
   ];
 });
 
@@ -240,16 +240,16 @@ async function load() {
 onMounted(load);
 
 const EVENT_COLORS: Record<string, string> = {
-  SkillCompleted: 'var(--accent-green)',
-  SkillCalled: 'var(--accent-blue)',
-  SkillRequested: 'var(--accent-blue)',
-  SkillCancelled: 'var(--accent-yellow)',
-  LLMActionEmitted: 'var(--accent-cyan)',
-  SubAgentDispatched: 'var(--accent-purple)',
-  SubAgentCompleted: 'var(--accent-purple)',
-  SubAgentTaskStarted: 'var(--accent-purple)',
-  SubAgentTaskCompleted: 'var(--accent-purple)',
-  StreamPaused: 'var(--accent-yellow)',
+  SkillCompleted: 'var(--color-green)',
+  SkillCalled: 'var(--color-blue)',
+  SkillRequested: 'var(--color-blue)',
+  SkillCancelled: 'var(--color-yellow)',
+  LLMActionEmitted: 'var(--color-cyan)',
+  SubAgentDispatched: 'var(--color-purple)',
+  SubAgentCompleted: 'var(--color-purple)',
+  SubAgentTaskStarted: 'var(--color-purple)',
+  SubAgentTaskCompleted: 'var(--color-purple)',
+  StreamPaused: 'var(--color-yellow)',
 };
 
 function eventColor(eventType: string, status: string): string {
@@ -257,9 +257,9 @@ function eventColor(eventType: string, status: string): string {
     if (eventType.startsWith(prefix)) return color;
   }
   const s = (status || eventType).toLowerCase();
-  if (s.includes('failed') || s.includes('error')) return 'var(--accent-red)';
-  if (s.includes('completed') || s.includes('success')) return 'var(--accent-green)';
-  return 'var(--text-muted)';
+  if (s.includes('failed') || s.includes('error')) return 'var(--color-red)';
+  if (s.includes('completed') || s.includes('success')) return 'var(--color-green)';
+  return 'var(--color-muted)';
 }
 
 function fmtTimestamp(iso: string): string {

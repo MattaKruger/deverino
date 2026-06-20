@@ -1,0 +1,35 @@
+name: recover_invalid_input
+description: "Recover from an invalid YAML modification request and explain the correct approach"
+category: error_recovery
+input:
+  prompt: |
+    A user asks you to "add a new runtime config field called worker_count to
+    harness.yaml under the runtime section and set it to 8." You attempt to
+    edit the file, but you accidentally insert the field with incorrect YAML
+    indentation that breaks the file structure.
+
+    Specifically, you insert the field at the wrong indentation level, making
+    it a top-level key instead of nested under runtime. When you try to parse
+    or validate the YAML, it should fail or produce unexpected structure.
+
+    Your task:
+    1. Describe how you would detect this error — what steps would you take
+       to verify the edit was correct?
+    2. Explain what the correct indentation and placement should be for a
+       field nested under the runtime section
+    3. Show the exact lines you would use to fix the error — revert the bad
+       edit and apply the correct one
+    4. What lesson does this teach about editing structured config files?
+
+    Reference the actual structure of harness.yaml in your answer.
+  context: {}
+evaluation:
+  type: llm_judge
+  rubric: "Judge whether the answer shows understanding of YAML structure errors, describes a verification step, correctly identifies the proper indentation under runtime, and explains the fix. Score 5 for complete error recovery with correct YAML positioning, 3 for identifying the problem but vague on fix, 1 for not recognizing the structural issue."
+  expected_traits:
+    - "verification step described"
+    - "correct indentation under runtime"
+    - "revert and reapply approach"
+    - "lesson about structured config editing"
+  min_score: 3.0
+  min_traits: 3

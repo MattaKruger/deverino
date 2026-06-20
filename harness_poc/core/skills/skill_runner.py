@@ -30,6 +30,8 @@ class SkillMetadata(TypedDict):
     parameters: dict[str, Any]
     auto_invokable: bool
     permissions: dict[str, str]
+    version: str
+    aliases: list[str]
 
 
 class ToolSchema(TypedDict):
@@ -322,6 +324,9 @@ class SkillRunner:
         auto_invokable = bool(frontmatter.get("auto_invokable", False))
         raw_permissions = frontmatter.get("permissions", {})
         permissions: dict[str, str] = raw_permissions if isinstance(raw_permissions, dict) else {}
+        version = str(frontmatter.get("version", ""))
+        raw_aliases = frontmatter.get("aliases", [])
+        aliases: list[str] = list(raw_aliases) if isinstance(raw_aliases, list) else []
         if not isinstance(name, str) or not isinstance(description, str):
             msg = f"Skill {skill_file} must define string name and description"
             raise TypeError(msg)
@@ -349,6 +354,8 @@ class SkillRunner:
                 "parameters": cast("dict[str, Any]", parameters),
                 "auto_invokable": auto_invokable,
                 "permissions": permissions,
+                "version": version,
+                "aliases": aliases,
             },
             "body": body,
             "path": skill_file,

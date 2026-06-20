@@ -6,7 +6,7 @@
     :init-options="{}"
     class="w-full h-64"
   />
-  <div v-else class="flex items-center justify-center h-64 text-[var(--text-muted)] text-sm">
+  <div v-else class="flex items-center justify-center h-64 text-[var(--color-muted)] text-sm">
     No tool calls recorded
   </div>
 </template>
@@ -35,22 +35,22 @@ const chartOption = computed(() => {
     xAxis: {
       type: 'category' as const,
       data: names,
-      axisLabel: { color: 'var(--text-muted)', fontSize: 11, rotate: 30 },
-      axisLine: { lineStyle: { color: 'var(--grid-line)' } },
+      axisLabel: { color: 'var(--color-muted)', fontSize: 11, rotate: 30 },
+      axisLine: { lineStyle: { color: 'var(--color-grid)' } },
     },
     yAxis: {
       type: 'value' as const,
       name: 'calls',
-      nameTextStyle: { color: 'var(--text-muted)' },
-      axisLabel: { color: 'var(--text-muted)' },
-      splitLine: { lineStyle: { color: 'var(--grid-line)' } },
+      nameTextStyle: { color: 'var(--color-muted)' },
+      axisLabel: { color: 'var(--color-muted)' },
+      splitLine: { lineStyle: { color: 'var(--color-grid)' } },
     },
     series: [
       {
         type: 'bar',
         data: counts,
-        itemStyle: { color: 'var(--accent-blue)' },
-        emphasis: { itemStyle: { color: 'var(--accent-cyan)' } },
+        itemStyle: { color: 'var(--color-blue)' },
+        emphasis: { itemStyle: { color: 'var(--color-cyan)' } },
       },
     ],
   };

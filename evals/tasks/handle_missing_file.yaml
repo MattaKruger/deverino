@@ -1,0 +1,26 @@
+name: handle_missing_file
+description: "Handle a request referencing a file that does not exist"
+category: error_recovery
+input:
+  prompt: |
+    Read the file harness_poc/core/tools/tool_guard.py and summarize its
+    contents.
+
+    If the file does not exist, do NOT fabricate content. Instead:
+    1. Report that the file was not found
+    2. Check whether any file with a similar name exists in the
+       harness_poc/core/tools/ directory
+    3. If a similar file exists, read that file instead and summarize it
+    4. If no similar file exists, report the available files in that directory
+       and suggest the most likely candidate the user might have meant
+  context: {}
+evaluation:
+  type: llm_judge
+  rubric: "Judge whether the agent correctly handles the missing file: reports it's missing without fabrication, searches for similar files, reads a close match if found, and provides helpful directory listing. Score 5 for graceful recovery with helpful suggestions, 3 for reporting missing but no search for alternatives, 1 for fabricating content or crashing."
+  expected_traits:
+    - "reports file not found"
+    - "searches for similar files"
+    - "no fabricated content"
+    - "helpful directory listing or suggestion"
+  min_score: 3.0
+  min_traits: 3

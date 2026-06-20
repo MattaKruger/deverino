@@ -7,6 +7,8 @@ services:
       POSTGRES_DB: deverino
     ports:
       - "5432:5432"
+    security_opt:
+      - "label=disable"
     volumes:
       - pgdata:/var/lib/postgresql:Z
     healthcheck:
@@ -23,6 +25,8 @@ services:
       POSTGRES_DB: deverino_test
     ports:
       - "5433:5432"
+    security_opt:
+      - "label=disable"
     volumes:
       - pgdata_test:/var/lib/postgresql:Z
     healthcheck:
@@ -39,6 +43,9 @@ services:
       - "8080:8080"
       # Config server used by `vespa deploy`.
       - "19071:19071"
+    userns_mode: "keep-id:uid=1000,gid=1000"
+    security_opt:
+      - "label=disable"
     volumes:
       - vespadata:/opt/vespa/var:Z
       - ./vespa/document_retrieval:/vespa-app:ro,z

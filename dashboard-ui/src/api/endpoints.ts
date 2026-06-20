@@ -1,17 +1,19 @@
 import { get, type GetOpts } from './client'
 import type {
+  CompilationProgress,
+  ContextMapEntrySummary,
+  ContextMapHealth,
   DashboardSnapshot,
+  ErrorSummary,
   EventDetail,
   SessionActivity,
   SessionEventRow,
-  ToolsPerformance,
+  SkillCompilationSummary,
   SubAgentNode,
   TokenBucket,
   TokenUsage,
-  ContextMapHealth,
-  ContextMapEntrySummary,
+  ToolsPerformance,
   UnifiedEvent,
-  ErrorSummary,
 } from '@/types/dashboard'
 
 export function fetchOverview(opts?: GetOpts): Promise<DashboardSnapshot> {
@@ -60,4 +62,20 @@ export function fetchRecentEvents(limit?: number, opts?: GetOpts): Promise<Unifi
 
 export function fetchErrors(opts?: GetOpts): Promise<ErrorSummary[]> {
   return get<ErrorSummary[]>('/errors', opts)
+}
+
+export function fetchSkills(opts?: GetOpts): Promise<SkillCompilationSummary[]> {
+  return get<SkillCompilationSummary[]>('/skills', opts)
+}
+
+export function fetchCompilationProgress(opts?: GetOpts): Promise<CompilationProgress> {
+  return get<CompilationProgress>('/skills/progress', opts)
+}
+
+export function postCompileSkills(): Promise<{ status: string; detail?: string }> {
+  return fetch('/api/skills/compile', { method: 'POST' }).then(r => r.json())
+}
+
+export function postCompileSkill(name: string): Promise<{ status: string; detail?: string }> {
+  return fetch(`/api/skills/${encodeURIComponent(name)}/compile`, { method: 'POST' }).then(r => r.json())
 }

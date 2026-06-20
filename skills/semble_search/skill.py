@@ -10,11 +10,9 @@ from harness_poc.core.skills import SkillResult
 if TYPE_CHECKING:
     from harness_poc.core.skills import SkillContext
 
-SEARCH_MODES = {"hybrid", "semantic", "bm25"}
 DEFAULT_TOP_K = 5
 MAX_TOP_K = 10
 MAX_OUTPUT_CHARS = 12_000
-DEFAULT_MODE = "hybrid"
 SEMBLE_TIMEOUT_SECONDS = 30
 SEMBLE_PROGRESS_INTERVAL_SECONDS = 10
 APPROX_CHARS_PER_TOKEN = 4
@@ -48,7 +46,6 @@ def _search(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
 
     search_path = _resolve_path(ctx, arguments.get("path"))
     top_k = _parse_top_k(arguments.get("top_k"))
-    mode = _parse_mode(arguments.get("mode"))
     include_text_files = bool(arguments.get("include_text_files", False))
 
     cmd = [
@@ -58,11 +55,10 @@ def _search(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         str(search_path),
         "--top-k",
         str(top_k),
-        "--mode",
-        mode,
     ]
     if include_text_files:
-        cmd.append("--include-text-files")
+        cmd.append("--content")
+        cmd.append("all")
 
     return _run_semble(ctx, cmd, query=query)
 
@@ -93,7 +89,7 @@ def _find_related(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         )
     try:
         line = int(str(line_raw))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return SkillResult(
             status="failed",
             content=f"Invalid line number: {line_raw!r}",
@@ -114,7 +110,8 @@ def _find_related(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         str(top_k),
     ]
     if include_text_files:
-        cmd.append("--include-text-files")
+        cmd.append("--content")
+        cmd.append("all")
 
     return _run_semble(ctx, cmd, query=f"{file_path}:{line}")
 
@@ -246,7 +243,7 @@ def _parse_action(raw: object) -> SemSearchAction:
 def _parse_top_k(raw: object) -> int:
     try:
         val = int(str(raw))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return DEFAULT_TOP_K
     return max(1, min(val, MAX_TOP_K))
 
@@ -287,6 +284,3 @@ def _estimate_tokens(chars: int) -> int:
     return max(1, chars // APPROX_CHARS_PER_TOKEN) if chars else 0
 
 
-def _parse_mode(raw: object) -> str:
-    mode = str(raw or DEFAULT_MODE).strip().lower()
-    return mode if mode in SEARCH_MODES else DEFAULT_MODE

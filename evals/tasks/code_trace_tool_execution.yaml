@@ -1,0 +1,29 @@
+# Eval task: Trace the tool execution call path
+name: code_trace_tool_execution
+description: >
+  Trace the path from a tool being registered via _register() in
+  harness_poc/system_tools/__init__.py through discovery by ToolRunner
+  to execution via execute_tool(), including where guard validation happens.
+category: code_understanding
+input:
+  prompt: >
+    Trace the full call path for tool execution in the Deverino harness.
+    Start from _register() in harness_poc/system_tools/__init__.py,
+    through ToolRunner.discover_tools() and ToolRunner.execute_tool() in
+    harness_poc/core/tools/tool_runner.py, including where GuardPipeline
+    validation runs. Mention key functions and their roles.
+  context:
+    files:
+      - harness_poc/system_tools/__init__.py
+      - harness_poc/core/tools/tool_runner.py
+      - harness_poc/core/tools/guards.py
+evaluation:
+  type: trait_check
+  expected_traits:
+    - _register
+    - discover_tools
+    - execute_tool
+    - GuardPipeline
+    - validate
+  min_score: 2.5
+  min_traits: 3

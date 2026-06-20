@@ -1,0 +1,36 @@
+name: plan_and_execute
+description: "Plan a change to the pipeline system then execute it"
+category: multi_step
+input:
+  prompt: |
+    You are working in the Deverino harness codebase. Your task has two phases:
+
+    PHASE 1 — Plan:
+    The pipelines/search-and-research.yaml file defines a three-node pipeline
+    (search_codebase, search_web, synthesize). Currently the search_web node
+    uses web_search with count=3. Read the file, then write a brief plan
+    (3-5 bullet points) for how you would add a fourth parallel node called
+    search_docs that uses the search_documents skill to search indexed project
+    documents, and make the synthesize node depend on all three search nodes.
+
+    PHASE 2 — Execute:
+    After describing your plan, edit pipelines/search-and-research.yaml to
+    implement your plan. The new node should:
+    - Use type: skill and skill: search_documents
+    - Accept arguments: action: search, query: "{{inputs.topic}}", top_k: 5
+    - Run in parallel with search_codebase and search_web (no depends_on)
+    - Be added to synthesize's depends_on list
+
+    After editing, verify the YAML is valid by reading the file back.
+  context:
+    file: pipelines/search-and-research.yaml
+evaluation:
+  type: llm_judge
+  rubric: "Judge whether the agent produced a reasonable plan AND correctly edited the YAML file. The plan should mention adding a parallel node and updating dependencies. The edit should add a properly formatted search_docs node with correct type, skill, arguments, and update synthesize's depends_on. Score 5 for both phases complete and correct, 3 for correct edit but weak plan, 1 for incorrect YAML or no plan."
+  expected_traits:
+    - "plan mentions parallel execution"
+    - "new node has type: skill"
+    - "skill: search_documents"
+    - "synthesize depends_on includes new node"
+  min_score: 3.0
+  min_traits: 3

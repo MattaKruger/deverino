@@ -1,0 +1,28 @@
+# Eval task: Explain the GuardPipeline class
+name: code_explain_guard_pipeline
+description: >
+  Given the GuardPipeline class in harness_poc/core/tools/guards.py,
+  explain its purpose, how it processes tool arguments, and what it
+  returns to the model when guards fail.
+category: code_understanding
+input:
+  prompt: >
+    Read the file harness_poc/core/tools/guards.py and explain the
+    GuardPipeline class. Describe its purpose, the flow of validate(),
+    how it collects errors from multiple guards, and what format those
+    errors take when returned to the model.
+    Keep your explanation to 3-5 sentences. When done, call evaluate_goal
+    with is_complete=true and put your explanation in final_answer.
+  context:
+    file: harness_poc/core/tools/guards.py
+    class: GuardPipeline
+evaluation:
+  type: trait_check
+  expected_traits:
+    - GuardPipeline
+    - validate
+    - GuardResult
+    - guard
+    - error
+  min_score: 2.5
+  min_traits: 3

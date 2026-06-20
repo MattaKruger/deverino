@@ -1,0 +1,29 @@
+name: explain_tool_runner
+description: "Explain how ToolRunner.execute_tool() handles tool dispatch and what happens to unknown tools"
+category: code_understanding
+input:
+  prompt: |
+    Read the file harness_poc/core/tools/tool_runner.py and explain how the
+    execute_tool() method works. Specifically:
+
+    1. What are the two classes of tools it dispatches to, and how does it decide
+       which path to take?
+    2. What happens when the requested tool name is not found in the registry?
+    3. What role do input guards play before execution, and what is returned if
+       they reject the call?
+    4. How does cancellation work — where does the token come from and what
+       happens to it after execution?
+
+    Be thorough but concise.
+  context:
+    file: harness_poc/core/tools/tool_runner.py
+evaluation:
+  type: llm_judge
+  rubric: "Judge whether the answer correctly identifies built-in vs skill-backed tool dispatch paths, error handling for unknown tools, input guard validation, and cancellation token lifecycle. Score 5 for complete and accurate coverage, 3 for mostly correct with minor omissions, 1 for major misunderstandings."
+  expected_traits:
+    - "built-in tools vs skill-backed tools"
+    - "input guards validate before execution"
+    - "cancellation token lifecycle"
+    - "unknown tool returns error JSON"
+  min_score: 3.0
+  min_traits: 3

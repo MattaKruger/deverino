@@ -12,7 +12,14 @@ if TYPE_CHECKING:
     from harness_poc.core.events.events import BaseEvent
 
 from harness_poc.core.events.events import EVENT_REGISTRY
-from harness_poc.core.storage import DbStateEvent
+
+
+def _DbStateEvent():
+    """Lazy import to break circular dependency."""
+    from harness_poc.core.storage import DbStateEvent  # noqa: PLC0415
+
+    return DbStateEvent
+
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +38,7 @@ class EventStore:
             "payload": event.model_dump(mode="json"),
         }
         with Session(self._engine) as session:
-            row = DbStateEvent(
+            row = _DbStateEvent()(
                 scope="session",
                 scope_id=event.session_id,
                 event_type=event.event_type,
@@ -54,14 +61,11 @@ class EventStore:
     ) -> list[BaseEvent]:
         type_names = [t.__name__ for t in event_types] if event_types is not None else None
         with Session(self._engine) as session:
-            stmt = (
-                select(DbStateEvent)
-                .where(DbStateEvent.scope == "session")
-                .where(DbStateEvent.scope_id == session_id)
-            )
+            DbSE = _DbStateEvent()
+            stmt = select(DbSE).where(DbSE.scope == "session").where(DbSE.scope_id == session_id)
             if type_names:
-                stmt = stmt.where(col(DbStateEvent.event_type).in_(type_names))
-            stmt = stmt.order_by(col(DbStateEvent.id).desc()).limit(limit)
+                stmt = stmt.where(col(DbSE.event_type).in_(type_names))
+            stmt = stmt.order_by(col(DbSE.id).desc()).limit(limit)
             rows = session.exec(stmt).all()
 
         events: list[BaseEvent] = []
@@ -76,7 +80,7 @@ class EventStore:
                 evt = event_cls.model_validate(outer["payload"])
                 evt.id = row.id or 0
                 events.append(evt)
-            except (ValueError, KeyError):
+            except ValueError, KeyError:
                 logger.warning("Skipping malformed event row", exc_info=True)
 
         events.reverse()

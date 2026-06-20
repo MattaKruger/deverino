@@ -27,11 +27,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path  # noqa: TC003
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from harness_poc.core.skills import substitute_template_vars
+
+if TYPE_CHECKING:
+    from harness_poc.core.skills.skill_runner import SkillRunner
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +51,9 @@ _scratch_base: Path | None = None
 _session_id: str = ""
 """Current session ID for ``${SESSION_ID}`` template substitution."""
 
+_skill_runner: SkillRunner | None = None
+"""SkillRunner instance for bundle compilation lookups."""
+
 
 def init_knowledge_context(
     knowledge_dirs: list[Path],
@@ -55,16 +61,18 @@ def init_knowledge_context(
     project_root: Path | None = None,
     scratch_base: Path | None = None,
     session_id: str = "",
+    skill_runner: SkillRunner | None = None,
 ) -> None:
     """Set the module-level context for knowledge skill discovery.
 
     Called once at startup by ``app_factory.py``.
     """
-    global _knowledge_dirs, _project_root, _scratch_base, _session_id
+    global _knowledge_dirs, _project_root, _scratch_base, _session_id, _skill_runner
     _knowledge_dirs = knowledge_dirs
     _project_root = project_root
     _scratch_base = scratch_base
     _session_id = session_id
+    _skill_runner = skill_runner
 
 
 def update_session_id(session_id: str) -> None:
@@ -90,15 +98,17 @@ def skills_list(category: str = "") -> dict[str, Any]:  # noqa: ARG001
     }
 
 
-def skill_view(name: str, file_path: str = "") -> dict[str, Any]:
-    """Load the full content of a knowledge skill.
+def skill_view(name: str, file_path: str = "", level: str = "") -> dict[str, Any]:
+    """Load a knowledge skill at the requested disclosure level.
 
     Args:
         name: Skill name (matches the ``name`` field in SKILL.md frontmatter).
         file_path: Optional path to a supporting file (e.g. ``references/api.md``).
+        level: Disclosure level — ``"summary"`` or ``"full"``.  Default:
+            ``"summary"`` when a compiled bundle exists, ``"full"``
+            (raw markdown) when no bundle is available.
 
-    Returns a dict with ``{success, name, content, ...}``.
-
+    Returns a dict with ``{success, name, level, content, ...}``.
     """
     if not name.strip():
         return {"success": False, "error": "Skill name required."}
@@ -140,27 +150,35 @@ def skill_view(name: str, file_path: str = "") -> dict[str, Any]:
         session_id=_session_id,
     )
 
-    # List supporting files for the hint
-    supporting: list[str] = []
-    if skill_dir:
-        for subdir in ("references", "templates", "scripts", "assets"):
-            sd = skill_dir / subdir
-            if sd.exists():
-                for f in sorted(sd.rglob("*")):
-                    if f.is_file() and not f.is_symlink():
-                        supporting.append(str(f.relative_to(skill_dir)))
+    # ── Bundle lookup ──
+    # Try to get a compiled bundle.  If available, return content at the
+    # requested level.  If not available, fall back to raw markdown.
+    requested_level = level.strip().lower() if level.strip() else ""
+    bundle = _get_bundle_for_name(name.strip())
 
-    result: dict[str, Any] = {
-        "success": True,
-        "name": name,
-        "content": content,
-        "skill_dir": str(skill_dir) if skill_dir else "",
-    }
-    if supporting:
-        result["linked_files"] = {"supporting": supporting}
-        result["hint"] = "Load supporting files with skill_view(name, file_path=...)."
+    if bundle is not None and bundle.compilation_status != "rejected":
+        # Bundle exists — determine effective level
+        effective_level = requested_level or "summary"
+        if effective_level == "summary":
+            return _build_summary_result(name.strip(), bundle, skill_dir, content)
+        if effective_level == "full":
+            return _build_full_result(name.strip(), bundle, skill_dir, content)
+        return {
+            "success": False,
+            "error": f"Unknown level: '{level}'. Use 'summary' or 'full'.",
+        }
 
-    return result
+    # No bundle — return raw markdown (existing behavior)
+    if requested_level == "summary":
+        return {
+            "success": True,
+            "name": name.strip(),
+            "level": "full",  # fallback: we serve the full raw markdown
+            "content": content,
+            "hint": "No compiled bundle available; serving raw markdown.",
+        }
+
+    return _build_raw_result(name.strip(), skill_dir, content)
 
 
 def skill_manage(
@@ -260,6 +278,183 @@ def _strip_frontmatter(text: str) -> str:
     if end == -1:
         return text
     return text[end + 4 :].strip()
+
+
+# ── Bundle-aware helpers ───────────────────────────────────────────────
+
+
+def _get_bundle_for_name(name: str) -> object | None:
+    """Return a compiled SkillBundle for the named skill, or None."""
+    if _skill_runner is None:
+        return None
+    try:
+        from harness_poc.core.skills.skill_compiler import bundle_for_skill
+
+        return bundle_for_skill(name, skill_runner=_skill_runner)
+    except Exception:
+        logger.debug("Bundle lookup failed for %s", name, exc_info=True)
+        return None
+
+
+def _build_summary_result(
+    name: str,
+    bundle: object,
+    skill_dir: Path | None,  # noqa: ARG001
+    raw_content: str,  # noqa: ARG001
+) -> dict[str, Any]:
+    """Build the Level 2 (Summary) response from a compiled bundle."""
+    # We access bundle attributes dynamically to avoid a hard import
+    # of SkillBundle at module load time.
+    b_contracts: dict = getattr(bundle, "contracts", {})
+    b_templates: dict = getattr(bundle, "templates", {})
+    b_version: str = getattr(bundle, "version", "")
+    b_status: str = getattr(bundle, "compilation_status", "rejected")
+    b_errors: list = getattr(bundle, "compilation_errors", [])
+
+    contract_summaries: list[dict[str, Any]] = []
+    for contract in b_contracts.values():
+        inputs = {k: v.get("type", "any") for k, v in contract.inputs.items()}
+        outputs = {k: v.get("type", "any") for k, v in contract.outputs.items()}
+        contract_summaries.append(
+            {
+                "name": contract.name,
+                "inputs": inputs,
+                "outputs": outputs,
+                "preconditions": contract.preconditions,
+                "error_conditions": [
+                    {"condition": ec.condition, "recovery_hint": ec.recovery_hint}
+                    for ec in contract.error_conditions
+                ],
+            }
+        )
+
+    result: dict[str, Any] = {
+        "success": True,
+        "name": name,
+        "level": "summary",
+        "version": b_version,
+        "compilation_status": b_status,
+        "contracts": contract_summaries,
+        "templates": list(b_templates.keys()),
+    }
+    if b_status != "full":
+        result["hint"] = (
+            "Compilation is partial — use level='full' to see raw markdown "
+            "for contracts that failed verification."
+        )
+        result["compilation_errors"] = b_errors
+
+    return result
+
+
+def _build_full_result(
+    name: str,
+    bundle: object,
+    skill_dir: Path | None,  # noqa: ARG001
+    raw_content: str,  # noqa: ARG001
+) -> dict[str, Any]:
+    """Build the Level 3 (Full) response from a compiled bundle."""
+    b_contracts: dict = getattr(bundle, "contracts", {})
+    b_templates: dict = getattr(bundle, "templates", {})
+    b_invoke: list = getattr(bundle, "invoke_patterns", [])
+    b_version: str = getattr(bundle, "version", "")
+    b_status: str = getattr(bundle, "compilation_status", "rejected")
+    b_skeleton: str = getattr(bundle, "parent_skeleton", "")
+    b_raw: str = getattr(bundle, "raw_body", "")
+    b_errors: list = getattr(bundle, "compilation_errors", [])
+
+    contracts_full: list[dict[str, Any]] = []
+    for contract in b_contracts.values():
+        contracts_full.append(
+            {
+                "name": contract.name,
+                "description": contract.description,
+                "inputs": {k: dict(v) for k, v in contract.inputs.items()},
+                "outputs": {k: dict(v) for k, v in contract.outputs.items()},
+                "side_effects": contract.side_effects,
+                "preconditions": contract.preconditions,
+                "postconditions": contract.postconditions,
+                "error_conditions": [
+                    {
+                        "condition": ec.condition,
+                        "output_shape": ec.output_shape,
+                        "recovery_hint": ec.recovery_hint,
+                    }
+                    for ec in contract.error_conditions
+                ],
+                "cancellation_behavior": contract.cancellation_behavior,
+            }
+        )
+
+    templates_full: list[dict[str, Any]] = []
+    for tname, tmpl in b_templates.items():
+        templates_full.append(
+            {
+                "name": tname,
+                "kind": tmpl.kind,
+                "template": tmpl.template,
+                "argument_map": tmpl.argument_map,
+            }
+        )
+
+    invoke_patterns: list[dict[str, Any]] = [
+        {
+            "contract_name": ip.contract_name,
+            "arguments": ip.arguments,
+            "rendered_call": ip.rendered_call,
+        }
+        for ip in b_invoke
+    ]
+
+    result: dict[str, Any] = {
+        "success": True,
+        "name": name,
+        "level": "full",
+        "version": b_version,
+        "compilation_status": b_status,
+        "content": b_skeleton,
+        "contracts": contracts_full,
+        "templates": templates_full,
+        "invoke_patterns": invoke_patterns,
+        "raw_body": b_raw,
+    }
+    if b_status != "full":
+        result["compilation_errors"] = b_errors
+        result["hint"] = (
+            "Compilation is partial or rejected.  'content' and 'raw_body' "
+            "contain the original markdown for contracts that failed verification."
+        )
+
+    return result
+
+
+def _build_raw_result(
+    name: str,
+    skill_dir: Path | None,
+    content: str,
+) -> dict[str, Any]:
+    """Build the legacy raw-markdown response (no bundle available)."""
+    # List supporting files for the hint
+    supporting: list[str] = []
+    if skill_dir:
+        for subdir in ("references", "templates", "scripts", "assets"):
+            sd = skill_dir / subdir
+            if sd.exists():
+                for f in sorted(sd.rglob("*")):
+                    if f.is_file() and not f.is_symlink():
+                        supporting.append(str(f.relative_to(skill_dir)))
+
+    result: dict[str, Any] = {
+        "success": True,
+        "name": name,
+        "level": "full",
+        "content": content,
+    }
+    if supporting:
+        result["linked_files"] = {"supporting": supporting}
+        result["hint"] = "Load supporting files with skill_view(name, file_path=...)."
+
+    return result
 
 
 def _create_skill(name: str, content: str) -> dict[str, Any]:
@@ -364,10 +559,11 @@ _register(
 _register(
     name="skill_view",
     description=(
-        "Load the full content of a knowledge skill by name. Skills are "
-        "procedural knowledge documents (markdown) that tell you how to "
-        "handle specific task types. Always load a skill before starting "
-        "the task it describes."
+        "Load a knowledge skill at the requested disclosure level. "
+        "Use level='summary' for contract signatures (fast, low-token). "
+        "Use level='full' for complete contracts, templates, and examples. "
+        "Default: 'summary' when a compiled bundle exists, 'full' raw "
+        "markdown when no bundle is available."
     ),
     parameters={
         "type": "object",
@@ -382,6 +578,14 @@ _register(
                     "Optional path to a supporting file within the skill "
                     "(e.g. 'references/api.md', 'templates/config.yaml'). "
                     "Omit to load the main SKILL.md content."
+                ),
+            },
+            "level": {
+                "type": "string",
+                "description": (
+                    "Disclosure level: 'summary' or 'full'. "
+                    "Default: 'summary' when a compiled skill bundle exists, "
+                    "'full' when only raw markdown is available."
                 ),
             },
         },

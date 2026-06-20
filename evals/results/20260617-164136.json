@@ -1,0 +1,216 @@
+{
+  "run_id": "20260617-164136",
+  "timestamp": "2026-06-17T16:41:36.311840+00:00",
+  "tasks_total": 16,
+  "tasks_passed": 0,
+  "tasks_failed": 16,
+  "average_score": 0.69,
+  "results": [
+    {
+      "task": "code_explain_config_model",
+      "category": "code_understanding",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ mentions HarnessPaths sub-config; ✗ mentions RuntimeConfig sub-config; ✗ mentions LLMConfig sub-config; ✗ mentions harness.yaml as the config source; ✗ describes project_root field",
+      "trait_results": {
+        "mentions HarnessPaths sub-config": false,
+        "mentions RuntimeConfig sub-config": false,
+        "mentions LLMConfig sub-config": false,
+        "mentions harness.yaml as the config source": false,
+        "describes project_root field": false
+      },
+      "elapsed_seconds": 0.48,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "code_explain_guard_pipeline",
+      "category": "code_understanding",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ runs a sequence of guards against tool arguments; ✗ collects all failures instead of stopping at the first; ✗ returns GuardResult with ok and errors fields; ✗ errors are model-actionable strings; ✗ validate takes tool_name and arguments",
+      "trait_results": {
+        "runs a sequence of guards against tool arguments": false,
+        "collects all failures instead of stopping at the first": false,
+        "returns GuardResult with ok and errors fields": false,
+        "errors are model-actionable strings": false,
+        "validate takes tool_name and arguments": false
+      },
+      "elapsed_seconds": 0.4,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "code_trace_tool_execution",
+      "category": "code_understanding",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ mentions _register function; ✗ mentions ToolRunner.discover_tools; ✗ mentions ToolRunner.execute_tool; ✗ mentions GuardPipeline.validate; ✗ describes guard validation before tool execution",
+      "trait_results": {
+        "mentions _register function": false,
+        "mentions ToolRunner.discover_tools": false,
+        "mentions ToolRunner.execute_tool": false,
+        "mentions GuardPipeline.validate": false,
+        "describes guard validation before tool execution": false
+      },
+      "elapsed_seconds": 0.39,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "delegate_and_synthesize",
+      "category": "skill_delegation",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Heuristic score 1.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.23,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "error_invalid_path",
+      "category": "error_recovery",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Output contains error markers or is too short",
+      "trait_results": {},
+      "elapsed_seconds": 0.3,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "explain_tool_runner",
+      "category": "code_understanding",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Heuristic score 1.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.33,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "gather_context",
+      "category": "multi_step",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Heuristic score 1.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.32,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "handle_missing_file",
+      "category": "error_recovery",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Heuristic score 1.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.42,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "identify_bug",
+      "category": "code_understanding",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Heuristic score 1.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.43,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "multi_step_plan_and_explain",
+      "category": "multi_step",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ explains lazy schema resolution or schema_provider; ✗ mentions required field checking; ✗ mentions type checking for string/integer/boolean/array/object; ✗ mentions enum validation; ✗ error messages are model-actionable or formatted for LLM",
+      "trait_results": {
+        "explains lazy schema resolution or schema_provider": false,
+        "mentions required field checking": false,
+        "mentions type checking for string/integer/boolean/array/object": false,
+        "mentions enum validation": false,
+        "error messages are model-actionable or formatted for LLM": false
+      },
+      "elapsed_seconds": 0.45,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "plan_and_execute",
+      "category": "multi_step",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Heuristic score 1.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.66,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "read_config",
+      "category": "file_operations",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Heuristic score 1.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.33,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "recover_invalid_input",
+      "category": "error_recovery",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Heuristic score 1.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.55,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "search_pattern",
+      "category": "file_operations",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Heuristic score 1.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.47,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "skill_delegation_research",
+      "category": "skill_delegation",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ mentions _register function arguments; ✗ mentions registry storage or get_registry; ✗ mentions discover_tools returning tools to LLM; ✗ mentions model_description vs description; ✗ covers the registration flow end-to-end",
+      "trait_results": {
+        "mentions _register function arguments": false,
+        "mentions registry storage or get_registry": false,
+        "mentions discover_tools returning tools to LLM": false,
+        "mentions model_description vs description": false,
+        "covers the registration flow end-to-end": false
+      },
+      "elapsed_seconds": 0.4,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    },
+    {
+      "task": "trace_call_path",
+      "category": "code_understanding",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Heuristic score 1.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.33,
+      "error": null,
+      "output_preview": "Traceback (most recent call last):\n  File \"/home/matthijs/Documents/deverino/harness_poc/cli.py\", line 1740, in run_prompt\n    runner = app_state.goal_runner\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AppState' object has no attribute 'goal_runner'. Did you mean: 'tool_runner'?\n"
+    }
+  ]
+}

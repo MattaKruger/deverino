@@ -123,6 +123,10 @@ v2_app = typer.Typer(
     help="V2 engine operations — probe, gate, workflow.",
     rich_markup_mode="rich",
 )
+eval_app = typer.Typer(
+    help="Run evaluation benchmarks and measure agent performance.",
+    rich_markup_mode="rich",
+)
 
 
 @app.callback(invoke_without_command=True)
@@ -514,23 +518,46 @@ def goal(
             help="Max cumulative input+output tokens before budget exhaustion.",
         ),
     ] = None,
+    refine: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option(
+            "--refine",
+            help="Enable Reflexion: evaluate output, critique, and re-run for improvement.",
+        ),
+    ] = False,
 ) -> None:
-    """Run an autonomous event-sourced goal execution loop."""
+    """Run an autonomous event-sourced goal execution loop.
+
+    When --refine is set, uses the GoalRunner ReAct loop with Reflexion
+    (evaluate -> critique -> replan -> rerun) instead of the event-sourced
+    runtime. The agent self-critiques and improves on subsequent attempts.
+    """
+    import os
+
+    # Skip auto-index on startup — the agent indexes documents on demand
+    # during the ReAct loop, avoiding double-indexing latency.
+    os.environ.setdefault("HARNESS_SKIP_AUTO_INDEX", "1")
+
     app_state = _new_app_state()
     try:
-        from harness_poc.app_factory import bootstrap_document_index
-
-        bootstrap_document_index(app_state.config, app_state.database)
-
-        result = asyncio.run(
-            _run_event_sourced_goal(
+        if refine:
+            result = _run_refined_goal(
                 objective=objective,
                 app_state=app_state,
                 max_iterations=max_iterations,
                 max_seconds=max_seconds,
                 max_tokens=max_tokens,
             )
-        )
+        else:
+            result = asyncio.run(
+                _run_event_sourced_goal(
+                    objective=objective,
+                    app_state=app_state,
+                    max_iterations=max_iterations,
+                    max_seconds=max_seconds,
+                    max_tokens=max_tokens,
+                )
+            )
     except Exception as exc:
         logger.exception(
             "CLI goal command failed",
@@ -584,6 +611,7 @@ async def _run_event_sourced_goal(
                 app_state.database,
                 app_state.config,
                 app_state.skill_runner,
+                runtime=app_state.runtime.pydantic_runtime,
             )
         ),
         asyncio.create_task(
@@ -626,6 +654,51 @@ async def _run_event_sourced_goal(
         total_tokens=total_tokens,
         events=[_event_log_entry(event) for event in recent_events],
     )
+
+
+def _run_refined_goal(
+    *,
+    objective: str,
+    app_state: AppState,
+    max_iterations: int,
+    max_seconds: float | None,
+    max_tokens: int | None,
+) -> GoalRunResult:
+    """Run a goal through GoalRunner with Reflexion enabled.
+
+    Uses the GoalRunner ReAct loop (not the event-sourced path) so that
+    refine=True triggers the evaluate -> critique -> replan -> rerun cycle.
+    """
+    from harness_poc.core.runtime import GoalRunner
+
+    runner = GoalRunner(
+        max_iterations=max_iterations,
+        max_seconds=max_seconds,
+        max_tokens=max_tokens,
+        refine=True,
+        refine_threshold=3.0,
+    )
+
+    # Collect text for CLI display — print all progress so the user
+    # sees every iteration, tool call, reflexion critique, etc.
+    def on_text(text: str) -> None:
+        print(text, end="", flush=True)
+
+    def on_tool(text: str) -> None:
+        print(f"\n  {text}", flush=True)
+
+    result = runner.run(
+        goal=objective,
+        app_state=app_state,
+        on_text=on_text,
+        on_tool_event=on_tool,
+    )
+
+    # If the runner produced reflexion improvements, surface them
+    if result.status == "completed" and runner.refine:
+        print(f"\n[reflexion] Final result: {result.status}")
+
+    return result
 
 
 @app.command("events")
@@ -1131,9 +1204,10 @@ app.add_typer(tool_app, name="tool")
 app.add_typer(documents_app, name="documents")
 app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(dashboard_app, name="dashboard")
+app.add_typer(v2_app, name="v2")
+app.add_typer(eval_app, name="eval")
 app.add_typer(acdl_app, name="acdl")
 app.add_typer(cartographer_app, name="cartographer")
-app.add_typer(v2_app, name="v2")
 
 
 # ---------------------------------------------------------------------------
@@ -1644,3 +1718,110 @@ async def _run_v2_react_mode(  # noqa: PLR0913
         print_text(output)
     else:
         print_text("ReAct loop completed (no text output).")
+
+
+# ---------------------------------------------------------------------------
+# Eval commands
+# ---------------------------------------------------------------------------
+
+
+@eval_app.command("run")
+def eval_run(
+    task: Annotated[
+        str | None,
+        typer.Option("--task", "-t", help="Run a single task by name."),
+    ] = None,
+    category: Annotated[
+        str | None,
+        typer.Option(
+            "--category",
+            "-c",
+            help="Filter tasks by category (code_understanding, file_operations, etc.)",
+        ),
+    ] = None,
+    live: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option("--live", help="Run through the live harness (requires LLM provider)."),
+    ] = False,
+    tasks_dir: Annotated[
+        str,
+        typer.Option("--tasks-dir", help="Directory containing task YAML files."),
+    ] = "evals/tasks",
+    results_dir: Annotated[
+        str,
+        typer.Option("--results-dir", help="Directory for writing result reports."),
+    ] = "evals/results",
+) -> None:
+    """Run evaluation tasks and produce a scored report.
+
+    Examples:
+        uv run harness-poc eval run                 # run all tasks
+        uv run harness-poc eval run --task code_explain  # single task
+        uv run harness-poc eval run --category file_operations
+        uv run harness-poc eval run --live           # test with real agent
+    """
+    from harness_poc.core.eval.runner import create_eval_runner
+
+    if live:
+        run_fn = _make_live_eval_runner()
+    else:
+        run_fn = None
+
+    runner = create_eval_runner(
+        tasks_dir=tasks_dir,
+        results_dir=results_dir,
+        run_fn=run_fn,
+    )
+
+    if task:
+        result = runner.run_one(task)
+        console.print_json(data=result)
+        raise typer.Exit(code=0 if result.get("passed", False) else 1)
+
+    report = runner.run_all(category=category)
+
+    console.print_json(data=report.to_dict())
+
+    if report.tasks_total == 0:
+        print_error("No eval tasks found.")
+        raise typer.Exit(code=1)
+
+    if report.tasks_failed > 0:
+        print_error(
+            f"{report.tasks_failed}/{report.tasks_total} tasks failed "
+            f"(avg score: {report.average_score})."
+        )
+        raise typer.Exit(code=1)
+
+    print_text(
+        f"All {report.tasks_passed}/{report.tasks_total} tasks passed "
+        f"(avg score: {report.average_score})."
+    )
+
+
+def _make_live_eval_runner() -> Callable[[str, dict], str]:
+    """Create a runner function that executes through the real harness.
+
+    Uses chat mode (PydanticAgentRuntime.run_text) instead of GoalRunner's
+    ReAct loop. Chat mode is single-turn with transparent tool access —
+    the agent makes one LLM call (which may include tool calls) and returns.
+    No iteration budget, no goal evaluation, no stuck detection.
+
+    Build app_state once outside the closure so model loading, document
+    indexing, and DB connection happen a single time across all tasks.
+    """
+    from harness_poc.app_factory import build_app_state
+
+    app_state = build_app_state()
+
+    def run_prompt(prompt: str, context: dict) -> str:  # noqa: ARG001
+        try:
+            # Empty history: each eval task is independent.
+            result = app_state.pydantic_runtime.run_text(prompt, message_history=[])
+            return result.content or "(no output)"
+        except Exception:
+            import traceback
+
+            return traceback.format_exc()
+
+    return run_prompt

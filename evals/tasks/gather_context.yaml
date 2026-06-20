@@ -1,0 +1,41 @@
+name: gather_context
+description: "Gather context from multiple files then answer a cross-cutting question"
+category: multi_step
+input:
+  prompt: |
+    Answer this question about the Deverino harness by gathering context from
+    multiple source files:
+
+    "How does the system ensure that a long-running tool call (like
+    container_exec or execute_python) can be cancelled, and what are the
+    distinct cancellation mechanisms used at different layers?"
+
+    To answer this, you must read and synthesize information from:
+
+    1. harness_poc/core/tools/tool_runner.py — look for cancellation token
+       handling, _CANCELLABLE_TOOL_NAMES, _CANCELLATION_POLL_S, and the
+       _execute_with_token function
+    2. harness_poc/app_factory.py — look for how cancellable tools are
+       identified in the TUI (the _TUI_BLOCKED_SKILLS set and its purpose)
+    3. harness_poc/system_tools/container_exec.py or execute_python.py —
+       look for how individual tools accept and respond to cancellation
+
+    Then synthesize a clear answer that covers:
+    - Which tools are explicitly marked as cancellable
+    - How the cancellation token is created and passed down
+    - How a running tool polls for cancellation
+    - How the TUI layer treats cancellable tools differently
+  context:
+    files:
+      - harness_poc/core/tools/tool_runner.py
+      - harness_poc/app_factory.py
+evaluation:
+  type: llm_judge
+  rubric: "Judge whether the answer synthesizes information from all three required sources, correctly identifies CANCELLABLE_TOOL_NAMES and _CANCELLATION_POLL_S, explains the token flow from execute_tool through _execute_with_token, and notes the TUI blocking distinction. Score 5 for comprehensive synthesis across all sources, 3 for covering most but missing one source, 1 for superficial or single-source answer."
+  expected_traits:
+    - "CANCELLABLE_TOOL_NAMES"
+    - "cancellation token flow"
+    - "poll interval mechanism"
+    - "TUI blocked skills distinction"
+  min_score: 3.0
+  min_traits: 3

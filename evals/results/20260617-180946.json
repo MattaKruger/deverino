@@ -1,0 +1,216 @@
+{
+  "run_id": "20260617-180946",
+  "timestamp": "2026-06-17T18:09:46.385993+00:00",
+  "tasks_total": 16,
+  "tasks_passed": 16,
+  "tasks_failed": 0,
+  "average_score": 3.94,
+  "results": [
+    {
+      "task": "code_explain_config_model",
+      "category": "code_understanding",
+      "score": 5.0,
+      "passed": true,
+      "explanation": "Trait check: 5/5 traits matched (need ≥3). ✓ HarnessPaths; ✓ RuntimeConfig; ✓ LLMConfig; ✓ harness.yaml; ✓ project_root",
+      "trait_results": {
+        "HarnessPaths": true,
+        "RuntimeConfig": true,
+        "LLMConfig": true,
+        "harness.yaml": true,
+        "project_root": true
+      },
+      "elapsed_seconds": 16.84,
+      "error": null,
+      "output_preview": "# HarnessConfig — Configuration Architecture\n\n`HarnessConfig` is the single frozen dataclass that holds all configuration for the Deverino harness. It is loaded once at startup via `HarnessConfig.load()` and is immutable for the lifetime of the process.\n\n## Top-Level Fields on HarnessConfig\n\n| Field | Type | Description |\n|---|---|---|\n| `project_root` | `Path` | Parent directory of the discovered `harness.yaml` |\n| `config_path` | `Path` | The resolved path to `harness.yaml` itself |\n| `paths` "
+    },
+    {
+      "task": "code_explain_guard_pipeline",
+      "category": "code_understanding",
+      "score": 4.0,
+      "passed": true,
+      "explanation": "Trait check: 4/5 traits matched (need ≥3). ✓ GuardPipeline; ✗ validate; ✓ GuardResult; ✓ guard; ✓ error",
+      "trait_results": {
+        "GuardPipeline": true,
+        "validate": false,
+        "GuardResult": true,
+        "guard": true,
+        "error": true
+      },
+      "elapsed_seconds": 10.58,
+      "error": null,
+      "output_preview": "The file `harness_poc/core/tools/guards.py` does **not** contain a class named `GuardPipeline`. What it does contain is a guard pipeline *mechanism*: individual guard classes (`PathGuard`, `SizeGuard`, `TypeGuard`) implementing the `ToolGuard` protocol, and a module-level docstring explaining that `ToolRunner.execute_tool()` runs registered guards in sequence before any tool invocation.\n\nThe \"pipeline\" flow works as follows: `ToolRunner.execute_tool()` iterates through its registered guards, eac"
+    },
+    {
+      "task": "code_trace_tool_execution",
+      "category": "code_understanding",
+      "score": 4.0,
+      "passed": true,
+      "explanation": "Trait check: 4/5 traits matched (need ≥3). ✗ _register; ✓ discover_tools; ✓ execute_tool; ✓ GuardPipeline; ✓ validate",
+      "trait_results": {
+        "_register": false,
+        "discover_tools": true,
+        "execute_tool": true,
+        "GuardPipeline": true,
+        "validate": true
+      },
+      "elapsed_seconds": 29.2,
+      "error": null,
+      "output_preview": "## Tool Execution Call Path in the Deverino Harness\n\nHere is the full trace from registration through execution, with the guard pipeline's position noted.\n\n---\n\n### Phase 1 — Registration (`harness_poc/system_tools/__init__.py`)\n\nEach tool module (e.g. `file_tools.py`) calls `register()` at import time:\n\n```\nfile_tools.py  ──imports──▶  register(name, description, parameters, handler, ...)\n```\n\n`register()` stores the tool in the module-level `_registry` dict keyed by name:\n\n```python\n_registry["
+    },
+    {
+      "task": "delegate_and_synthesize",
+      "category": "skill_delegation",
+      "score": 3.0,
+      "passed": true,
+      "explanation": "Heuristic score 3.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 16.06,
+      "error": null,
+      "output_preview": "I'll take the fallback path since I cannot actually spawn sub-agents in this context. Here's what I would do, followed by the synthesized findings.\n\n---\n\n## If delegation were available\n\nI would first load the `developer-pedagogy` skill (required by §5.1), then call `delegate_task` with:\n\n- **persona**: The content of `personas/code_reviewer.md`\n- **objective**: The exact assignment quoted above\n- **expected output**: A structured code review with line-numbered findings\n\nThe sub-agent would be a"
+    },
+    {
+      "task": "error_invalid_path",
+      "category": "error_recovery",
+      "score": 5.0,
+      "passed": true,
+      "explanation": "Output appears valid",
+      "trait_results": {},
+      "elapsed_seconds": 8.62,
+      "error": null,
+      "output_preview": "That call was rejected by the harness's input guard — it detected path traversal and blocked the operation. Reading system files outside the project workspace (like `/etc/passwd`) is not allowed.\n\nThe `read_file` tool is scoped to the project directory, and relative paths that backtrack beyond it are explicitly guarded against. If you need to view a file within the project, I can help with an absolute path or a relative path that stays inside the workspace."
+    },
+    {
+      "task": "explain_tool_runner",
+      "category": "code_understanding",
+      "score": 3.0,
+      "passed": true,
+      "explanation": "Heuristic score 3.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 10.54,
+      "error": null,
+      "output_preview": "## How `execute_tool()` Works\n\n### 1. Two Classes of Tools and Dispatch Decision\n\nThe method dispatches to **built-in tools** and **skill-backed tools**. The decision happens at line where it checks `info.get(\"_skill_backed\")`:\n\n- **Skill-backed tools** — SKILL.md files in `project_skills/` with `type: tool` in their frontmatter. They are discovered at import time via `_discover_tool_skills()` and registered in the same registry as built-in tools, but with `_skill_backed=True`. When this flag is"
+    },
+    {
+      "task": "gather_context",
+      "category": "multi_step",
+      "score": 3.0,
+      "passed": true,
+      "explanation": "Heuristic score 3.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 26.78,
+      "error": null,
+      "output_preview": "## Cancellation Architecture in the Deverino Harness\n\nThe system implements **two distinct concerns** for long-running tools: runtime cancellation (how a running tool gets interrupted) and TUI-level guarding (when the tool is even offered to the agent). Here's how each layer works.\n\n---\n\n### 1. Which tools are explicitly marked as cancellable\n\nIn `harness_poc/core/tools/tool_runner.py`, line ~56:\n\n```python\n_CANCELLABLE_TOOL_NAMES = frozenset({\"container_exec\", \"execute_python\"})\n```\n\nOnly these"
+    },
+    {
+      "task": "handle_missing_file",
+      "category": "error_recovery",
+      "score": 3.0,
+      "passed": true,
+      "explanation": "Heuristic score 3.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 75.26,
+      "error": null,
+      "output_preview": "Here is my full report.\n\n---\n\n## File Not Found: `tool_guard.py`\n\n**`harness_poc/core/tools/tool_guard.py` does not exist.** I searched the entire filesystem and found no file by that name.\n\n## Closest Match: `harness_poc/core/tools/guards.py`\n\nThe file you likely meant is **`guards.py`** in the same directory. I've read its full content via the document index. Here is a summary of its contents and structure.\n\n---\n\n## Summary of `harness_poc/core/tools/guards.py`\n\n**Purpose:** Pre-execution vali"
+    },
+    {
+      "task": "identify_bug",
+      "category": "code_understanding",
+      "score": 3.0,
+      "passed": true,
+      "explanation": "Heuristic score 3.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 24.07,
+      "error": null,
+      "output_preview": "## Analysis of `_ensure_history_consistent` Hardcoded Content Bug\n\n### The Function\n\n```python\ndef _ensure_history_consistent(messages: list[ModelMessage]) -> list[ModelMessage]:\n    # ...\n    repair = ModelRequest(\n        parts=[\n            ToolReturnPart(\n                tool_name=call.tool_name,\n                content=\"interrupted by process exit\",\n                tool_call_id=call.tool_call_id,\n            )\n            for call in pending\n        ]\n    )\n    return [*messages, repair]\n``"
+    },
+    {
+      "task": "multi_step_plan_and_explain",
+      "category": "multi_step",
+      "score": 5.0,
+      "passed": true,
+      "explanation": "Trait check: 5/5 traits matched (need ≥3). ✓ schema_provider; ✓ required; ✓ type; ✓ enum; ✓ error",
+      "trait_results": {
+        "schema_provider": true,
+        "required": true,
+        "type": true,
+        "enum": true,
+        "error": true
+      },
+      "elapsed_seconds": 19.32,
+      "error": null,
+      "output_preview": "## How `TypeGuard` Works\n\n### 1. Schema Resolution (including lazy `schema_provider`)\n\n`TypeGuard` accepts two schema sources at construction:\n\n- **`registry_schemas`**: an explicit `dict[str, dict[str, Any]]` mapping `tool_name → {parameters: JSONSchema, ...}`. Pre-loaded schemas are looked up directly.\n- **`schema_provider`**: an optional zero-argument callable `Callable[[], dict[str, dict[str, Any]]]`. This is the **lazy mechanism** — it defers schema discovery until first request.\n\nThe resol"
+    },
+    {
+      "task": "plan_and_execute",
+      "category": "multi_step",
+      "score": 5.0,
+      "passed": true,
+      "explanation": "Heuristic score 5.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 116.25,
+      "error": null,
+      "output_preview": "The file is verified. All three patches applied with `lint: ok` confirmation. Here's the final result:\n\n---\n\n## Result\n\n**File:** `pipelines/search-and-research.yaml` — 4 nodes, 54 lines\n\n### Changes made\n\n| Change | Detail |\n|--------|--------|\n| **Header comments** | Added `#3. search_docs` node description; renumbered `synthesize` to #4 |\n| **New `search_docs` node** | Added at lines 29–35: `type: skill`, `skill: search_documents`, `action: search`, `query: \"{{inputs.topic}}\"`, `top_k: 5`. No"
+    },
+    {
+      "task": "read_config",
+      "category": "file_operations",
+      "score": 4.0,
+      "passed": true,
+      "explanation": "Heuristic score 4.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 3.36,
+      "error": null,
+      "output_preview": "Here are the exact values from the configuration:\n\n1. **LLM provider and model:** `deepseek` / `deepseek-v4-flash`\n\n2. **Database URL:** `postgresql://deverino:deverino@localhost/deverino`\n\n3. **Container TTL in seconds:** `14400` (4 hours)  \n   **Max harness containers:** `5`\n\n4. **Retrieval enabled:** `true`  \n   **Provider:** `vespa`  \n   **Default retrieval mode:** `hybrid`\n\n5. **First three `auto_index_paths` entries:** There is only **one** entry — `docs/`. The list has no second or third "
+    },
+    {
+      "task": "recover_invalid_input",
+      "category": "error_recovery",
+      "score": 3.0,
+      "passed": true,
+      "explanation": "Heuristic score 3.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 29.34,
+      "error": null,
+      "output_preview": "Here's the full breakdown.\n\n---\n\n## 1. How I Would Detect the Error\n\nAfter making the edit, I would take these verification steps:\n\n**Step A — Syntax validation:** Parse the YAML to confirm it loads without error. In this harness, I'd use an inline Python check:\n\n```python\nimport yaml\nwith open(\"harness.yaml\") as f:\n    data = yaml.safe_load(f)\nprint(data.keys())        # top-level keys\nprint(data.get(\"runtime\")) # runtime section contents\n```\n\n**Step B — Structural inspection:** Inspect the par"
+    },
+    {
+      "task": "search_pattern",
+      "category": "file_operations",
+      "score": 5.0,
+      "passed": true,
+      "explanation": "Heuristic score 5.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 59.16,
+      "error": null,
+      "output_preview": "Here are the results from searching `harness_poc/` for the pattern `execute_skill` in `.py` files (146 total matches, excluding `__pycache__` and `.pyc`).\n\n---\n\n## Results by File\n\n### `harness_poc/repl.py`\n| Line | Classification | Code |\n|------|----------------|------|\n| 670 | **Call site** | `result = app_state.skill_runner.execute_skill(tool_name=\"consolidate_state\", ...)` |\n| 801 | **Call site** | `result = app_state.skill_runner.execute_skill(tool_name=skill_name, ...)` |\n\n### `harness_po"
+    },
+    {
+      "task": "skill_delegation_research",
+      "category": "skill_delegation",
+      "score": 5.0,
+      "passed": true,
+      "explanation": "Trait check: 5/5 traits matched (need ≥3). ✓ _register; ✓ get_registry; ✓ discover_tools; ✓ model_description; ✓ description",
+      "trait_results": {
+        "_register": true,
+        "get_registry": true,
+        "discover_tools": true,
+        "model_description": true,
+        "description": true
+      },
+      "elapsed_seconds": 22.71,
+      "error": null,
+      "output_preview": "## Tool Registration & Discovery in the Deverino Harness\n\n### (1) What `register()` accepts\n\nFrom `harness_poc/system_tools/__init__.py:41-58`:\n\n```python\ndef register(\n    name: str,\n    description: str,\n    parameters: dict[str, Any],\n    handler: Callable[..., object],\n    model_description: str = \"\",\n    **extra: Any,\n) -> None:\n```\n\nIt takes **five positional/semantic arguments + variadic keyword args**:\n\n| Argument | Type | Purpose |\n|---|---|---|\n| `name` | `str` | Tool name exposed to t"
+    },
+    {
+      "task": "trace_call_path",
+      "category": "code_understanding",
+      "score": 3.0,
+      "passed": true,
+      "explanation": "Heuristic score 3.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 104.09,
+      "error": null,
+      "output_preview": "I've exhausted tool-based discovery — the `harness_poc` package is not on the container's filesystem, and the source code exists only in the prompt text you provided. Below is the trace assembled from what is visible in the two provided files, with explicit notation of what I can confirm versus what must be inferred from the visible patterns.\n\n---\n\n## Complete Call Path for `harness-poc pipeline run parallel-review --input objective=\"review the execution engine\"`\n\n### Stage 1: CLI Dispatch\n\n**1a"
+    }
+  ]
+}

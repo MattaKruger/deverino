@@ -157,6 +157,92 @@ export interface ErrorSummary {
   last_error_at: string
 }
 
+// ── Skill Compilation ────────────────────────────────────────────────────────
+
+export interface SkillContractSummary {
+  name: string
+  description: string
+  input_count: number
+  output_count: number
+  precondition_count: number
+  error_condition_count: number
+  cancellation_behavior: string
+}
+
+export interface SkillTemplateSummary {
+  name: string
+  kind: string
+  template_preview: string
+}
+
+export interface SkillCompilationSummary {
+  name: string
+  skill_type: string
+  version: string
+  compilation_status: string
+  contract_count: number
+  template_count: number
+  invoke_pattern_count: number
+  error_count: number
+  compiled_at: string
+  contracts: SkillContractSummary[]
+  templates: SkillTemplateSummary[]
+  compilation_errors: string[]
+  aliases: string[]
+}
+
+export interface CompilationProgress {
+  running: boolean
+  total: number
+  completed: number
+  errors: number
+}
+
+// ── Compilation SSE Events ───────────────────────────────────────────────────
+
+export interface SkillCompiledEvent {
+  event: 'skill_compiled'
+  skill_name: string
+  skill_type: string
+  version: string
+  compilation_status: string
+  contract_count: number
+  template_count: number
+  invoke_pattern_count: number
+  error_count: number
+  compiled_at: string
+  contracts: SkillContractSummary[]
+  templates: SkillTemplateSummary[]
+  compilation_errors: string[]
+  aliases: string[]
+}
+
+export interface CompilationProgressEvent {
+  event: 'compilation_progress'
+  total: number
+  completed: number
+  errors: number
+  running: boolean
+}
+
+export interface CompilationDoneEvent {
+  event: 'compilation_done'
+  total: number
+  completed: number
+  errors: number
+}
+
+export interface CompilationErrorEvent {
+  event: 'compilation_error'
+  detail: string
+}
+
+export type CompilationEvent =
+  | SkillCompiledEvent
+  | CompilationProgressEvent
+  | CompilationDoneEvent
+  | CompilationErrorEvent
+
 // ── Composite / helper types ─────────────────────────────────────────────────
 
 export interface ToolsPerformance {

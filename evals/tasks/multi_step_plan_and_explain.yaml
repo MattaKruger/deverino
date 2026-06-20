@@ -1,0 +1,28 @@
+# Eval task: Plan changes then execute — find and explain a guard
+name: multi_step_plan_and_explain
+description: >
+  Multi-step task: first locate the TypeGuard class in the codebase,
+  then explain how it validates tool arguments, including how it resolves
+  schemas lazily and what error messages it produces.
+category: multi_step
+input:
+  prompt: >
+    First, locate the TypeGuard class in harness_poc/core/tools/guards.py.
+    Read enough of its implementation to understand how it works.
+    Then explain: (1) how TypeGuard resolves tool schemas (including the
+    lazy schema_provider mechanism), (2) what types of validation it
+    performs (required fields, type checking, enum checking), and (3) what
+    format its error messages take and why they are designed that way.
+  context:
+    file: harness_poc/core/tools/guards.py
+    class: TypeGuard
+evaluation:
+  type: trait_check
+  expected_traits:
+    - schema_provider
+    - required
+    - type
+    - enum
+    - error
+  min_score: 2.5
+  min_traits: 3

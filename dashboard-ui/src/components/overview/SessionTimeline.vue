@@ -6,7 +6,7 @@
     :init-options="{}"
     class="w-full h-64"
   />
-  <div v-else class="flex items-center justify-center h-64 text-[var(--text-muted)] text-sm">
+  <div v-else class="flex items-center justify-center h-64 text-[var(--color-muted)] text-sm">
     No sessions
   </div>
 </template>
@@ -18,17 +18,17 @@ import 'echarts';
 import { useOverviewStore } from '@/stores/overview';
 
 const STATUS_COLORS: Record<string, string> = {
-  success: 'var(--accent-green)',
-  completed: 'var(--accent-green)',
-  running: 'var(--accent-blue)',
-  active: 'var(--accent-blue)',
-  failed: 'var(--accent-red)',
-  error: 'var(--accent-red)',
-  cancelled: 'var(--accent-red)',
-  timeout: 'var(--accent-red)',
-  paused: 'var(--accent-yellow)',
-  pending: 'var(--accent-yellow)',
-  queued: 'var(--accent-yellow)',
+  success: 'var(--color-green)',
+  completed: 'var(--color-green)',
+  running: 'var(--color-blue)',
+  active: 'var(--color-blue)',
+  failed: 'var(--color-red)',
+  error: 'var(--color-red)',
+  cancelled: 'var(--color-red)',
+  timeout: 'var(--color-red)',
+  paused: 'var(--color-yellow)',
+  pending: 'var(--color-yellow)',
+  queued: 'var(--color-yellow)',
 };
 
 const store = useOverviewStore();
@@ -47,7 +47,7 @@ const chartOption = computed(() => {
     const shortId = (s.session_id || '').slice(0, 8);
     return shortId + ' [' + s.status + ']';
   });
-  const colors = sorted.map((s) => STATUS_COLORS[s.status.toLowerCase()] || 'var(--accent-blue)');
+  const colors = sorted.map((s) => STATUS_COLORS[s.status.toLowerCase()] || 'var(--color-blue)');
   const values = sorted.map((s) => s.event_count);
 
   return {
@@ -72,15 +72,15 @@ const chartOption = computed(() => {
     xAxis: {
       type: 'value' as const,
       name: 'events',
-      nameTextStyle: { color: 'var(--text-muted)' },
-      axisLabel: { color: 'var(--text-muted)' },
-      splitLine: { lineStyle: { color: 'var(--grid-line)' } },
+      nameTextStyle: { color: 'var(--color-muted)' },
+      axisLabel: { color: 'var(--color-muted)' },
+      splitLine: { lineStyle: { color: 'var(--color-grid)' } },
     },
     yAxis: {
       type: 'category' as const,
       data: names,
-      axisLabel: { color: 'var(--text-muted)', fontSize: 11, fontFamily: 'monospace' },
-      axisLine: { lineStyle: { color: 'var(--grid-line)' } },
+      axisLabel: { color: 'var(--color-muted)', fontSize: 11, fontFamily: 'monospace' },
+      axisLine: { lineStyle: { color: 'var(--color-grid)' } },
       inverse: true,
     },
     series: [

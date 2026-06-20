@@ -30,17 +30,9 @@ parameters:
       type: integer
       description: "Number of results to return (default: 5)."
       default: 5
-    mode:
-      type: string
-      description: Search mode.
-      enum:
-        - hybrid
-        - semantic
-        - bm25
-      default: hybrid
     include_text_files:
       type: boolean
-      description: Also index non-code text files (.md, .yaml, .json, etc.).
+      description: Also index non-code text files (passes --content all to semble).
       default: false
   required:
     - query

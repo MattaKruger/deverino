@@ -1,0 +1,278 @@
+{
+  "run_id": "20260617-163441",
+  "timestamp": "2026-06-17T16:34:41.973096+00:00",
+  "tasks_total": 20,
+  "tasks_passed": 0,
+  "tasks_failed": 20,
+  "average_score": 1.1,
+  "results": [
+    {
+      "task": "code_explain_config_model",
+      "category": "code_understanding",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ mentions HarnessPaths sub-config; ✗ mentions RuntimeConfig sub-config; ✗ mentions LLMConfig sub-config; ✗ mentions harness.yaml as the config source; ✗ describes project_root field",
+      "trait_results": {
+        "mentions HarnessPaths sub-config": false,
+        "mentions RuntimeConfig sub-config": false,
+        "mentions LLMConfig sub-config": false,
+        "mentions harness.yaml as the config source": false,
+        "describes project_root field": false
+      },
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'code_explain_config_model': Run with --live to execute through the harness."
+    },
+    {
+      "task": "code_explain_guard_pipeline",
+      "category": "code_understanding",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ runs a sequence of guards against tool arguments; ✗ collects all failures instead of stopping at the first; ✗ returns GuardResult with ok and errors fields; ✗ errors are model-actionable strings; ✗ validate takes tool_name and arguments",
+      "trait_results": {
+        "runs a sequence of guards against tool arguments": false,
+        "collects all failures instead of stopping at the first": false,
+        "returns GuardResult with ok and errors fields": false,
+        "errors are model-actionable strings": false,
+        "validate takes tool_name and arguments": false
+      },
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'code_explain_guard_pipeline': Run with --live to execute through the harness."
+    },
+    {
+      "task": "code_trace_tool_execution",
+      "category": "code_understanding",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ mentions _register function; ✗ mentions ToolRunner.discover_tools; ✗ mentions ToolRunner.execute_tool; ✗ mentions GuardPipeline.validate; ✗ describes guard validation before tool execution",
+      "trait_results": {
+        "mentions _register function": false,
+        "mentions ToolRunner.discover_tools": false,
+        "mentions ToolRunner.execute_tool": false,
+        "mentions GuardPipeline.validate": false,
+        "describes guard validation before tool execution": false
+      },
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'code_trace_tool_execution': Run with --live to execute through the harness."
+    },
+    {
+      "task": "delegate_and_synthesize",
+      "category": "skill_delegation",
+      "score": 2.0,
+      "passed": false,
+      "explanation": "Heuristic score 2.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'delegate_and_synthesize': Run with --live to execute through the harness."
+    },
+    {
+      "task": "error_invalid_path",
+      "category": "error_recovery",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Output contains error markers or is too short",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'error_invalid_path': Run with --live to execute through the harness."
+    },
+    {
+      "task": "error_missing_file",
+      "category": "error_recovery",
+      "score": 1.0,
+      "passed": false,
+      "explanation": "Output contains error markers or is too short",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'error_missing_file': Run with --live to execute through the harness."
+    },
+    {
+      "task": "explain_tool_runner",
+      "category": "code_understanding",
+      "score": 2.0,
+      "passed": false,
+      "explanation": "Heuristic score 2.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'explain_tool_runner': Run with --live to execute through the harness."
+    },
+    {
+      "task": "file_read_harness_yaml",
+      "category": "file_operations",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ mentions runtime section; ✗ mentions llm section; ✗ mentions paths section; ✗ mentions database_url or database configuration; ✗ identifies the YAML structure",
+      "trait_results": {
+        "mentions runtime section": false,
+        "mentions llm section": false,
+        "mentions paths section": false,
+        "mentions database_url or database configuration": false,
+        "identifies the YAML structure": false
+      },
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'file_read_harness_yaml': Run with --live to execute through the harness."
+    },
+    {
+      "task": "file_search_register_pattern",
+      "category": "file_operations",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ mentions read_file; ✗ mentions write_file; ✗ mentions view_file or search_in_file or apply_diff; ✗ distinguishes legacy from constrained tools; ✗ lists at least 4 tool names",
+      "trait_results": {
+        "mentions read_file": false,
+        "mentions write_file": false,
+        "mentions view_file or search_in_file or apply_diff": false,
+        "distinguishes legacy from constrained tools": false,
+        "lists at least 4 tool names": false
+      },
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'file_search_register_pattern': Run with --live to execute through the harness."
+    },
+    {
+      "task": "gather_context",
+      "category": "multi_step",
+      "score": 2.0,
+      "passed": false,
+      "explanation": "Heuristic score 2.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'gather_context': Run with --live to execute through the harness."
+    },
+    {
+      "task": "handle_missing_file",
+      "category": "error_recovery",
+      "score": 2.0,
+      "passed": false,
+      "explanation": "Heuristic score 2.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'handle_missing_file': Run with --live to execute through the harness."
+    },
+    {
+      "task": "identify_bug",
+      "category": "code_understanding",
+      "score": 2.0,
+      "passed": false,
+      "explanation": "Heuristic score 2.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'identify_bug': Run with --live to execute through the harness."
+    },
+    {
+      "task": "multi_step_context_gather",
+      "category": "multi_step",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ mentions PathGuard or path validation; ✗ mentions SizeGuard or file size limits; ✗ mentions ContentGuard or secret detection; ✗ mentions QueryGuard or SQL safety; ✗ describes execute_tool guard pipeline integration",
+      "trait_results": {
+        "mentions PathGuard or path validation": false,
+        "mentions SizeGuard or file size limits": false,
+        "mentions ContentGuard or secret detection": false,
+        "mentions QueryGuard or SQL safety": false,
+        "describes execute_tool guard pipeline integration": false
+      },
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'multi_step_context_gather': Run with --live to execute through the harness."
+    },
+    {
+      "task": "multi_step_plan_and_explain",
+      "category": "multi_step",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ explains lazy schema resolution or schema_provider; ✗ mentions required field checking; ✗ mentions type checking for string/integer/boolean/array/object; ✗ mentions enum validation; ✗ error messages are model-actionable or formatted for LLM",
+      "trait_results": {
+        "explains lazy schema resolution or schema_provider": false,
+        "mentions required field checking": false,
+        "mentions type checking for string/integer/boolean/array/object": false,
+        "mentions enum validation": false,
+        "error messages are model-actionable or formatted for LLM": false
+      },
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'multi_step_plan_and_explain': Run with --live to execute through the harness."
+    },
+    {
+      "task": "plan_and_execute",
+      "category": "multi_step",
+      "score": 2.0,
+      "passed": false,
+      "explanation": "Heuristic score 2.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'plan_and_execute': Run with --live to execute through the harness."
+    },
+    {
+      "task": "read_config",
+      "category": "file_operations",
+      "score": 2.0,
+      "passed": false,
+      "explanation": "Heuristic score 2.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'read_config': Run with --live to execute through the harness."
+    },
+    {
+      "task": "recover_invalid_input",
+      "category": "error_recovery",
+      "score": 2.0,
+      "passed": false,
+      "explanation": "Heuristic score 2.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'recover_invalid_input': Run with --live to execute through the harness."
+    },
+    {
+      "task": "search_pattern",
+      "category": "file_operations",
+      "score": 2.0,
+      "passed": false,
+      "explanation": "Heuristic score 2.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'search_pattern': Run with --live to execute through the harness."
+    },
+    {
+      "task": "skill_delegation_research",
+      "category": "skill_delegation",
+      "score": 0.0,
+      "passed": false,
+      "explanation": "Trait check: 0/5 traits matched (need ≥3). ✗ mentions _register function arguments; ✗ mentions registry storage or get_registry; ✗ mentions discover_tools returning tools to LLM; ✗ mentions model_description vs description; ✗ covers the registration flow end-to-end",
+      "trait_results": {
+        "mentions _register function arguments": false,
+        "mentions registry storage or get_registry": false,
+        "mentions discover_tools returning tools to LLM": false,
+        "mentions model_description vs description": false,
+        "covers the registration flow end-to-end": false
+      },
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'skill_delegation_research': Run with --live to execute through the harness."
+    },
+    {
+      "task": "trace_call_path",
+      "category": "code_understanding",
+      "score": 2.0,
+      "passed": false,
+      "explanation": "Heuristic score 2.0/5 based on output length and structure.",
+      "trait_results": {},
+      "elapsed_seconds": 0.0,
+      "error": null,
+      "output_preview": "Placeholder output for task 'trace_call_path': Run with --live to execute through the harness."
+    }
+  ]
+}

@@ -31,9 +31,7 @@ SUPPORTED_EXTENSIONS = frozenset(
 
 # Control characters (codepoints 0x00-0x1F) that are illegal in Vespa string fields,
 # except for tab (0x09), newline (0x0A), and carriage return (0x0D).
-_ILLEGAL_CONTROL_RE = re.compile(
-    "[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]"
-)
+_ILLEGAL_CONTROL_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 IGNORED_DIR_NAMES = frozenset({".git", ".venv", "__pycache__", ".deverino-scratch"})
 IGNORED_FILE_GLOBS = frozenset({"*.db", ".env", "*.pem", "*.key", "id_rsa", "credentials.json"})
 
@@ -332,6 +330,7 @@ class DocumentIndexer:
                     title=title,
                     kind=_infer_kind(uri),
                     max_tokens=self._config.chunk_size_chars,
+                    ocr_service_url=self._config.ocr_service_url,
                 )
             except Exception as exc:
                 return _FileResult(
@@ -541,9 +540,7 @@ def _is_secret_file(name: str) -> bool:
 
 
 def _is_indexable_file(file_path: Path) -> bool:
-    return file_path.suffix.lower() in SUPPORTED_EXTENSIONS and not _is_secret_file(
-        file_path.name
-    )
+    return file_path.suffix.lower() in SUPPORTED_EXTENSIONS and not _is_secret_file(file_path.name)
 
 
 def _read_document_text(file_path: Path) -> str:

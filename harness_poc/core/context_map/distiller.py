@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Sequence
 from importlib import resources
@@ -96,8 +97,13 @@ async def run_distiller(
                 "Reissue conforming output."
             )
         try:
-            run = await agent.run(prompt)
+            run = await asyncio.wait_for(
+                agent.run(prompt), timeout=config.timeout_seconds
+            )
             batch: DistilledBatch = cast("DistilledBatch", run.output)
+        except TimeoutError:
+            last_error = f"LLM call timed out after {config.timeout_seconds}s"
+            continue
         except ValidationError as exc:
             last_error = f"schema validation failed: {exc}"
             continue

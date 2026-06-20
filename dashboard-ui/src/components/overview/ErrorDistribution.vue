@@ -6,7 +6,7 @@
     :init-options="{}"
     class="w-full h-64"
   />
-  <div v-else class="flex items-center justify-center h-64 text-[var(--text-muted)] text-sm">
+  <div v-else class="flex items-center justify-center h-64 text-[var(--color-muted)] text-sm">
     No errors in last 24h
   </div>
 </template>
@@ -18,16 +18,16 @@ import 'echarts';
 import { useErrorsStore } from '@/stores/errors';
 
 const CHART_PALETTE = [
-  '#58a6ff',
-  '#3fb950',
-  '#f85149',
-  '#d29922',
-  '#a371f7',
-  '#39d2c0',
-  '#f0883e',
+  '#689df2',
+  '#53c677',
+  '#f1576b',
+  '#dcaf55',
+  '#ae91f0',
+  '#4cc6bd',
+  '#ef7e47',
   '#e5539a',
-  '#8b949e',
-  '#79c0ff',
+  '#88829b',
+  '#85b0f5',
 ];
 
 const store = useErrorsStore();
@@ -51,7 +51,7 @@ const chartOption = computed(() => {
       orient: 'vertical' as const,
       right: '5%',
       top: 'center',
-      textStyle: { color: 'var(--text-muted)', fontSize: 11 },
+      textStyle: { color: 'var(--color-muted)', fontSize: 11 },
     },
     series: [
       {

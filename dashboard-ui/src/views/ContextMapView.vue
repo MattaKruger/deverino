@@ -2,7 +2,7 @@
   <div class="p-6 space-y-6 max-w-screen-2xl mx-auto">
     <!-- Page header with health indicator -->
     <div class="flex items-center gap-3">
-      <h2 class="text-lg font-semibold text-[var(--text)]">Context Map</h2>
+      <h2 class="text-lg font-semibold text-[var(--color-text)]">Context Map</h2>
       <HealthIndicator
         :lastFetched="store.lastFetched"
         :error="store.error"
@@ -11,8 +11,8 @@
 
     <!-- Corpus list loading -->
     <div v-if="store.loading && !store.data" class="animate-pulse space-y-3">
-      <div class="h-4 bg-[var(--card-border)] rounded w-1/4"></div>
-      <div class="h-10 bg-[var(--card-border)] rounded w-3/4"></div>
+      <div class="h-4 bg-[var(--color-border)] rounded w-1/4"></div>
+      <div class="h-10 bg-[var(--color-border)] rounded w-3/4"></div>
     </div>
 
     <!-- Corpus list error -->
@@ -38,8 +38,8 @@
           :key="cm.corpus_key"
           class="px-4 py-1.5 rounded-md text-sm font-medium border transition-colors"
           :class="selectedCorpus === cm.corpus_key
-            ? 'bg-[var(--accent-blue)] border-[var(--accent-blue)] text-white'
-            : 'bg-[var(--card-bg)] border-[var(--card-border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--text-muted)]'"
+            ? 'bg-[var(--color-blue)] border-[var(--color-blue)] text-white'
+            : 'bg-[var(--color-cbg)] border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-muted)]'"
           @click="selectCorpus(cm.corpus_key)"
         >
           {{ cm.corpus_key }}
@@ -114,10 +114,10 @@ const selectedMetrics = computed(() => {
   const h = selectedHealth.value;
   if (!h) return [];
   return [
-    { label: 'Tokens', value: fmtNum(h.token_count), color: 'var(--accent-blue)' },
-    { label: 'Version', value: String(h.version), color: 'var(--accent-green)' },
-    { label: 'Pending', value: String(h.pending_events), color: h.pending_events > 0 ? 'var(--accent-yellow)' : 'var(--text-muted)' },
-    { label: 'Updated', value: fmtTime(h.last_updated), color: 'var(--text-muted)' },
+    { label: 'Tokens', value: fmtNum(h.token_count), color: 'var(--color-blue)' },
+    { label: 'Version', value: String(h.version), color: 'var(--color-green)' },
+    { label: 'Pending', value: String(h.pending_events), color: h.pending_events > 0 ? 'var(--color-yellow)' : 'var(--color-muted)' },
+    { label: 'Updated', value: fmtTime(h.last_updated), color: 'var(--color-muted)' },
   ];
 });
 

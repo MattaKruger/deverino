@@ -1,7 +1,7 @@
 <template>
   <div class="p-6 space-y-6 max-w-screen-2xl mx-auto">
     <div class="flex items-center gap-3">
-      <h2 class="text-lg font-semibold text-[var(--text)]">Sub-Agents</h2>
+      <h2 class="text-lg font-semibold text-[var(--color-text)]">Sub-Agents</h2>
       <HealthIndicator
         :lastFetched="store.lastFetched"
         :error="store.error"
@@ -19,7 +19,7 @@
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="border-b border-[var(--card-border)] text-left text-xs text-[var(--text-muted)] uppercase tracking-wider">
+              <tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)] uppercase tracking-wider">
                 <th class="px-3 py-2 font-medium">Persona</th>
                 <th class="px-3 py-2 font-medium">Parent Session</th>
                 <th class="px-3 py-2 font-medium">Status</th>
@@ -32,24 +32,24 @@
               <tr
                 v-for="agent in sortedAgents"
                 :key="agent.sub_session_id"
-                class="border-b border-[var(--grid-line)] hover:bg-[var(--card-border)] transition-colors"
+                class="border-b border-[var(--color-grid)] hover:bg-[var(--color-border)] transition-colors"
               >
-                <td class="px-3 py-2 font-medium text-[var(--text)] whitespace-nowrap">
+                <td class="px-3 py-2 font-medium text-[var(--color-text)] whitespace-nowrap">
                   {{ agent.persona }}
                 </td>
-                <td class="px-3 py-2 font-mono text-xs text-[var(--text-muted)]">
+                <td class="px-3 py-2 font-mono text-xs text-[var(--color-muted)]">
                   {{ truncateId(agent.parent_session_id) }}
                 </td>
                 <td class="px-3 py-2">
                   <StatusBadge :status="agent.status" />
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text-muted)] whitespace-nowrap">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-muted)] whitespace-nowrap">
                   {{ fmtDuration(agent.duration_s) }}
                 </td>
-                <td class="px-3 py-2 text-xs text-[var(--text-muted)] max-w-xs truncate">
+                <td class="px-3 py-2 text-xs text-[var(--color-muted)] max-w-xs truncate">
                   {{ agent.objective || '—' }}
                 </td>
-                <td class="px-3 py-2 text-xs text-[var(--text-muted)] max-w-xs truncate">
+                <td class="px-3 py-2 text-xs text-[var(--color-muted)] max-w-xs truncate">
                   {{ agent.summary || '—' }}
                 </td>
               </tr>

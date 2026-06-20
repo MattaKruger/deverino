@@ -453,8 +453,11 @@ class GoalRunner:
     context_window: int = 20
     stuck_threshold: int = 3
     decision_model: Model | None = None
+    refine: bool = False
+    refine_threshold: float = 3.0
 
     _action_keys: deque[str] = field(default_factory=lambda: deque(maxlen=5))
+    _project_root: str = ""  # set during run() for path construction hints
 
     def run(
         self,
@@ -473,7 +476,12 @@ class GoalRunner:
         on_text: Callable[[str], None] | None = None,
         on_tool_event: Callable[[str], None] | None = None,
     ) -> GoalRunResult:
-        """Execute the autonomous ReAct loop for the given goal (async)."""
+        """Execute the autonomous ReAct loop for the given goal (async).
+
+        When ``refine=True``, runs the Reflexion pattern after the
+        main loop: evaluate → critique → replan → rerun → compare.
+        """
+        self._project_root = str(app_state.config.project_root.resolve())
         logger.info(
             "Goal run started",
             extra={
@@ -509,9 +517,7 @@ class GoalRunner:
                     session_id=session_id,
                 )
 
-            thread = threading.Thread(
-                target=_run, daemon=True, name="goal-observe-extractor"
-            )
+            thread = threading.Thread(target=_run, daemon=True, name="goal-observe-extractor")
             thread.start()
 
         app_state.event_bus.publish(AgentStarted(session_id=app_state.session_id, goal=goal))
@@ -699,13 +705,14 @@ class GoalRunner:
                         },
                     )
                     _fire_goal_observations_async()
-                    return GoalRunResult(
+                    result = GoalRunResult(
                         status="completed",
                         content=content,
                         iterations=iteration,
                         total_tokens=total_tokens,
                         events=events,
                     )
+                    break
 
                 events.append(
                     {
@@ -802,7 +809,7 @@ class GoalRunner:
             },
         )
         _fire_goal_observations_async()
-        return GoalRunResult(
+        result = GoalRunResult(
             status="budget_exhausted",
             content=(
                 f"Iteration budget ({self.max_iterations}) exhausted. Goal may be incomplete."
@@ -811,6 +818,20 @@ class GoalRunner:
             total_tokens=total_tokens,
             events=events,
         )
+
+        # --- Reflexion cycle (Phase 3) ---
+        if self.refine and self._is_refine_eligible(result):
+            refined = await self._run_reflexion_cycle(
+                goal=goal,
+                app_state=app_state,
+                current_result=result,
+                on_text=on_text,
+                on_tool_event=on_tool_event,
+            )
+            if refined is not None:
+                return refined
+
+        return result
 
     def _build_messages(
         self,
@@ -977,14 +998,161 @@ class GoalRunner:
         )
         return "\n".join(parts)
 
+    # ------------------------------------------------------------------
+    # Reflexion cycle (Phase 3)
+    # ------------------------------------------------------------------
+
     @staticmethod
-    def _goal_system_prompt(goal: str) -> str:
+    def _is_refine_eligible(result: GoalRunResult) -> bool:
+        """Check whether a result can be refined.
+
+        Eligible when: the result has non-trivial content, isn't an error,
+        and isn't already a refinement result.
+        """
+        if result.status == "error":
+            return False
+        if not result.content or len(result.content.strip()) < 50:
+            return False
+        # Don't refine a result that was itself produced by refinement
+        if "[Reflection from previous attempt" in result.content:
+            return False
+        return True
+
+    async def _run_reflexion_cycle(
+        self,
+        goal: str,
+        app_state: AppState,
+        current_result: GoalRunResult,
+        on_text: Callable[[str], None] | None = None,
+        on_tool_event: Callable[[str], None] | None = None,
+    ) -> GoalRunResult | None:
+        """Run one critique-replan-rerun cycle. Returns improved result or None."""
+        # 1. Evaluate current output
+        critique = self._evaluate_result(goal, current_result.content, app_state)
+        if critique is None:
+            return None
+
+        score = critique.get("score", 0)
+        if isinstance(score, (int, float)) and score >= self.refine_threshold:
+            return None  # already good enough
+
+        if on_text:
+            on_text(
+                f"\n[reflexion] Score {score}/5 < {self.refine_threshold}. "
+                f"Critique: {critique.get('critique', '')[:200]}\n"
+            )
+
+        # 2. Rerun with critique as context
+        refined_goal = (
+            f"{goal}\n\n[Reflection from previous attempt: "
+            f"{critique.get('critique', '')} "
+            f"Suggestions: {'; '.join(critique.get('suggestions', []))}]"
+        )
+        self._action_keys.clear()
+
+        # Run the full loop again with refined goal
+        refined_result = await self._run_core_loop(
+            goal=refined_goal,
+            app_state=app_state,
+            on_text=on_text,
+            on_tool_event=on_tool_event,
+        )
+
+        # 3. Compare and keep best
+        refined_score = self._evaluate_result(goal, refined_result.content, app_state)
+        refined_score_val = refined_score.get("score", 0) if refined_score else 0
+
+        if refined_score_val > score:
+            if on_text:
+                on_text(f"\n[reflexion] Improved from {score}/5 to {refined_score_val}/5\n")
+            return refined_result
+
+        return current_result  # original was better
+
+    def _evaluate_result(
+        self, goal: str, output: str, app_state: AppState
+    ) -> dict[str, Any] | None:
+        """Score with LLM judge, fallback to heuristic."""
+        try:
+            # Use LLM-as-judge: build a separate model call for scoring
+            from harness_poc.core.eval.judge import JudgeEvaluator
+            from harness_poc.core.eval.task import EvalTask, EvalTaskEval
+            from harness_poc.core.runtime.pydantic_runtime import build_model
+
+            judge_model = build_model(app_state.config.llm)
+            judge = JudgeEvaluator(model=judge_model)
+            task = EvalTask(
+                name="reflexion",
+                description=goal,
+                category="reflexion",
+                input={"prompt": goal, "context": {}},
+                evaluation=EvalTaskEval(
+                    type="llm_judge",
+                    rubric=(
+                        "Score 1-5 on accuracy and completeness. "
+                        "5: complete/correct, 3: partial, 1: wrong."
+                    ),
+                    min_score=self.refine_threshold,
+                ),
+            )
+            result = judge.evaluate(task, output)
+            return dict(
+                score=result.score,
+                passed=result.passed,
+                critique=result.explanation,
+                suggestions=[result.explanation[:200]],
+            )
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).warning("LLM judge failed during reflexion", exc_info=True)
+            # Fallback: use evaluate_output skill for heuristic scoring
+            try:
+                result = app_state.skill_runner.execute_skill(
+                    tool_name="evaluate_output",
+                    arguments={"objective": goal, "output": output},
+                    session_id=app_state.session_id,
+                )
+                if result.status == "success" and result.artifacts:
+                    return dict(result.artifacts)
+            except Exception:
+                pass
+            return None
+
+    async def _run_core_loop(
+        self,
+        goal: str,
+        app_state: AppState,
+        on_text: Callable[[str], None] | None = None,
+        on_tool_event: Callable[[str], None] | None = None,
+    ) -> GoalRunResult:
+        """Run the core ReAct loop without reflexion (used internally)."""
+        # This is a recursive call pattern — we temporarily disable refine
+        # to avoid infinite reflexion loops
+        original_refine = self.refine
+        self.refine = False
+        try:
+            return await self.run_async(goal, app_state, on_text, on_tool_event)
+        finally:
+            self.refine = original_refine
+
+    # ------------------------------------------------------------------
+    # System prompt
+    # ------------------------------------------------------------------
+
+    def _goal_system_prompt(self, goal: str) -> str:
+        root = self._project_root or "(project root)"
         return (
             "You are an autonomous agent operating in a ReAct (Reason + Act) loop. "
             "Your sole objective is to achieve the following goal.\n\n"
+            f"## Project Root\n{root}\n\n"
             f"## Goal\n{goal}\n\n"
             "## Instructions\n"
             "- Work step by step. Call tools to take actions.\n"
+            "- **Prefer direct file access over search.** If you know or can "
+            "guess a file path, use `read_file` or `view_file` directly. "
+            "Only use `search_files` or `search_documents` when you don't "
+            "know where something lives.\n"
             "- After each tool result, decide on your next action.\n"
             "- When the goal is fully achieved, call `evaluate_goal` with "
             "`is_complete: true` and explain what was accomplished in `reasoning`. "

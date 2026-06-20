@@ -10,10 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tdesign-vue-next/chat": "^0.5.2",
     "@vueuse/core": "^11",
     "echarts": "^5",
     "marked": "^18.0.5",
     "pinia": "^2",
+    "splitpanes": "^4.1.2",
     "vue": "^3.5",
     "vue-echarts": "^7",
     "vue-router": "^4"

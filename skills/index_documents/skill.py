@@ -37,6 +37,23 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         )
     exclude_dirs = [str(path) for path in raw_exclude_dirs]
 
+    # Always exclude large build/dependency directories
+    _DEFAULT_EXCLUDES = [
+        "node_modules",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".git",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "build",
+        "dist",
+    ]
+    for d in _DEFAULT_EXCLUDES:
+        if d not in exclude_dirs:
+            exclude_dirs.append(d)
+
     vespa_client = LiveVespaDocumentClient(ctx.config.retrieval)
     embedder = TextEmbedder()
     indexer = DocumentIndexer(

@@ -18,7 +18,12 @@ from harness_poc.core.events import EventBus, EventStore
 from harness_poc.core.execution import PipelineRunner, WorkflowRunner
 from harness_poc.core.logging import configure_logging
 from harness_poc.core.permissions import SkillPermissions
-from harness_poc.core.retrieval import DocumentIndexer, LiveVespaDocumentClient, TextEmbedder
+from harness_poc.core.retrieval import (
+    DocumentIndexer,
+    LiveVespaDocumentClient,
+    TextEmbedder,
+    preload_embedder,
+)
 from harness_poc.core.runtime import (
     build_runtime,
 )
@@ -30,6 +35,16 @@ from harness_poc.core.storage import (
     create_db_engine,
 )
 from harness_poc.core.tools import ToolRunner
+from harness_poc.core.tools.guards import (
+    ContentGuard,
+    GuardPipeline,
+    IdempotencyGuard,
+    PathGuard,
+    QueryGuard,
+    SizeGuard,
+    TypeGuard,
+)
+from harness_poc.system_tools import get_registry
 from harness_poc.system_tools.knowledge_tools import init_knowledge_context
 
 logger = logging.getLogger(__name__)
@@ -202,6 +217,15 @@ def bootstrap_document_index(config: HarnessConfig, database: BlackboardDatabase
     don't exist on disk, Vespa is unreachable, or HARNESS_SKIP_AUTO_INDEX
     is set in the environment.
     """
+    # Preload the embedding model in a background thread so the first
+    # search_documents call doesn't incur a ~20 s cold-start HuggingFace
+    # download.  The TUI starts immediately; searches queue until loaded.
+    if config.retrieval.enabled:
+        from threading import Thread  # noqa: PLC0415
+
+        t = Thread(target=preload_embedder, daemon=True, name="embedder-preload")
+        t.start()
+
     paths = _resolve_auto_index_paths(config)
     if paths is None:
         return
@@ -421,6 +445,18 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
         skill_runner=skill_runner,
         database=db_proxy,
         runtime_config=config.runtime,
+        guards=GuardPipeline(
+            [
+                PathGuard(project_root=config.project_root),
+                SizeGuard(),
+                TypeGuard(
+                    schema_provider=lambda: {name: info for name, info in get_registry().items()}
+                ),
+                IdempotencyGuard(),
+                ContentGuard(),
+                QueryGuard(),
+            ]
+        ),
     )
     workflow_runner = WorkflowRunner(skill_runner)
     pipeline_runner = PipelineRunner(config.paths.pipelines)
@@ -433,7 +469,13 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
         project_root=config.project_root,
         scratch_base=None,
         session_id=identity.session_id,
+        skill_runner=skill_runner,
     )
+
+    # ── Background skill compilation ──
+    if config.compiler.enabled:
+        _start_background_compilation(knowledge_dirs, skill_runner, config)
+
     skill_catalog = build_skill_catalog(knowledge_dirs)
     tools = skill_runner.discover_skills()
 
@@ -668,3 +710,89 @@ def _build_v2_runtime_if_needed(
 
         return build_v2_runtime(identity, config, mode=mode)
     return None
+
+
+def _start_background_compilation(
+    knowledge_dirs: list[Path],
+    skill_runner: SkillRunner,
+    config: HarnessConfig,
+) -> None:
+    """Kick off background skill compilation after TUI startup.
+
+    Builds a model and compiles all SKILL.md files in a daemon thread.
+    The TUI starts immediately; bundles populate the cache as they complete.
+    First ``skill_view()`` calls may return raw markdown until compilation
+    finishes.
+    """
+    import threading  # noqa: PLC0415
+
+    from harness_poc.core.runtime.pydantic_runtime import (  # noqa: PLC0415
+        build_model,
+    )
+    from harness_poc.core.skills.skill_compiler import (  # noqa: PLC0415
+        compile_skill,
+        set_compilation_progress,
+    )
+
+    def _compile_all() -> None:
+        # Resolve model with compiler overrides
+        if config.compiler.model or config.compiler.provider:
+            from harness_poc.core.config import LLMConfig  # noqa: PLC0415
+
+            llm_cfg = LLMConfig(
+                provider=config.compiler.provider or config.llm.provider,
+                model=config.compiler.model or config.llm.model,
+                base_url=config.llm.base_url,
+            )
+        else:
+            llm_cfg = config.llm
+
+        try:
+            model = build_model(llm_cfg)
+        except Exception:
+            logger.warning(
+                "Background compilation skipped: could not build LLM model "
+                "(check API keys and provider configuration)"
+            )
+            return
+
+        # Collect all SKILL.md files
+        skill_files: list[Path] = []
+        for d in knowledge_dirs:
+            if not d.exists():
+                continue
+            skill_files.extend(sorted(d.glob("*/SKILL.md")))
+
+        if not skill_files:
+            return
+
+        total = len(skill_files)
+        set_compilation_progress(total=total, running=True)
+        logger.info("Background skill compilation started (%d skills)", total)
+
+        completed = 0
+        errors = 0
+        for skill_file in skill_files:
+            try:
+                compile_skill(
+                    skill_file,
+                    skill_runner=skill_runner,
+                    force=True,
+                    model=model,
+                    compiler_config=config.compiler,
+                )
+                completed += 1
+            except Exception:
+                logger.warning("Compilation failed for %s", skill_file, exc_info=True)
+                errors += 1
+            set_compilation_progress(total=total, completed=completed, errors=errors)
+
+        set_compilation_progress(running=False)
+        logger.info(
+            "Background compilation finished: %d/%d compiled, %d errors",
+            completed,
+            total,
+            errors,
+        )
+
+    threading.Thread(target=_compile_all, daemon=True).start()

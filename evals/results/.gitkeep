@@ -1,0 +1,2 @@
+# Eval run reports are written here as YYYYMMDD-HHMMSS.json
+# Baseline scores are committed to evals/baselines/v1.json

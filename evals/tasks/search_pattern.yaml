@@ -1,0 +1,26 @@
+name: search_pattern
+description: "Search for all instances of a specific pattern across the codebase"
+category: file_operations
+input:
+  prompt: |
+    Search the harness_poc/ directory for all Python files that contain the
+    pattern `execute_skill`. For each match, report:
+
+    1. The file path relative to the project root
+    2. The line number
+    3. Whether it is a call site, a method definition, or an import
+
+    Also count the total number of matches across all files.
+
+    Ignore matches inside __pycache__ directories and .pyc files.
+  context: {}
+evaluation:
+  type: llm_judge
+  rubric: "Judge whether the answer correctly identifies all execute_skill occurrences with accurate file paths, line numbers, and usage classification (call/def/import). Score 5 for complete coverage with correct classification, 3 for most matches found but some classification errors, 1 for significant omissions."
+  expected_traits:
+    - "SkillRunner.execute_skill definition"
+    - "call sites in tool_runner"
+    - "correct file paths"
+    - "total count of matches"
+  min_score: 3.0
+  min_traits: 3

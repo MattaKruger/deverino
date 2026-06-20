@@ -1,16 +1,16 @@
 <template>
   <div
-    class="flex items-center gap-3 px-3 py-2 border-b border-[var(--grid-line)] text-sm"
+    class="flex items-center gap-3 px-3 py-2 border-b border-[var(--color-grid)] text-sm"
     :style="{ borderLeft: `3px solid ${rowColor}` }"
   >
-    <span class="text-xs text-[var(--text-muted)] font-mono whitespace-nowrap">
+    <span class="text-xs text-[var(--color-muted)] font-mono whitespace-nowrap">
       {{ formattedTime }}
     </span>
     <StatusBadge :status="event.event_type" />
-    <span class="font-semibold text-[var(--text)] whitespace-nowrap">
+    <span class="font-semibold text-[var(--color-text)] whitespace-nowrap">
       {{ event.event_type }}
     </span>
-    <span class="text-[var(--text-muted)] truncate">
+    <span class="text-[var(--color-muted)] truncate">
       {{ contentPreview }}
     </span>
   </div>
@@ -28,20 +28,20 @@ const props = defineProps<{
 
 
 const EVENT_COLORS: Record<string, string> = {
-  SkillCompleted: 'var(--accent-green)',
-  SkillCalled: 'var(--accent-blue)',
-  SkillRequested: 'var(--accent-blue)',
-  SkillCancelled: 'var(--accent-yellow)',
-  LLMActionEmitted: 'var(--accent-cyan)',
-  SubAgentDispatched: 'var(--accent-purple)',
-  SubAgentCompleted: 'var(--accent-purple)',
-  SubAgentTaskStarted: 'var(--accent-purple)',
-  SubAgentTaskCompleted: 'var(--accent-purple)',
-  StreamPaused: 'var(--accent-yellow)',
-  GoalEvaluated: 'var(--accent-green)',
-  GatePassed: 'var(--accent-green)',
-  GateFailed: 'var(--accent-red)',
-  SpecCommitted: 'var(--accent-green)',
+  SkillCompleted: 'var(--color-green)',
+  SkillCalled: 'var(--color-blue)',
+  SkillRequested: 'var(--color-blue)',
+  SkillCancelled: 'var(--color-yellow)',
+  LLMActionEmitted: 'var(--color-cyan)',
+  SubAgentDispatched: 'var(--color-purple)',
+  SubAgentCompleted: 'var(--color-purple)',
+  SubAgentTaskStarted: 'var(--color-purple)',
+  SubAgentTaskCompleted: 'var(--color-purple)',
+  StreamPaused: 'var(--color-yellow)',
+  GoalEvaluated: 'var(--color-green)',
+  GatePassed: 'var(--color-green)',
+  GateFailed: 'var(--color-red)',
+  SpecCommitted: 'var(--color-green)',
 };
 
 function eventRowColor(eventType: string): string {
@@ -51,9 +51,9 @@ function eventRowColor(eventType: string): string {
     }
   }
   if (eventType.toLowerCase().includes('failed') || eventType.toLowerCase().includes('error')) {
-    return 'var(--accent-red)';
+    return 'var(--color-red)';
   }
-  return 'var(--text-muted)';
+  return 'var(--color-muted)';
 }
 
 const rowColor = computed(() => eventRowColor(props.event.event_type));

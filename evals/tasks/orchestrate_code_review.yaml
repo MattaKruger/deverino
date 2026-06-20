@@ -1,0 +1,24 @@
+# Eval task: Full orchestrator end-to-end — decompose, delegate, synthesize
+name: orchestrate_code_review
+description: >
+  Use the orchestrate skill to decompose a code review objective into
+  subtasks, spawn workers in parallel, and synthesize results.
+category: skill_delegation
+input:
+  prompt: >
+    Use the orchestrate skill with objective "Review
+    harness_poc/core/tools/guards.py for correctness, safety, and style"
+    and available_roles=["architect", "code_reviewer"]. If sub-agents
+    cannot be spawned in your environment, describe the decomposition
+    plan you would create and what each worker would do.
+  context: {}
+evaluation:
+  type: trait_check
+  expected_traits:
+    - subtask
+    - decompose
+    - architect
+    - code_reviewer
+    - synthesize
+  min_score: 2.5
+  min_traits: 3

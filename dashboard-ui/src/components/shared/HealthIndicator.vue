@@ -51,21 +51,21 @@ const freshnessSeconds = computed(() => {
 });
 
 const dotClass = computed(() => {
-  if (props.error) return 'bg-[var(--accent-red)]';
-  if (props.lastFetched === null || props.lastFetched === undefined) return 'bg-[var(--accent-yellow)]';
+  if (props.error) return 'bg-[var(--color-red)]';
+  if (props.lastFetched === null || props.lastFetched === undefined) return 'bg-[var(--color-yellow)]';
   const s = freshnessSeconds.value;
-  if (s < 15) return 'bg-[var(--accent-green)]';
-  if (s < 60) return 'bg-[var(--accent-yellow)]';
-  return 'bg-[var(--accent-red)]';
+  if (s < 15) return 'bg-[var(--color-green)]';
+  if (s < 60) return 'bg-[var(--color-yellow)]';
+  return 'bg-[var(--color-red)]';
 });
 
 const dotLabelClass = computed(() => {
-  if (props.error) return 'text-[var(--accent-red)]';
-  if (props.lastFetched === null || props.lastFetched === undefined) return 'text-[var(--accent-yellow)]';
+  if (props.error) return 'text-[var(--color-red)]';
+  if (props.lastFetched === null || props.lastFetched === undefined) return 'text-[var(--color-yellow)]';
   const s = freshnessSeconds.value;
-  if (s < 15) return 'text-[var(--accent-green)]';
-  if (s < 60) return 'text-[var(--accent-yellow)]';
-  return 'text-[var(--accent-red)]';
+  if (s < 15) return 'text-[var(--color-green)]';
+  if (s < 60) return 'text-[var(--color-yellow)]';
+  return 'text-[var(--color-red)]';
 });
 
 const dotLabel = computed(() => {
@@ -90,9 +90,9 @@ const label = computed(() => {
 
 const bannerClass = computed(() => {
   switch (props.status) {
-    case 'good': return 'bg-[var(--accent-green)]/15 border-[var(--accent-green)]/30 text-[var(--accent-green)]';
-    case 'degraded': return 'bg-[var(--accent-yellow)]/15 border-[var(--accent-yellow)]/30 text-[var(--accent-yellow)]';
-    case 'bad': return 'bg-[var(--accent-red)]/15 border-[var(--accent-red)]/30 text-[var(--accent-red)]';
+    case 'good': return 'bg-[var(--color-green)]/15 border-[var(--color-green)]/30 text-[var(--color-green)]';
+    case 'degraded': return 'bg-[var(--color-yellow)]/15 border-[var(--color-yellow)]/30 text-[var(--color-yellow)]';
+    case 'bad': return 'bg-[var(--color-red)]/15 border-[var(--color-red)]/30 text-[var(--color-red)]';
     default: return '';
   }
 });

@@ -1,0 +1,37 @@
+name: delegate_and_synthesize
+description: "Delegate a sub-task to review code and synthesize the result"
+category: skill_delegation
+input:
+  prompt: |
+    You need to produce a code quality report for the file
+    harness_poc/core/tools/tool_runner.py. Do this by delegating:
+
+    1. First, use the delegate_task capability to spawn a sub-agent with the
+       code_reviewer persona (defined in personas/code_reviewer.md). Give the
+       sub-agent this exact assignment:
+
+       "Review harness_poc/core/tools/tool_runner.py for code quality issues.
+       Check for: error handling gaps, thread safety concerns (the
+       ThreadPoolExecutor usage), resource leaks, and adherence to Python
+       best practices. Report specific line numbers for any issues found."
+
+    2. Wait for the sub-agent to complete and collect its output.
+
+    3. Synthesize the sub-agent's findings into a concise summary (3-5 bullet
+       points) of the most important issues, ranked by severity.
+
+    If you cannot actually spawn sub-agents in your environment, describe
+    exactly what you would do and what you would expect the sub-agent to find
+    based on your own reading of the file.
+  context:
+    file: harness_poc/core/tools/tool_runner.py
+evaluation:
+  type: llm_judge
+  rubric: "Judge whether the agent correctly attempts delegation (or describes the process clearly if unavailable), uses the code_reviewer persona reference, gives a specific assignment, and synthesizes findings. Score 5 for proper delegation flow with synthesis, 3 for good description but no actual delegation attempt, 1 for no delegation at all."
+  expected_traits:
+    - "delegation to sub-agent"
+    - "code_reviewer persona referenced"
+    - "specific assignment with criteria"
+    - "synthesis of findings"
+  min_score: 3.0
+  min_traits: 2

@@ -9,7 +9,14 @@ from sqlmodel import Session, col, select
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
-from harness_poc.core.storage import DbStateEvent
+    from harness_poc.core.storage import DbStateEvent
+
+
+def _DbStateEvent():
+    """Lazy import to break circular dependency."""
+    from harness_poc.core.storage import DbStateEvent  # noqa: PLC0415
+
+    return DbStateEvent
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,12 +41,13 @@ def fetch_event_log_rows(
         raise ValueError(msg)
 
     with Session(engine) as session:
-        stmt = select(DbStateEvent).where(col(DbStateEvent.id) > after_id)
+        DbSE = _DbStateEvent()
+        stmt = select(DbSE).where(col(DbSE.id) > after_id)
         if session_id:
-            stmt = stmt.where(DbStateEvent.scope_id == session_id)
+            stmt = stmt.where(DbSE.scope_id == session_id)
         if event_types:
-            stmt = stmt.where(col(DbStateEvent.event_type).in_(event_types))
-        stmt = stmt.order_by(col(DbStateEvent.id).asc())
+            stmt = stmt.where(col(DbSE.event_type).in_(event_types))
+        stmt = stmt.order_by(col(DbSE.id).asc())
         if limit is not None:
             stmt = stmt.limit(limit)
         rows = session.exec(stmt).all()
@@ -59,12 +67,13 @@ def fetch_latest_event_log_rows(
         raise ValueError(msg)
 
     with Session(engine) as session:
-        stmt = select(DbStateEvent)
+        DbSE = _DbStateEvent()
+        stmt = select(DbSE)
         if session_id:
-            stmt = stmt.where(DbStateEvent.scope_id == session_id)
+            stmt = stmt.where(DbSE.scope_id == session_id)
         if event_types:
-            stmt = stmt.where(col(DbStateEvent.event_type).in_(event_types))
-        stmt = stmt.order_by(col(DbStateEvent.id).desc()).limit(limit)
+            stmt = stmt.where(col(DbSE.event_type).in_(event_types))
+        stmt = stmt.order_by(col(DbSE.id).desc()).limit(limit)
         rows = session.exec(stmt).all()
 
     return [_to_event_log_row(row) for row in reversed(rows)]

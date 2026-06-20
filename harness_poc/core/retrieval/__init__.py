@@ -1,5 +1,5 @@
 from harness_poc.core.retrieval.document_index import DocumentIndexer, IndexResult
-from harness_poc.core.retrieval.embedder import TextEmbedder
+from harness_poc.core.retrieval.embedder import TextEmbedder, preload_embedder
 from harness_poc.core.retrieval.pdf_converter import convert_pdf_to_chunks
 from harness_poc.core.retrieval.retrieval import (
     DocumentChunk,
@@ -37,4 +37,5 @@ __all__ = [
     "make_chunk_id",
     "make_document_chunks",
     "make_source_id",
+    "preload_embedder",
 ]

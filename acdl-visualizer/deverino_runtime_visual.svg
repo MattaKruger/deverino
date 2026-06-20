@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1100" font-family="monospace">
+<defs>
+<marker id="ar" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8" fill="#666"/></marker>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0d1117"/><stop offset="100%" stop-color="#161b22"/></linearGradient>
+<linearGradient id="lc" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1a3a5c"/><stop offset="100%" stop-color="#0d2847"/></linearGradient>
+<linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3a1a5c"/><stop offset="100%" stop-color="#280d47"/></linearGradient>
+<linearGradient id="sb" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1c3a1c"/><stop offset="100%" stop-color="#0f280f"/></linearGradient>
+<linearGradient id="hi" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3a3a1c"/><stop offset="100%" stop-color="#28280f"/></linearGradient>
+<linearGradient id="mt" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5c1a1a"/><stop offset="100%" stop-color="#470d0d"/></linearGradient>
+<filter id="sh"><feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.4"/></filter>
+</defs>
+<rect width="1400" height="1100" fill="url(#bg)" rx="8"/>
+<text x="700" y="40" text-anchor="middle" fill="#e6edf3" font-size="22" font-weight="bold">Deverino ACDL Runtime Architecture</text>
+<text x="700" y="62" text-anchor="middle" fill="#8b949e" font-size="13">Two Loop Variants · Five-Layer System Prompt Assembly · Event-Sourced History · Context Map Materialization</text>
+<rect x="60" y="90" width="600" height="520" rx="12" fill="url(#lc)" stroke="#58a6ff" stroke-width="2" filter="url(#sh)" opacity="0.95"/>
+<text x="80" y="118" fill="#58a6ff" font-size="16" font-weight="bold">DeverinoChatLoop [@T]</text>
+<text x="80" y="138" fill="#8b949e" font-size="11">PydanticAI Agent.iter() streaming ReAct · "early" end strategy</text>
+<rect x="80" y="155" width="560" height="185" rx="8" fill="url(#sb)" stroke="#3fb950" stroke-width="1.5"/>
+<text x="95" y="178" fill="#7ee787" font-size="13" font-weight="bold">S-BLOCK · System Prompt (5 layers)</text>
+<text x="95" y="198" fill="#7ee787" font-size="11">Layer 1 · Identity Charter</text>
+<text x="110" y="214" fill="#8b949e" font-size="11">Frag SoulCharter → sys.soul_charter</text>
+<text x="95" y="234" fill="#7ee787" font-size="11">Layer 2 · Durable State</text>
+<text x="110" y="250" fill="#8b949e" font-size="11">Frag StateBlock → sys.project_state + sys.session_state</text>
+<text x="95" y="270" fill="#7ee787" font-size="11">Layer 3 · Context Map (conditional)</text>
+<text x="110" y="286" fill="#8b949e" font-size="11">If sys.context_map != none → Frag ContextMapBlock</text>
+<text x="95" y="306" fill="#7ee787" font-size="11">Layer 4 · Skill Catalog</text>
+<text x="110" y="322" fill="#8b949e" font-size="11">Frag SkillCatalogBlock → sys.available_skills</text>
+<text x="95" y="342" fill="#7ee787" font-size="11">Layer 5 · Tool Policy + Budget + Truncation</text>
+<text x="110" y="358" fill="#8b949e" font-size="11">Frag ToolPolicyBlock + TruncationPolicy</text>
+<rect x="80" y="350" width="560" height="100" rx="8" fill="url(#hi)" stroke="#d29922" stroke-width="1.5"/>
+<text x="95" y="373" fill="#d29922" font-size="13" font-weight="bold">HISTORY · Last 6 Turns | 24K Token Cap</text>
+<text x="95" y="393" fill="#8b949e" font-size="11">ForEach @t in range(max(1, @T-6), @T): Frag ConversationTurn[@t]</text>
+<text x="95" y="413" fill="#8b949e" font-size="11">prune_message_history() drops oldest turns when over budget</text>
+<text x="95" y="433" fill="#8b949e" font-size="11">No summarization · dropped turns permanently lost</text>
+<text x="95" y="448" fill="#8b949e" font-size="11">Tool returns truncated with "[tool result truncated: ...]"</text>
+<rect x="80" y="460" width="560" height="50" rx="8" fill="#1c2a3a" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="95" y="483" fill="#58a6ff" font-size="13" font-weight="bold">CURRENT · User Input</text>
+<text x="95" y="499" fill="#8b949e" font-size="11">U: env.user_input[@T]</text>
+<rect x="740" y="90" width="600" height="520" rx="12" fill="url(#lg)" stroke="#bc8cff" stroke-width="2" filter="url(#sh)" opacity="0.95"/>
+<text x="760" y="118" fill="#bc8cff" font-size="16" font-weight="bold">DeverinoGoalLoop [@T, max_iterations]</text>
+<text x="760" y="138" fill="#8b949e" font-size="11">Structured ReAct · Event-Sourced History · 3-Budget System</text>
+<rect x="760" y="155" width="560" height="185" rx="8" fill="url(#sb)" stroke="#3fb950" stroke-width="1.5"/>
+<text x="775" y="178" fill="#7ee787" font-size="13" font-weight="bold">S-BLOCK · System Prompt (5 layers)</text>
+<text x="775" y="198" fill="#7ee787" font-size="11">Layer 1 · Identity Charter</text>
+<text x="790" y="214" fill="#8b949e" font-size="11">Frag SoulCharter → sys.soul_charter</text>
+<text x="775" y="234" fill="#7ee787" font-size="11">Layer 2 · Durable State</text>
+<text x="790" y="250" fill="#8b949e" font-size="11">Frag StateBlock → sys.project_state + sys.session_state</text>
+<text x="775" y="270" fill="#7ee787" font-size="11">Layer 3 · Context Map (conditional)</text>
+<text x="790" y="286" fill="#8b949e" font-size="11">If sys.context_map != none → Frag ContextMapBlock</text>
+<text x="775" y="306" fill="#7ee787" font-size="11">Layer 4 · Goal Header + Autonomous Policy</text>
+<text x="790" y="322" fill="#8b949e" font-size="11">Frag GoalHeader: env.goal_objective + budget limits</text>
+<text x="775" y="342" fill="#7ee787" font-size="11">Layer 5 · Skill Catalog (model returns JSON, not tools)</text>
+<text x="790" y="358" fill="#8b949e" font-size="11">Frag SkillCatalogBlock → sys.available_skills</text>
+<rect x="760" y="350" width="560" height="100" rx="8" fill="url(#hi)" stroke="#d29922" stroke-width="1.5"/>
+<text x="775" y="373" fill="#d29922" font-size="13" font-weight="bold">HISTORY · Event-Sourced, Role-Mapped</text>
+<text x="775" y="393" fill="#8b949e" font-size="11">ForEach event in sys.event_history: Frag EventMappedTurn[event]</text>
+<text x="775" y="413" fill="#8b949e" font-size="11">Switch/Case: SkillCalled→assistant · SkillCompleted→user · etc.</text>
+<text x="775" y="433" fill="#8b949e" font-size="11">Context compression: last 3 raw, older summarized to narrative</text>
+<text x="775" y="448" fill="#8b949e" font-size="11">8,000 char budget for recent event rendering</text>
+<rect x="760" y="460" width="560" height="50" rx="8" fill="#2a1c3a" stroke="#bc8cff" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="775" y="483" fill="#bc8cff" font-size="13" font-weight="bold">CURRENT · Iteration Prompt</text>
+<text x="775" y="499" fill="#8b949e" font-size="11">U: GOAL_ITERATION_PROMPT(env.goal_objective, sys.iteration)</text>
+<rect x="60" y="635" width="1280" height="180" rx="12" fill="url(#mt)" stroke="#f85149" stroke-width="2" filter="url(#sh)" opacity="0.95"/>
+<text x="80" y="663" fill="#f85149" font-size="16" font-weight="bold">Context Map Materialization (async background MaterializerRunner polling)</text>
+<text x="80" y="683" fill="#8b949e" font-size="11">Both loops inject sys.context_map into Layer 3 of S-BLOCK when non-empty</text>
+<rect x="80" y="700" width="240" height="50" rx="6" fill="#2d1a1a" stroke="#f85149" stroke-width="1.5"/>
+<text x="200" y="723" text-anchor="middle" fill="#f85149" font-size="13" font-weight="bold">Event Store</text>
+<text x="200" y="738" text-anchor="middle" fill="#8b949e" font-size="10">Unprocessed Events</text>
+<rect x="370" y="700" width="240" height="50" rx="6" fill="#2d1a1a" stroke="#f85149" stroke-width="1.5"/>
+<text x="490" y="718" text-anchor="middle" fill="#f85149" font-size="13" font-weight="bold">Distiller (LLM)</text>
+<text x="490" y="733" text-anchor="middle" fill="#8b949e" font-size="10">pydantic_ai → DistilledBatch</text>
+<text x="490" y="746" text-anchor="middle" fill="#8b949e" font-size="10">&lt;=3 retries · safe fallback</text>
+<rect x="660" y="700" width="240" height="50" rx="6" fill="#2d1a1a" stroke="#f85149" stroke-width="1.5"/>
+<text x="780" y="718" text-anchor="middle" fill="#f85149" font-size="13" font-weight="bold">Cartographer (Pure Python)</text>
+<text x="780" y="733" text-anchor="middle" fill="#8b949e" font-size="10">dedup · merge · priority</text>
+<text x="780" y="746" text-anchor="middle" fill="#8b949e" font-size="10">staleness · budget eviction</text>
+<rect x="950" y="700" width="240" height="50" rx="6" fill="#2d1a1a" stroke="#f85149" stroke-width="1.5"/>
+<text x="1070" y="723" text-anchor="middle" fill="#f85149" font-size="13" font-weight="bold">sys.context_map</text>
+<text x="1070" y="738" text-anchor="middle" fill="#8b949e" font-size="10">Rendered MapEntry[]</text>
+<line x1="320" y1="725" x2="365" y2="725" stroke="#f85149" stroke-width="2" marker-end="url(#ar)"/>
+<line x1="610" y1="725" x2="655" y2="725" stroke="#f85149" stroke-width="2" marker-end="url(#ar)"/>
+<line x1="900" y1="725" x2="945" y2="725" stroke="#f85149" stroke-width="2" marker-end="url(#ar)"/>
+<rect x="60" y="835" width="1280" height="120" rx="12" fill="#1c2a3a" stroke="#58a6ff" stroke-width="1.5" filter="url(#sh)" opacity="0.95"/>
+<text x="80" y="863" fill="#58a6ff" font-size="15" font-weight="bold">Execution Flow Comparison</text>
+<rect x="80" y="878" width="280" height="60" rx="6" fill="#0d2847" stroke="#58a6ff" stroke-width="1"/>
+<text x="220" y="898" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="bold">Chat Loop (Agent.iter())</text>
+<text x="220" y="914" text-anchor="middle" fill="#8b949e" font-size="10">Stream text + tool deltas interleaved</text>
+<text x="220" y="929" text-anchor="middle" fill="#8b949e" font-size="10">10 consecutive tool rounds → BREAK</text>
+<rect x="420" y="878" width="280" height="60" rx="6" fill="#280d47" stroke="#bc8cff" stroke-width="1"/>
+<text x="560" y="898" text-anchor="middle" fill="#bc8cff" font-size="12" font-weight="bold">Goal Loop (structured ReAct)</text>
+<text x="560" y="914" text-anchor="middle" fill="#8b949e" font-size="10">Model returns GoalAction JSON (no tools)</text>
+<text x="560" y="929" text-anchor="middle" fill="#8b949e" font-size="10">3x same failed action → stuck HALT</text>
+<rect x="760" y="878" width="280" height="60" rx="6" fill="#1c3a1c" stroke="#3fb950" stroke-width="1"/>
+<text x="900" y="898" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="bold">3-Budget System (Goal Loop)</text>
+<text x="900" y="914" text-anchor="middle" fill="#8b949e" font-size="10">Iterations · Tokens · Wall-clock seconds</text>
+<text x="900" y="929" text-anchor="middle" fill="#8b949e" font-size="10">evaluate_goal gate → is_complete?</text>
+<rect x="60" y="975" width="1280" height="110" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+<text x="80" y="998" fill="#e6edf3" font-size="13" font-weight="bold">ACDL Namespaces</text>
+<rect x="80" y="1008" width="610" height="28" rx="4" fill="#0d1117"/>
+<text x="95" y="1026" fill="#58a6ff" font-size="11">sys.*</text>
+<text x="170" y="1026" fill="#8b949e" font-size="11">soul_charter · project_state · session_state · context_map · available_skills</text>
+<rect x="710" y="1008" width="610" height="28" rx="4" fill="#0d1117"/>
+<text x="725" y="1026" fill="#bc8cff" font-size="11">env.*</text>
+<text x="800" y="1026" fill="#8b949e" font-size="11">user_input · goal_objective · retrieved_chunks · web_results</text>
+<rect x="80" y="1040" width="610" height="28" rx="4" fill="#0d1117"/>
+<text x="95" y="1058" fill="#d29922" font-size="11">resp.*</text>
+<text x="170" y="1058" fill="#8b949e" font-size="11">answer · reasoning · tool_calls · observations · token_usage · is_complete</text>
+<rect x="710" y="1040" width="610" height="28" rx="4" fill="#0d1117"/>
+<text x="725" y="1058" fill="#f85149" font-size="11">budget.*</text>
+<text x="800" y="1058" fill="#8b949e" font-size="11">max_consecutive_tools · max_semble_search · chat_history_tokens · goal_max_*</text>
+</svg>

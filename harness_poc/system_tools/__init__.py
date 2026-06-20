@@ -35,6 +35,7 @@ def register(
     description: str,
     parameters: dict[str, Any],
     handler: Callable[..., object],
+    model_description: str = "",
     **extra: Any,  # noqa: ANN401
 ) -> None:
     """Register a built-in tool.
@@ -44,6 +45,10 @@ def register(
         description: Tool description in the JSON function schema.
         parameters: JSON Schema ``parameters`` object.
         handler: Callable that receives keyword arguments and returns a dict.
+        model_description: Model-facing description separate from the
+            function docstring. Written as "docstring for a junior developer"
+            including example usage, edge cases, and tool interactions.
+            When empty, ``description`` is used.
         **extra: Internal flags (e.g. ``_skill_backed=True``).
 
     """
@@ -52,6 +57,7 @@ def register(
         "description": description,
         "parameters": parameters,
         "handler": handler,
+        "model_description": model_description or description,
         **extra,
     }
 

@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+import yaml
 from pydantic import ValidationError
 from sqlalchemy import text
 
 from harness_poc.core.context_map.schema import MapEntry
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from sqlalchemy import Engine
 
 _log = logging.getLogger(__name__)
@@ -181,6 +185,12 @@ class SubAgentNode:
     completed_at: str
     duration_s: float
     summary: str
+    # Phase 4 orchestrator extensions
+    role: str = ""  # normalized role name from persona
+    evaluation_score: float | None = None
+    token_cost: int = 0
+    conflicts: list[str] = field(default_factory=list)
+    child_count: int = 0  # how many workers this node spawned
 
 
 @dataclass(frozen=True, slots=True)
@@ -1095,6 +1105,23 @@ def _compute_duration(started_at: str, completed_at: str) -> float:
         return 0.0
 
 
+def _normalize_role(persona: str) -> str:
+    """Extract a clean role name from persona identifiers.
+
+    Personas can be full paths (agents/roles/code_reviewer), skill names,
+    or bare role names. This strips common prefixes/suffixes.
+    """
+    if not persona:
+        return ""
+    # Strip path prefixes
+    for prefix in ("agents/roles/", "personas/", "skills/", "system_skills/"):
+        persona = persona.removeprefix(prefix)
+    # Strip file extensions
+    for ext in (".md", ".yaml", ".yml"):
+        persona = persona.removesuffix(ext)
+    return persona
+
+
 def fetch_sub_agent_tree(engine: Engine) -> list[SubAgentNode]:
     """Return sub-agent dispatch/completion tree from both event stores.
 
@@ -1155,6 +1182,7 @@ def fetch_sub_agent_tree(engine: Engine) -> list[SubAgentNode]:
                 completed_at=completed,
                 duration_s=_compute_duration(started, completed),
                 summary=str(row["summary"] or ""),
+                role=_normalize_role(str(row["persona"] or "")),
             )
 
         # ── context_map_events (Approach B) ────────────────────
@@ -1195,7 +1223,6 @@ def fetch_sub_agent_tree(engine: Engine) -> list[SubAgentNode]:
             if not sub_id or sub_id in nodes:
                 continue  # prefer state_events entry
             started = str(row["started_at"] or "")
-            completed = str(row["completed_at"] or "")
             nodes[sub_id] = SubAgentNode(
                 sub_session_id=sub_id,
                 parent_session_id=str(row["parent_session_id"] or ""),
@@ -1206,6 +1233,27 @@ def fetch_sub_agent_tree(engine: Engine) -> list[SubAgentNode]:
                 completed_at=completed,
                 duration_s=_compute_duration(started, completed),
                 summary=str(row["summary"] or ""),
+                role=_normalize_role(str(row["persona"] or "")),
+            )
+
+    # Compute child counts for orchestrator tree visualization
+    for node in nodes.values():
+        child_count = sum(
+            1 for other in nodes.values() if other.parent_session_id == node.sub_session_id
+        )
+        if child_count > 0:
+            nodes[node.sub_session_id] = SubAgentNode(
+                sub_session_id=node.sub_session_id,
+                parent_session_id=node.parent_session_id,
+                persona=node.persona,
+                objective=node.objective,
+                status=node.status,
+                started_at=node.started_at,
+                completed_at=node.completed_at,
+                duration_s=node.duration_s,
+                summary=node.summary,
+                role=node.role,
+                child_count=child_count,
             )
 
     return list(nodes.values())
@@ -1302,3 +1350,183 @@ def fetch_error_summary(engine: Engine, *, hours: int = 24) -> list[ErrorSummary
         )
         for row in rows
     ]
+
+
+# ── Skill Compilation (dashboard skills view) ──────────────────────────
+
+
+_BUNDLE_JSON_FILENAME = ".skill_bundle.json"
+
+
+@dataclass(frozen=True, slots=True)
+class SkillContractSummary:
+    name: str
+    description: str
+    input_count: int
+    output_count: int
+    precondition_count: int
+    error_condition_count: int
+    cancellation_behavior: str
+
+
+@dataclass(frozen=True, slots=True)
+class SkillTemplateSummary:
+    name: str
+    kind: str
+    template_preview: str
+
+
+@dataclass(frozen=True, slots=True)
+class SkillCompilationSummary:
+    name: str
+    skill_type: str
+    version: str
+    compilation_status: str
+    contract_count: int
+    template_count: int
+    invoke_pattern_count: int
+    error_count: int
+    compiled_at: str
+    contracts: list[SkillContractSummary] = field(default_factory=list)
+    templates: list[SkillTemplateSummary] = field(default_factory=list)
+    compilation_errors: list[str] = field(default_factory=list)
+    aliases: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class CompilationProgress:
+    running: bool
+    total: int
+    completed: int
+    errors: int
+
+
+def _read_frontmatter_name_type(skill_md: Path) -> tuple[str, str, str, list[str]] | None:
+    """Extract (name, skill_type, version, aliases) from a SKILL.md frontmatter."""
+    try:
+        text = skill_md.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    fm_end = text.find("\n---", 3)
+    if fm_end == -1:
+        return None
+    try:
+        fm = yaml.safe_load(text[3:fm_end])
+    except yaml.YAMLError:
+        return None
+    if not isinstance(fm, dict):
+        return None
+    name = str(fm.get("name", skill_md.parent.name))
+    skill_type = str(fm.get("type", "unknown"))
+    version = str(fm.get("version", ""))
+    raw_aliases = fm.get("aliases", [])
+    aliases = list(raw_aliases) if isinstance(raw_aliases, list) else []
+    return name, skill_type, version, aliases
+
+
+def _read_bundle_json(skill_dir: Path) -> dict[str, Any] | None:
+    """Read a persisted bundle JSON, returning None if absent or corrupt."""
+    bundle_path = skill_dir / _BUNDLE_JSON_FILENAME
+    if not bundle_path.exists():
+        return None
+    try:
+        return json.loads(bundle_path.read_text(encoding="utf-8"))
+    except OSError, json.JSONDecodeError:
+        return None
+
+
+def _build_contract_summaries(bundle: dict[str, Any]) -> list[SkillContractSummary]:
+    return [
+        SkillContractSummary(
+            name=str(cdata.get("name", "")),
+            description=str(cdata.get("description", "")),
+            input_count=len(cdata.get("inputs", {})),
+            output_count=len(cdata.get("outputs", {})),
+            precondition_count=len(cdata.get("preconditions", [])),
+            error_condition_count=len(cdata.get("error_conditions", [])),
+            cancellation_behavior=str(cdata.get("cancellation_behavior", "unknown")),
+        )
+        for cdata in bundle.get("contracts", {}).values()
+    ]
+
+
+def _build_template_summaries(bundle: dict[str, Any]) -> list[SkillTemplateSummary]:
+    templates: list[SkillTemplateSummary] = []
+    for tname, tdata in bundle.get("templates", {}).items():
+        raw_tmpl = str(tdata.get("template", ""))
+        templates.append(
+            SkillTemplateSummary(
+                name=tname,
+                kind=str(tdata.get("kind", "unknown")),
+                template_preview=raw_tmpl[:120],
+            )
+        )
+    return templates
+
+
+def fetch_skill_compilation_summaries(
+    skills_dirs: list[Path],
+) -> list[SkillCompilationSummary]:
+    """Return compilation summaries for all discovered skills."""
+    summaries: list[SkillCompilationSummary] = []
+    seen: set[str] = set()
+    for d in skills_dirs:
+        if not d.exists():
+            continue
+        for skill_md in sorted(d.glob("*/SKILL.md")):
+            fm = _read_frontmatter_name_type(skill_md)
+            if fm is None:
+                continue
+            name, skill_type, version, aliases = fm
+            if name in seen:
+                continue
+            seen.add(name)
+
+            bundle = _read_bundle_json(skill_md.parent)
+            if bundle is None:
+                summaries.append(
+                    SkillCompilationSummary(
+                        name=name,
+                        skill_type=skill_type,
+                        version=version,
+                        compilation_status="not_compiled",
+                        contract_count=0,
+                        template_count=0,
+                        invoke_pattern_count=0,
+                        error_count=0,
+                        compiled_at="",
+                        aliases=aliases,
+                    )
+                )
+                continue
+
+            compiled_ts = bundle.get("compiled_at", 0.0)
+            if isinstance(compiled_ts, (int, float)) and compiled_ts > 0:
+                compiled_str = datetime.fromtimestamp(float(compiled_ts), tz=UTC).isoformat()
+            else:
+                compiled_str = ""
+
+            summaries.append(
+                SkillCompilationSummary(
+                    name=name,
+                    skill_type=skill_type,
+                    version=version,
+                    compilation_status=str(bundle.get("compilation_status", "rejected")),
+                    contract_count=bundle.get("contract_count", 0)
+                    or len(bundle.get("contracts", {})),
+                    template_count=bundle.get("template_count", 0)
+                    or len(bundle.get("templates", {})),
+                    invoke_pattern_count=len(bundle.get("invoke_patterns", [])),
+                    error_count=len(bundle.get("compilation_errors", [])),
+                    compiled_at=compiled_str,
+                    contracts=_build_contract_summaries(bundle),
+                    templates=_build_template_summaries(bundle),
+                    compilation_errors=[str(e) for e in bundle.get("compilation_errors", [])],
+                    aliases=aliases,
+                )
+            )
+
+    summaries.sort(key=lambda s: s.name)
+    return summaries

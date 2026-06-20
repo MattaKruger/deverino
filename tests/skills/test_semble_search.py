@@ -104,14 +104,15 @@ def test_semble_search_respects_top_k() -> None:
     assert semble_skill._parse_top_k(OVERSIZED_TOP_K) == EXPECTED_MAX_TOP_K
 
 
-def test_semble_search_mode_validation() -> None:
-    """Search mode defaults to hybrid for invalid values."""
-    assert semble_skill._parse_mode("hybrid") == "hybrid"
-    assert semble_skill._parse_mode("semantic") == "semantic"
-    assert semble_skill._parse_mode("bm25") == "bm25"
-    assert semble_skill._parse_mode("invalid") == "hybrid"
-    assert semble_skill._parse_mode(None) == "hybrid"
+def test_semble_search_mode_removed() -> None:
+    """Mode parameter was removed — verify skill module still imports cleanly.
 
+    The --mode flag is not supported by semble >=0.4.0.  The skill silently
+    ignores the mode argument (backward compat — callers may still pass it).
+    """
+    # Smoke test: the skill module should import and execute should be callable
+    from skills.semble_search.skill import execute
+    assert callable(execute)
 
 def test_semble_search_emits_subprocess_progress(
     session_runner: tuple[SkillRunner, str, BlackboardDatabase],
@@ -139,9 +140,7 @@ def test_semble_search_emits_subprocess_progress(
 
     monkeypatch.setattr(semble_skill.subprocess, "Popen", lambda *_, **__: FakeProcess())
 
-    result = semble_skill._run_semble(
-        ctx, ["semble", "search"], query="find runtime"
-    )
+    result = semble_skill._run_semble(ctx, ["semble", "search"], query="find runtime")
 
     assert result.status == "success"
     assert events[0] == "semble_search: running query='find runtime'"
@@ -177,9 +176,7 @@ def test_semble_search_caps_large_output(
 
     monkeypatch.setattr(semble_skill.subprocess, "Popen", lambda *_, **__: FakeProcess())
 
-    result = semble_skill._run_semble(
-        ctx, ["semble", "search"], query="find runtime"
-    )
+    result = semble_skill._run_semble(ctx, ["semble", "search"], query="find runtime")
 
     assert result.status == "success"
     assert len(result.content) < len(large_output)
@@ -224,9 +221,7 @@ def test_semble_search_times_out_with_progress(
     monkeypatch.setattr(semble_skill.time, "sleep", lambda _: None)
     monkeypatch.setattr(semble_skill.subprocess, "Popen", lambda *_, **__: fake_process)
 
-    result = semble_skill._run_semble(
-        ctx, ["semble", "search"], query="find runtime"
-    )
+    result = semble_skill._run_semble(ctx, ["semble", "search"], query="find runtime")
 
     assert result.status == "failed"
     assert result.artifacts["error"] == "timeout"

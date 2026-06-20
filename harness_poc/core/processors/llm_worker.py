@@ -45,7 +45,7 @@ async def run_llm_worker(  # noqa: PLR0913
         skill_runner=skill_runner,
         system_prompt=system_prompt or config.paths.soul.read_text(encoding="utf-8"),
         llm=config.llm,
-        enable_tools=False,
+        enable_tools=True,
     )
 
     async for event in bus.subscribe_session(session_id):
@@ -78,9 +78,7 @@ async def run_llm_worker(  # noqa: PLR0913
         if requested_skill is not None:
             await bus.publish_async(SkillRequested(session_id=session_id, **requested_skill))
         elif result.content:
-            for ref in _extract_references(
-                result.content, session_id, database, config
-            ):
+            for ref in _extract_references(result.content, session_id, database, config):
                 database.append_context_map_event(ref)
             await bus.publish_async(
                 LLMTextEmitted(session_id=session_id, content=result.content),
@@ -209,9 +207,7 @@ def _extract_references(
                 entry_key=str(getattr(entry, "key", "")),
                 section=str(getattr(entry, "section", "")),
                 cycle_n=cycle_cache[source_corpus],
-                citation_context=content[
-                    max(0, match.start() - 80) : match.end() + 80
-                ],
+                citation_context=content[max(0, match.start() - 80) : match.end() + 80],
             )
         )
 

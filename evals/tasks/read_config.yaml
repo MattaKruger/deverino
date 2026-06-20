@@ -1,0 +1,29 @@
+name: read_config
+description: "Read and summarize the harness.yaml configuration file"
+category: file_operations
+input:
+  prompt: |
+    Read the file harness.yaml and answer the following:
+
+    1. What LLM provider and model are configured?
+    2. What database URL is specified in the runtime section?
+    3. What is the container TTL in seconds, and what is the max number of
+       harness containers?
+    4. Is retrieval enabled? If so, what provider and what is the default
+       retrieval mode?
+    5. What are the first three auto_index_paths entries?
+    6. What is the distiller model?
+
+    Answer each question with the exact value from the config file.
+  context:
+    file: harness.yaml
+evaluation:
+  type: llm_judge
+  rubric: "Judge whether the extracted values match the harness.yaml content exactly. Score 5 for all 6 answers correct, 3 for 4-5 correct, 1 for 3 or fewer correct. Fabricated values (not in the file) get score 1."
+  expected_traits:
+    - "deepseek provider and model"
+    - "postgresql database URL"
+    - "container TTL and max containers"
+    - "vespa retrieval provider"
+  min_score: 4.0
+  min_traits: 3

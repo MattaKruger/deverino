@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from harness_poc.core.skills import CancellationToken, SkillResult
 from harness_poc.core.tools.tool_context import ToolContext
+from harness_poc.core.tools.guards import GuardPipeline
 from harness_poc.core.tools.tool_result import ToolResult
 
 if TYPE_CHECKING:
@@ -46,6 +47,9 @@ class ToolRunner:
     parameter.  ``ToolRunner`` inspects the signature and injects it
     when needed, so pure tools stay pure and context-aware tools get
     what they need.
+
+    On every ``execute_tool()`` call, registered guards run before the
+    handler. See ``harness_poc.core.tools.guards`` for the guard pipeline.
     """
 
     def __init__(
@@ -55,6 +59,7 @@ class ToolRunner:
         skill_runner: SkillRunner | None = None,
         database: BlackboardAccessProxy | None = None,
         runtime_config: RuntimeConfig | None = None,
+        guards: GuardPipeline | None = None,
     ) -> None:
         self._tools_dir: Path = config.paths.system_tools
         self._project_skills_dir: Path = config.paths.project_skills
@@ -65,6 +70,7 @@ class ToolRunner:
         self._discovered = False
         self._active_tokens: dict[str, CancellationToken] = {}
         self.system_prompt: str = ""
+        self._guards = guards or GuardPipeline()
 
     # ------------------------------------------------------------------
     # Discovery
@@ -103,7 +109,7 @@ class ToolRunner:
                 "type": "function",
                 "function": {
                     "name": str,
-                    "description": str,
+                    "description": str,  # model_description if set, else description
                     "parameters": dict,  # JSON Schema
                     "auto_invokable": True,
                 },
@@ -119,7 +125,7 @@ class ToolRunner:
                     "type": "function",
                     "function": {
                         "name": name,
-                        "description": info["description"],
+                        "description": info.get("model_description", info["description"]),
                         "parameters": info["parameters"],
                         "auto_invokable": True,
                     },
@@ -153,6 +159,17 @@ class ToolRunner:
         info = get_registry().get(tool_name)
         if info is None:
             return _json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+        # --- Run input guards before tool execution ---
+        guard_result = self._guards.validate(tool_name, arguments)
+        if not guard_result.ok:
+            return _json.dumps(
+                {
+                    "error": "Tool call rejected by input guards.",
+                    "guard_errors": guard_result.errors,
+                },
+                ensure_ascii=False,
+            )
 
         handler = cast("Callable[..., object]", info["handler"])
         token = cancellation or CancellationToken()

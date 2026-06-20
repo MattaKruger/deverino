@@ -3,7 +3,7 @@
     <span
       v-for="(w, i) in widths"
       :key="i"
-      class="h-3.5 rounded bg-[var(--card-border)] animate-pulse"
+      class="h-3.5 rounded bg-[var(--color-border)] animate-pulse"
       :style="{ width: w }"
     ></span>
   </div>

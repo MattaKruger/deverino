@@ -29,6 +29,8 @@ dependencies = [
     "semble>=0.3.4",
     "docling>=2.0.0",
     "docling-core[chunking]>=2.77.0",
+    "einops>=0.8.2",
+    "pymupdf>=1.27.2.3",
 ]
 
 [dependency-groups]
@@ -230,6 +232,7 @@ max-positional-args = 5
 "harness_poc/core/skills/skill_preprocessing.py" = ["S105", "S603", "S607", "TC003"]
 "harness_poc/system_tools/container_destroy.py" = ["ERA001", "TC001"]
 "harness_poc/api/routes.py" = ["TC001", "TC002", "ANN202"]
+"harness_poc/api/chat.py" = ["TC001", "TC002"]
 "harness_poc/system_tools/container_spawn.py" = ["TC001"]
 "harness_poc/system_tools/knowledge_tools.py" = [
     "E402",
@@ -244,6 +247,10 @@ max-positional-args = 5
 "tests/runtime/test_execute_python.py" = ["ARG001", "PLC0415", "PLR0913"]
 "tests/runtime/test_pydantic_runtime.py" = ["PLR0913"]
 "tests/skills/test_knowledge_tools.py" = ["ARG001", "ARG002", "N817", "PLC0415"]
+"scripts/**/*.py" = [
+    "S310",   # urllib URL open – scripts hit known APIs (arXiv)
+    "S314",   # XML parsing – scripts parse known Atom feeds
+]
 
 [tool.ruff.format]
 quote-style = "double"

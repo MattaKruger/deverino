@@ -81,7 +81,7 @@ _DEFAULT_SECTION_BUDGET_SHARE: dict[str, float] = {
 
 _SECTION_BUDGET_SHARE_TOLERANCE = 0.001
 
-_DISTILLER_KNOWN_KEYS = frozenset({"model", "max_retries", "prompt_template"})
+_DISTILLER_KNOWN_KEYS = frozenset({"model", "max_retries", "prompt_template", "timeout_seconds"})
 
 _OLD_SCALAR_KEYS = frozenset(
     {"recency_bonus", "recency_cap", "staleness_penalty", "staleness_floor"}
@@ -109,6 +109,7 @@ class DistillerConfig:
     model: str | None = None  # None → fall back to HarnessConfig.llm
     max_retries: int = 3
     prompt_template: str = "distiller_v1"
+    timeout_seconds: float = 120.0  # per-attempt timeout for the LLM call
 
     def resolved_model(self, llm_config: LLMConfig) -> str:
         """Return the effective model name, falling back to the primary LLM model."""
@@ -127,12 +128,8 @@ class CartographerConfig:
     staleness_floor: dict[str, float] = field(
         default_factory=lambda: dict(_DEFAULT_STALENESS_FLOOR)
     )
-    recency_bonus: dict[str, float] = field(
-        default_factory=lambda: dict(_DEFAULT_RECENCY_BONUS)
-    )
-    recency_cap: dict[str, float] = field(
-        default_factory=lambda: dict(_DEFAULT_RECENCY_CAP)
-    )
+    recency_bonus: dict[str, float] = field(default_factory=lambda: dict(_DEFAULT_RECENCY_BONUS))
+    recency_cap: dict[str, float] = field(default_factory=lambda: dict(_DEFAULT_RECENCY_CAP))
 
     priority_weights: dict[str, float] = field(
         default_factory=lambda: dict(_DEFAULT_PRIORITY_WEIGHTS)
@@ -158,6 +155,7 @@ def load_distiller_config(raw: dict[str, Any]) -> DistillerConfig:
         model=raw.get("model"),
         max_retries=int(raw.get("max_retries", 3)),
         prompt_template=str(raw.get("prompt_template", "distiller_v1")),
+        timeout_seconds=float(raw.get("timeout_seconds", 120.0)),
     )
 
 
@@ -201,18 +199,10 @@ def load_cartographer_config(raw: dict[str, Any]) -> CartographerConfig:
         weights = {k: float(weights_raw[k]) for k in _REQUIRED_WEIGHT_KEYS}
 
     # -- per-type decay dicts --
-    staleness_penalty = _parse_per_type_dict(
-        raw, "staleness_penalty", _DEFAULT_STALENESS_PENALTY
-    )
-    staleness_floor = _parse_per_type_dict(
-        raw, "staleness_floor", _DEFAULT_STALENESS_FLOOR
-    )
-    recency_bonus = _parse_per_type_dict(
-        raw, "recency_bonus", _DEFAULT_RECENCY_BONUS
-    )
-    recency_cap = _parse_per_type_dict(
-        raw, "recency_cap", _DEFAULT_RECENCY_CAP
-    )
+    staleness_penalty = _parse_per_type_dict(raw, "staleness_penalty", _DEFAULT_STALENESS_PENALTY)
+    staleness_floor = _parse_per_type_dict(raw, "staleness_floor", _DEFAULT_STALENESS_FLOOR)
+    recency_bonus = _parse_per_type_dict(raw, "recency_bonus", _DEFAULT_RECENCY_BONUS)
+    recency_cap = _parse_per_type_dict(raw, "recency_cap", _DEFAULT_RECENCY_CAP)
 
     # -- section_budget_share --
     section_budget_share = _parse_section_budget_share(raw)

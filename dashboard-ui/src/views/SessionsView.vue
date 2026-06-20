@@ -1,7 +1,7 @@
 <template>
   <div class="p-6 space-y-6 max-w-screen-2xl mx-auto">
     <div class="flex items-center gap-3">
-      <h2 class="text-lg font-semibold text-[var(--text)]">Sessions</h2>
+      <h2 class="text-lg font-semibold text-[var(--color-text)]">Sessions</h2>
       <HealthIndicator
         :lastFetched="store.lastFetched"
         :error="store.error"
@@ -19,7 +19,7 @@
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="border-b border-[var(--card-border)] text-left text-xs text-[var(--text-muted)] uppercase tracking-wider">
+              <tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)] uppercase tracking-wider">
                 <th class="px-3 py-2 font-medium">Session ID</th>
                 <th class="px-3 py-2 font-medium">Status</th>
                 <th class="px-3 py-2 font-medium text-right">Events</th>
@@ -33,12 +33,12 @@
               <tr
                 v-for="session in sortedSessions"
                 :key="session.session_id"
-                class="border-b border-[var(--grid-line)] hover:bg-[var(--card-border)] transition-colors"
+                class="border-b border-[var(--color-grid)] hover:bg-[var(--color-border)] transition-colors"
               >
                 <td class="px-3 py-2 font-mono text-xs">
                   <router-link
                     :to="`/sessions/${session.session_id}`"
-                    class="text-[var(--accent-blue)] hover:underline"
+                    class="text-[var(--color-blue)] hover:underline"
                   >
                     {{ truncateId(session.session_id) }}
                   </router-link>
@@ -46,21 +46,21 @@
                 <td class="px-3 py-2">
                   <StatusBadge :status="session.status" />
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-text)]">
                   {{ fmtNum(session.event_count) }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--text)]">
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-text)]">
                   {{ fmtNum(session.total_tokens) }}
                 </td>
                 <td class="px-3 py-2 text-right font-mono tabular-nums"
-                  :class="session.skill_failures > 0 ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'"
+                  :class="session.skill_failures > 0 ? 'text-[var(--color-red)]' : 'text-[var(--color-muted)]'"
                 >
                   {{ session.skill_failures }}
                 </td>
-                <td class="px-3 py-2 text-xs text-[var(--text-muted)] whitespace-nowrap">
+                <td class="px-3 py-2 text-xs text-[var(--color-muted)] whitespace-nowrap">
                   {{ fmtTime(session.last_seen) }}
                 </td>
-                <td class="px-3 py-2 text-xs text-[var(--text-muted)] max-w-xs truncate">
+                <td class="px-3 py-2 text-xs text-[var(--color-muted)] max-w-xs truncate">
                   {{ session.goal || '—' }}
                 </td>
               </tr>

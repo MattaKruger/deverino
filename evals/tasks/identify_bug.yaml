@@ -1,0 +1,31 @@
+name: identify_bug
+description: "Identify a logic issue in the app_factory.py startup code"
+category: code_understanding
+input:
+  prompt: |
+    Read the file harness_poc/app_factory.py carefully, focusing on the
+    build_app_state() function and the functions it calls.
+
+    There is a subtle logic issue in how the _ensure_history_consistent()
+    repair mechanism interacts with the message history. The repair adds
+    a synthetic assistant response when the last turn ended mid-tool-call,
+    but the repair message uses a hardcoded content string.
+
+    Identify: what specific problem could this cause when the LLM provider
+    processes the repaired history? Under what conditions would this
+    manifest? What would be a better approach to handle interrupted tool
+    calls without fabricating content?
+
+    Reference the actual function signatures and return types from the file.
+  context:
+    file: harness_poc/app_factory.py
+evaluation:
+  type: llm_judge
+  rubric: "Judge whether the answer correctly identifies the issue with fabricated repair content, explains when it manifests (mid-tool-call interrupt), and suggests a concrete improvement. Score 5 for precise diagnosis with file references, 3 for correct general idea but vague on specifics, 1 for missing the core issue."
+  expected_traits:
+    - "fabricated repair content"
+    - "mid-tool-call interrupt scenario"
+    - "references actual code or function names"
+    - "suggests concrete improvement"
+  min_score: 3.0
+  min_traits: 3

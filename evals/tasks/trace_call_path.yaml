@@ -1,0 +1,35 @@
+name: trace_call_path
+description: "Trace the full call path from a CLI command to tool execution"
+category: code_understanding
+input:
+  prompt: |
+    Starting from the CLI entry point in harness_poc/cli.py, trace the complete
+    call path when a user runs:
+
+        harness-poc pipeline run parallel-review --input objective="review the execution engine"
+
+    The pipeline is defined in pipelines/parallel-review.yaml. Walk through:
+
+    1. How does the CLI dispatch to the pipeline runner? Which command function
+       and sub-Typer app handle it?
+    2. How does the pipeline runner parse the YAML and execute the nodes? Which
+       module is responsible?
+    3. How do agent nodes eventually invoke tools? What class handles tool
+       discovery and execution?
+
+    Give the step-by-step chain with the key Python functions/classes involved
+    at each stage.
+  context:
+    files:
+      - harness_poc/cli.py
+      - harness_poc/core/tools/tool_runner.py
+evaluation:
+  type: llm_judge
+  rubric: "Judge whether the answer traces the correct CLI subcommand routing (pipeline_app -> pipeline_run), the pipeline YAML parsing and execution layer, and the connection to ToolRunner for tool dispatch. Score 5 for a complete and accurate chain, 3 for mostly correct with one missing link, 1 for a confused or wrong trace."
+  expected_traits:
+    - "pipeline_app typer"
+    - "pipeline YAML parsing"
+    - "node execution order or dependencies"
+    - "ToolRunner for tool dispatch"
+  min_score: 3.0
+  min_traits: 3

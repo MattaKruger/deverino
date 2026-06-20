@@ -38,6 +38,13 @@ observability:
   logfire: true   # set to true and export LOGFIRE_TOKEN to enable
   logfire_include_content: false
 
+compiler:
+  enabled: true           # Background skill compilation on TUI startup
+  model: null             # null = use llm.model; "gpt-4o-mini" = override
+  provider: null          # null = use llm.provider
+  be_enabled: false       # Stage 5: Binding Evidence (LLM prunes spurious contracts)
+  rc_enabled: false       # Stage 6: Residual Cleanup (LLM fixes prose-contract mismatches)
+
 tui:
   vim_enabled: true        # Vim-style modal editing in the Textual TUI (F2 toggles at runtime)
   vim_initial_mode: insert  # insert | normal — starting mode when Vim is enabled
@@ -52,18 +59,23 @@ retrieval:
   default_mode: hybrid
   chunk_size_chars: 1800
   chunk_overlap_chars: 200
-  max_feed_workers: 8
+  max_feed_workers: 1
   max_file_bytes: 52428800
   query_timeout_seconds: 5
   auto_index_paths:
     - docs/
   auto_index_ignore_paths:
-    - docs/acdl   # ACDL source — code, not prose documentation
+    - docs/acdl
+    - dashboard-ui/node_modules
+    - node_modules
+    - .venv
+    - __pycache__
 
 distiller:
   model: deepseek/deepseek-v4-flash
   max_retries: 3
   prompt_template: distiller_v2          # updated: includes architecture + obsolete
+  timeout_seconds: 120                   # per-attempt LLM call timeout
 
 cartographer:
   token_budget: 1024
