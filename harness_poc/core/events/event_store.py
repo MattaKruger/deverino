@@ -6,20 +6,13 @@ from typing import TYPE_CHECKING
 
 from sqlmodel import Session, col, select
 
+from harness_poc.core.events.events import EVENT_REGISTRY
+from harness_poc.core.observe import current_trace
+
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
     from harness_poc.core.events.events import BaseEvent
-
-from harness_poc.core.events.events import EVENT_REGISTRY
-from harness_poc.core.observe import current_trace
-
-
-def _DbStateEvent():
-    """Lazy import to break circular dependency."""
-    from harness_poc.core.storage import DbStateEvent  # noqa: PLC0415
-
-    return DbStateEvent
 
 
 logger = logging.getLogger(__name__)
@@ -34,12 +27,14 @@ class EventStore:
         return self._engine
 
     def persist(self, event: BaseEvent) -> None:
+        from harness_poc.core.storage import DbStateEvent  # noqa: PLC0415
+
         payload = {
             "event_type": event.event_type,
             "payload": event.model_dump(mode="json"),
         }
         with Session(self._engine) as session:
-            row = _DbStateEvent()(
+            row = DbStateEvent(
                 scope="session",
                 scope_id=event.session_id,
                 event_type=event.event_type,
@@ -48,7 +43,7 @@ class EventStore:
             )
             session.add(row)
             session.commit()
-            session.refresh(row)
+            # PK is populated after commit; refresh() was an unnecessary extra SELECT
             event.id = row.id or 0
             trace = current_trace()
             logger.debug(
@@ -67,13 +62,18 @@ class EventStore:
         limit: int = 20,
         event_types: list[type[BaseEvent]] | None = None,
     ) -> list[BaseEvent]:
+        from harness_poc.core.storage import DbStateEvent  # noqa: PLC0415
+
         type_names = [t.__name__ for t in event_types] if event_types is not None else None
         with Session(self._engine) as session:
-            DbSE = _DbStateEvent()
-            stmt = select(DbSE).where(DbSE.scope == "session").where(DbSE.scope_id == session_id)
+            stmt = (
+                select(DbStateEvent)
+                .where(DbStateEvent.scope == "session")
+                .where(DbStateEvent.scope_id == session_id)
+            )
             if type_names:
-                stmt = stmt.where(col(DbSE.event_type).in_(type_names))
-            stmt = stmt.order_by(col(DbSE.id).desc()).limit(limit)
+                stmt = stmt.where(col(DbStateEvent.event_type).in_(type_names))
+            stmt = stmt.order_by(col(DbStateEvent.id).desc()).limit(limit)
             rows = session.exec(stmt).all()
 
         events: list[BaseEvent] = []
@@ -88,7 +88,7 @@ class EventStore:
                 evt = event_cls.model_validate(outer["payload"])
                 evt.id = row.id or 0
                 events.append(evt)
-            except ValueError, KeyError:
+            except (ValueError, KeyError):
                 logger.warning("Skipping malformed event row", exc_info=True)
 
         events.reverse()

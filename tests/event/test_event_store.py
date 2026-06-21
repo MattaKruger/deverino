@@ -56,6 +56,30 @@ def test_get_recent_events_returns_chronological_order(db_engine: Engine) -> Non
     assert events[1].tool_name == "second"
 
 
+def test_skips_malformed_event_payload_and_continues(db_engine: Engine) -> None:
+    from datetime import UTC, datetime
+
+    store = _make_store(db_engine)
+    # Inject a row with a valid event_type but missing required fields in the inner payload
+    with Session(db_engine) as session:
+        session.add(
+            DbStateEvent(
+                scope="session",
+                scope_id="s2",
+                event_type="SkillCalled",
+                payload={"event_type": "SkillCalled", "payload": {"session_id": "s2"}},
+                created_at=datetime.now(tz=UTC).isoformat(timespec="seconds"),
+            )
+        )
+        session.commit()
+
+    store.persist(SkillCalled(session_id="s2", tool_name="good_skill", arguments={}))
+    events = store.get_recent_events("s2")
+    assert len(events) == 1
+    assert isinstance(events[0], SkillCalled)
+    assert events[0].tool_name == "good_skill"
+
+
 def test_skips_unrecognized_event_type_and_continues(db_engine: Engine) -> None:
     store = _make_store(db_engine)
     # Inject a legacy row with unknown event_type directly via SQLModel
