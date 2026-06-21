@@ -11,7 +11,6 @@ class BaseEvent(BaseModel):
     id: int | None = None
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     session_id: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     type_name: str = ""
 

@@ -42,6 +42,12 @@ from harness_poc.core.events import (
 # ---------------------------------------------------------------------------
 
 
+def test_base_event_has_no_timestamp_field():
+    """timestamp was a duplicate of created_at and has been removed."""
+    assert "timestamp" not in BaseEvent.model_fields
+    assert "created_at" in BaseEvent.model_fields
+
+
 def test_event_type_name_is_populated():
     """Each event auto-populates type_name from its class name."""
     event = AgentStarted(session_id="s1", goal="test")
