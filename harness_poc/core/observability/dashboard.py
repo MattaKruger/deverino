@@ -30,6 +30,7 @@ class DashboardSummary:
     skill_calls: int
     skill_failures: int
     context_pending: int
+    pending_state_proposals: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +215,17 @@ def fetch_dashboard_snapshot(engine: Engine, *, limit: int = 12) -> DashboardSna
     )
 
 
+def _pending_proposal_count(engine: Engine) -> int:
+    """Count pending state proposals without importing BlackboardDatabase."""
+    with engine.connect() as conn:
+        return (
+            conn.execute(
+                text("select count(*) from state_proposals where status = 'pending'")
+            ).scalar_one()
+            or 0
+        )
+
+
 def fetch_summary(engine: Engine) -> DashboardSummary:
     with engine.connect() as conn:
         row = (
@@ -253,6 +265,7 @@ def fetch_summary(engine: Engine) -> DashboardSummary:
         skill_calls=int(row["skill_calls"] or 0),
         skill_failures=int(row["skill_failures"] or 0),
         context_pending=int(pending or 0),
+        pending_state_proposals=_pending_proposal_count(engine),
     )
 
 

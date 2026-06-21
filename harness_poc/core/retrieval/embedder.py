@@ -34,6 +34,11 @@ DEFAULT_DEVICE = "cuda"  # falls back to "cpu" when CUDA is unavailable
 # Keyed by (model_name, device) to support multiple configurations if needed.
 _model_cache: dict[tuple[str, str], object] = {}
 _cache_lock = threading.Lock()
+# Serialize model loading so only one thread downloads the model at a time.
+# Without this, a foreground search_documents call racing the background
+# preloader would trigger a second concurrent download, competing for GPU
+# memory and network bandwidth, causing OOMs or multi-minute hangs.
+_loading_lock = threading.Lock()
 
 
 class TextEmbedder:
@@ -92,9 +97,9 @@ class TextEmbedder:
         Uses a module-level cache so that creating multiple TextEmbedder
         instances reuses the already-loaded model rather than reloading.
 
-        The heavy ``_load_model()`` call runs *outside* ``_cache_lock`` so
-        that concurrent threads (e.g. a background preloader and a foreground
-        search) don't serialize on the 20 s HuggingFace download.
+        Only one thread may load the model at a time; concurrent callers
+        block briefly on a dedicated loading lock and then pick up the
+        cached result.
         """
         if self._model is not None:
             return self._model
@@ -104,16 +109,23 @@ class TextEmbedder:
             if cached is not None:
                 self._model = cached
                 return cached
-        # Load outside the lock so other threads aren't blocked.
-        loaded = self._load_model()
-        with _cache_lock:
-            # Another thread may have beaten us — check again.
-            cached = _model_cache.get(cache_key)
-            if cached is not None:
-                self._model = cached
-                return cached  # discard ours, use the winner
-            _model_cache[cache_key] = loaded
-            self._model = loaded
+        # Serialize loading: only one thread downloads.  Other threads
+        # wait for the lock, re-check the cache, and get the already-loaded
+        # model without starting a second concurrent download.
+        with _loading_lock:
+            with _cache_lock:
+                cached = _model_cache.get(cache_key)
+                if cached is not None:
+                    self._model = cached
+                    return cached
+            try:
+                loaded = self._load_model()
+            except Exception:
+                logger.exception("Failed to load embedding model %r", self._model_name)
+                raise
+            with _cache_lock:
+                _model_cache[cache_key] = loaded
+                self._model = loaded
         return loaded
 
     def embed_batch(
@@ -195,5 +207,5 @@ def preload_embedder() -> None:
     """
     logger.info("Preloading embedding model (background)...")
     embedder = TextEmbedder()
-    embedder.model  # trigger lazy load
+    embedder.model  # trigger lazy load  # noqa: B018
     logger.info("Embedding model ready.")

@@ -552,6 +552,93 @@ def _under_ignore_prefix(path: Path, ignore_prefixes: list[Path]) -> bool:
         return True
     return False
 
+    def index_project_state(self) -> IndexResult:
+        """Index project state and events into Vespa with kind="state".
+
+        Each fact, decision, constraint, and event becomes its own chunk
+        for precise keyword retrieval — no semantic embeddings, no
+        hallucinated matches.
+        """
+        result = IndexResult()
+        try:
+            self._vespa.health_check()
+        except Exception as exc:
+            result.failed = 1
+            result.failure = {"error": str(exc)}
+            return result
+
+        state = self._db.ensure_project_state()
+        events = self._db.list_state_events(limit=500)
+
+        chunks: list[DocumentChunk] = []
+        chunk_idx = 0
+
+        def _add_chunk(text: str, title: str) -> None:
+            nonlocal chunk_idx
+            if not text.strip():
+                return
+            chunks.append(
+                DocumentChunk(
+                    source_id="state-project",
+                    uri="state://project/default",
+                    title=title,
+                    chunk_id=f"state-project-{chunk_idx}",
+                    chunk_index=chunk_idx,
+                    text=text,
+                    kind="state",
+                    content_hash=compute_content_hash(text),
+                    embedding=[],
+                )
+            )
+            chunk_idx += 1
+
+        if state.summary:
+            _add_chunk(state.summary, "Project State — Summary")
+        for key, value in sorted(state.facts.items()):
+            _add_chunk(f"{key}: {value}", f"Project State — Fact: {key}")
+        for i, c in enumerate(state.constraints, 1):
+            _add_chunk(c, f"Project State — Constraint #{i}")
+        for i, d in enumerate(state.decisions, 1):
+            _add_chunk(d, f"Project State — Decision #{i}")
+        for i, n in enumerate(state.notes, 1):
+            _add_chunk(n, f"Project State — Note #{i}")
+        for i, a in enumerate(state.next_actions, 1):
+            _add_chunk(a, f"Project State — Next Action #{i}")
+
+        for e in events:
+            detail = _state_event_text(e)
+            if detail:
+                _add_chunk(
+                    detail,
+                    f"State Event {e['id']}: {e['event_type']}",
+                )
+
+        if not chunks:
+            result.skipped = 1
+            return result
+
+        feed = self._vespa.feed_chunks(chunks)
+        result.chunks_indexed = feed.fed
+        result.failed = feed.failed
+        return result
+
+
+def _state_event_text(event: dict) -> str:
+    """Extract human-readable text from a state event for indexing."""
+    inner = event.get("payload", {})
+    if not isinstance(inner, dict):
+        return ""
+    detail = inner.get("payload", {})
+    if not isinstance(detail, dict):
+        return ""
+    if "text" in detail:
+        return f"{event['event_type']}: {detail['text']}"
+    if "key" in detail:
+        return f"{event['event_type']}: {detail['key']} = {detail.get('value', '')}"
+    if "proposal_id" in detail:
+        return f"{event['event_type']}: proposal {detail['proposal_id']}"
+    return event["event_type"]
+
 
 def _is_secret_file(name: str) -> bool:
     return any(fnmatch.fnmatch(name, pattern) for pattern in IGNORED_FILE_GLOBS)

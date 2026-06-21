@@ -563,7 +563,7 @@ class ChatApp(App[None]):
     def _update_vim_status(self) -> None:
         self._render_status_bar()
 
-    def action_submit_editor(self) -> None:
+    def action_submit_editor(self) -> None:  # noqa: PLR0911
         # Phase 2: command detection runs first (even during streaming)
         editor = self.query_one("#input", TextArea)
         text = editor.text.strip()
@@ -575,6 +575,12 @@ class ChatApp(App[None]):
             return
         if text == "/model" or text.startswith("/model "):
             self._handle_model_command(text)
+            return
+        # exit/quit always allowed, even while worker is running
+        if text.lower() in {"exit", "quit", "/exit", "/quit"}:
+            editor.load_text("")
+            self._auto_consolidate_check()
+            self.exit()
             return
         # Phase 2: queue gating — if worker running, queue bypasses Vim
         if self._worker_running:
@@ -764,6 +770,30 @@ class ChatApp(App[None]):
             self._hide_completion_menu()
             self._dismiss_all_overlays()
             self._submit(next_text)
+
+    def _auto_consolidate_check(self) -> None:
+        """Check for unconsolidated session state before exit.
+
+        If the session has pending state changes (dirty flag), print a
+        reminder suggesting the user run /state consolidate.
+        """
+        db = self._app_state.database
+        if db is None:
+            return
+        try:
+            dirty = db.is_session_state_dirty(self._app_state.session_id)
+        except Exception:
+            return
+        if not dirty:
+            return
+        self._mount_chat(
+            Static(
+                "[dim]Session state has unconsolidated changes. "
+                "Run [bold]/state consolidate[/bold] to review and promote "
+                "them to project state.[/dim]",
+                markup=True,
+            )
+        )
 
     def _abort_and_defer_command(self, command: str) -> None:
         """Abort current worker and defer command to after finalization."""
@@ -1064,6 +1094,7 @@ class ChatApp(App[None]):
         editor.load_text("")
         self._hide_completion_menu()
         if text.lower() in {"exit", "quit", "/exit", "/quit"}:
+            self._auto_consolidate_check()
             self.exit()
             return
         self._submit(text)
@@ -1322,9 +1353,21 @@ class ChatApp(App[None]):
 
             self.call_from_thread(_do)
 
+        # Track whether a streaming on_finish callback fired.  Non-streaming
+        # REPL commands (e.g. /debug, /help, /mode) return immediately without
+        # ever calling _finalize_response, which would otherwise clear
+        # _worker_running and _set_activity('idle').  Without this flag the
+        # TUI stays stuck in "worker running" mode after any slash command.
+        _streaming_finalized = False
+
+        def _finalize_and_track(content: str) -> None:
+            nonlocal _streaming_finalized
+            _streaming_finalized = True
+            _finalize_response(content)
+
         self._app_state.streaming.on_text = on_text_chunk
         self._app_state.streaming.on_tool_event = on_tool_event
-        self._app_state.streaming.on_finish = _finalize_response
+        self._app_state.streaming.on_finish = _finalize_and_track
 
         loop = asyncio.get_running_loop()
         try:
@@ -1357,7 +1400,7 @@ class ChatApp(App[None]):
                     break  # completed normally
                 except TimeoutError:
                     if self._abort_event.is_set():
-                        _finalize_response("")
+                        _finalize_and_track("")
                         return
         except Exception as exc:
             logger.exception("ChatApp worker raised", extra={"text": text})
@@ -1367,6 +1410,15 @@ class ChatApp(App[None]):
             if self._queued_messages:  # Phase 2: auto-dequeue after error
                 self.call_later(self._dequeue_next)
         self._app_state.streaming.reset_callbacks()
+        # Non-streaming REPL commands (slash commands, etc.) return without
+        # ever triggering on_finish, so _worker_running is never cleared.
+        # Clean up the worker state here so the TUI doesn't get stuck.
+        if not _streaming_finalized:
+            self._set_activity("idle")
+            self._worker_running = False
+            self._update_header()
+            if self._queued_messages:
+                self.call_later(self._dequeue_next)
 
     def _tui_print_markdown(self, text: str) -> None:
         linkified = _linkify_file_refs(text, str(self._app_state.config.project_root))

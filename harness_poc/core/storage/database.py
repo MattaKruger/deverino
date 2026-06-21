@@ -426,6 +426,25 @@ class BlackboardDatabase:
 
             return next_state
 
+    def list_pending_proposals(self) -> list[dict[str, Any]]:
+        """Return all pending state proposals as dicts."""
+        with Session(self._engine) as session:
+            rows = session.exec(
+                select(DbStateProposal)
+                .where(DbStateProposal.status == "pending")
+                .order_by(col(DbStateProposal.created_at).desc())
+            ).all()
+        return [
+            {
+                "proposal_id": row.proposal_id,
+                "session_id": row.session_id,
+                "status": row.status,
+                "payload": StatePayload.from_dict(row.proposal_payload).to_dict(),
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ]
+
     def approve_latest_proposal(self, project_id: str = "default") -> StatePayload:
         with Session(self._engine) as session:
             row = session.exec(
@@ -472,6 +491,72 @@ class BlackboardDatabase:
                     )
                 )
                 session.commit()
+
+    # ── Phase 2: facts + events ──
+
+    def set_project_fact(self, key: str, value: str, project_id: str = "default") -> StatePayload:
+        """Set a key-value fact directly on project state (no proposal needed)."""
+        current = self.ensure_project_state(project_id)
+        next_state = current.set_fact(key, value)
+        now = self._utc_now()
+        with Session(self._engine) as session:
+            row = session.get(DbProjectState, project_id)
+            if row is not None:
+                row.state_payload = next_state.to_dict()
+                row.version += 1
+                row.updated_at = now
+            session.add(
+                DbStateEvent(
+                    scope="project",
+                    scope_id=project_id,
+                    event_type="fact_set",
+                    payload={
+                        "event_type": "fact_set",
+                        "payload": {"key": key, "value": value},
+                    },
+                    created_at=now,
+                )
+            )
+            session.commit()
+        return next_state
+
+    def get_project_fact(self, key: str, project_id: str = "default") -> str | None:
+        """Read a single fact from project state."""
+        state = self.ensure_project_state(project_id)
+        return state.facts.get(key)
+
+    def is_session_state_dirty(self, session_id: str) -> bool:
+        """Check whether session state has unconsolidated changes."""
+        with Session(self._engine) as session:
+            row = session.get(DbSessionState, session_id)
+        return row.dirty if row is not None else False
+
+    def list_state_events(
+        self,
+        *,
+        session_id: str | None = None,
+        limit: int = 50,
+        event_types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return recent state_events, optionally filtered by scope and type."""
+        with Session(self._engine) as session:
+            stmt = select(DbStateEvent).order_by(col(DbStateEvent.id).desc()).limit(limit)
+            if session_id is not None:
+                stmt = stmt.where(DbStateEvent.scope_id == session_id)
+            if event_types:
+                stmt = stmt.where(col(DbStateEvent.event_type).in_(event_types))
+            rows = session.exec(stmt).all()
+        return [
+            {
+                "id": row.id,
+                "scope": row.scope,
+                "scope_id": row.scope_id,
+                "event_type": row.event_type,
+                "payload": row.payload,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ]
 
     def upsert_document_source(self, source: DbDocumentSource) -> None:
         if self._engine.dialect.name == "postgresql":

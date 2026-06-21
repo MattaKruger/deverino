@@ -7,6 +7,7 @@ export interface DashboardSummary {
   skill_calls: number
   skill_failures: number
   context_pending: number
+  pending_state_proposals: number
 }
 
 export interface SkillPerformance {
@@ -155,6 +156,36 @@ export interface ErrorSummary {
   error_count: number
   cancel_count: number
   last_error_at: string
+}
+
+// ── Project State (Phase 3) ─────────────────────────────────────────────────
+
+export interface ProjectState {
+  summary: string
+  notes: string[]
+  decisions: string[]
+  next_actions: string[]
+  open_questions: string[]
+  constraints: string[]
+  changelog: string[]
+  facts: Record<string, string>
+}
+
+export interface StateEvent {
+  id: number
+  scope: string
+  scope_id: string
+  event_type: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export interface StateProposal {
+  proposal_id: string
+  session_id: string
+  status: string
+  payload: ProjectState
+  created_at: string
 }
 
 // ── Skill Compilation ────────────────────────────────────────────────────────

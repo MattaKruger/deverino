@@ -482,6 +482,7 @@ class GoalRunner:
         main loop: evaluate → critique → replan → rerun → compare.
         """
         self._project_root = str(app_state.config.project_root.resolve())
+        self._db = app_state.database
         logger.info(
             "Goal run started",
             extra={
@@ -838,7 +839,7 @@ class GoalRunner:
         goal: str,
         recent_events: list[BaseEvent],
     ) -> list[Message]:
-        """Build message list: system prompt + formatted event history + continue prompt."""
+        """Build message list: system prompt + formatted event history."""
         system_prompt = self._goal_system_prompt(goal)
         messages: list[Message] = [
             {"role": "system", "content": system_prompt},
@@ -849,18 +850,6 @@ class GoalRunner:
             if msg is not None:
                 messages.append(msg)
 
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    "Continue working toward the goal. Take the next concrete action. "
-                    "If the goal is fully achieved, call evaluate_goal with "
-                    "is_complete=true and explain what was accomplished. "
-                    "If you are stuck or cannot proceed, call evaluate_goal with "
-                    "is_complete=false and explain what is blocking you."
-                ),
-            }
-        )
         return messages
 
     def _decide_next_action(
@@ -937,11 +926,19 @@ class GoalRunner:
         _max_event_chars = 8000
         _keep_raw_last = 3  # preserve last N events uncompressed
 
+        # Compact name-only listing — tool schemas are already visible to
+        # the model via the Agent's system prompt (primary chat) or are
+        # discoverable by name.  Avoids 2K–5K tokens of redundant JSON per
+        # iteration.
+        tool_names = sorted(
+            t.get("function", {}).get("name", "")
+            for t in tools
+            if t.get("function", {}).get("name")
+        )
         parts = [
             "Choose the next concrete action as structured output.",
             "",
-            "## Available Tools",
-            json.dumps(tools, indent=2, sort_keys=True),
+            f"## Available Tools: {', '.join(tool_names)}",
             "",
         ]
 
@@ -1142,11 +1139,31 @@ class GoalRunner:
 
     def _goal_system_prompt(self, goal: str) -> str:
         root = self._project_root or "(project root)"
-        return (
+        prompt = (
             "You are an autonomous agent operating in a ReAct (Reason + Act) loop. "
             "Your sole objective is to achieve the following goal.\n\n"
             f"## Project Root\n{root}\n\n"
             f"## Goal\n{goal}\n\n"
+        )
+
+        # Inject relevant project state (constraints + decisions) so the
+        # agent doesn't repeat past mistakes or contradict prior decisions.
+        if self._db is not None:
+            state = self._db.read_project_state()
+            if state is not None and not state.is_empty():
+                blocks: list[str] = []
+                if state.constraints:
+                    blocks.append(
+                        "## Known Constraints\n" + "\n".join(f"- {c}" for c in state.constraints)
+                    )
+                if state.decisions:
+                    # Only include the 5 most recent decisions to save tokens.
+                    recent = state.decisions[-5:]
+                    blocks.append("## Recent Decisions\n" + "\n".join(f"- {d}" for d in recent))
+                if blocks:
+                    prompt += "\n".join(blocks) + "\n\n"
+
+        prompt += (
             "## Instructions\n"
             "- Work step by step. Call tools to take actions.\n"
             "- **Prefer direct file access over search.** If you know or can "
@@ -1167,7 +1184,14 @@ class GoalRunner:
             "- Do not repeat a previously attempted action — the system "
             "will detect semantically similar attempts and block them.\n"
             "- Be concise. Focus on actions, not conversation.\n"
+            "\n"
+            "Continue working toward the goal. Take the next concrete action. "
+            "If the goal is fully achieved, call evaluate_goal with "
+            "is_complete=true and explain what was accomplished. "
+            "If you are stuck or cannot proceed, call evaluate_goal with "
+            "is_complete=false and explain what is blocking you.\n"
         )
+        return prompt
 
     def _is_semantically_stuck(self, tool_name: str, arguments: dict[str, Any]) -> bool:
         """Check if this action has been repeated enough to be considered stuck."""

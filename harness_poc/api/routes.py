@@ -236,13 +236,15 @@ def post_compile_skills(request: Request) -> dict[str, str]:
         completed = 0
         errors = 0
         # Emit initial progress so the frontend shows total immediately
-        publish_compile_event({
-            "event": "compilation_progress",
-            "total": total,
-            "completed": 0,
-            "errors": 0,
-            "running": True,
-        })
+        publish_compile_event(
+            {
+                "event": "compilation_progress",
+                "total": total,
+                "completed": 0,
+                "errors": 0,
+                "running": True,
+            }
+        )
         try:
             for sf in skill_files:
                 skill_name = sf.parent.name
@@ -344,13 +346,15 @@ def post_compile_skill(name: str, request: Request) -> dict[str, str]:
     def _compile_one() -> None:
         db = BlackboardDatabase(create_db_engine(config.runtime.database_url))
         # Emit initial progress so the frontend shows progress bar immediately
-        publish_compile_event({
-            "event": "compilation_progress",
-            "total": 1,
-            "completed": 0,
-            "errors": 0,
-            "running": True,
-        })
+        publish_compile_event(
+            {
+                "event": "compilation_progress",
+                "total": 1,
+                "completed": 0,
+                "errors": 0,
+                "running": True,
+            }
+        )
         runner = SkillRunner(database=db, config=config)
         try:
             bundle = compile_skill(
@@ -431,3 +435,40 @@ async def stream_compilation(request: Request) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ── State API (Phase 3) ──────────────────────────────────────────────
+
+
+def _db(request: Request):
+    """Return a BlackboardDatabase from the harness config."""
+    from harness_poc.core.config import HarnessConfig  # noqa: PLC0415
+    from harness_poc.core.storage import BlackboardDatabase, create_db_engine  # noqa: PLC0415
+
+    config = getattr(request.app.state, "config", None)
+    if config is None:
+        config = HarnessConfig.load()
+    return BlackboardDatabase(create_db_engine(config.runtime.database_url))
+
+
+@router.get("/api/state/project")
+def get_state_project(request: Request) -> dict:
+    db = _db(request)
+    state = db.ensure_project_state()
+    return state.to_dict()
+
+
+@router.get("/api/state/events")
+def get_state_events(
+    request: Request,
+    limit: int = Query(default=50),
+    session_id: str | None = Query(default=None),
+) -> list[dict]:
+    db = _db(request)
+    return db.list_state_events(session_id=session_id, limit=limit)
+
+
+@router.get("/api/state/proposals")
+def get_state_proposals(request: Request) -> list[dict]:
+    db = _db(request)
+    return db.list_pending_proposals()

@@ -10,6 +10,7 @@ llm:
 paths:
   # Engine Paths
   soul: harness_poc/system_prompts/SOUL.md
+  # soul_compact: harness_poc/system_prompts/SOUL-compact.md  # uncomment for token-efficient variant
   system_tools: harness_poc/system_tools
   system_skills: harness_poc/system_skills
 
@@ -33,6 +34,7 @@ runtime:
   materializer_freeze_threshold: 3
   materializer_freeze_seconds: 300
   materializer_copt_threshold: 0.92
+  sub_agent_prompt_max_tokens: 4000
 
 observability:
   logfire: true   # set to true and export LOGFIRE_TOKEN to enable
@@ -75,6 +77,7 @@ distiller:
   model: deepseek/deepseek-v4-flash
   max_retries: 3
   prompt_template: distiller_v2          # updated: includes architecture + obsolete
+  # prompt_template_compact: distiller_v2_compact  # uncomment for token-efficient variant
   timeout_seconds: 120                   # per-attempt LLM call timeout
 
 cartographer:

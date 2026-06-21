@@ -491,6 +491,28 @@ def documents_index(
     )
 
 
+@documents_app.command("index-state")
+def documents_index_state() -> None:
+    """Index project state into Vespa for keyword search."""
+    app_state = _new_app_state()
+
+    def _run() -> None:
+        from harness_poc.core.retrieval import (
+            DocumentIndexer,
+            LiveVespaDocumentClient,
+        )
+
+        indexer = DocumentIndexer(
+            config=app_state.config.retrieval,
+            database=app_state.database,
+            vespa_client=LiveVespaDocumentClient(app_state.config.retrieval),
+        )
+        result = indexer.index_project_state()
+        print_text(f"State indexed: {result.chunks_indexed} chunks fed, {result.failed} failed.")
+
+    _run_command(_run)
+
+
 @app.command()
 def goal(
     objective: Annotated[str, typer.Argument(help="The goal to pursue autonomously.")],

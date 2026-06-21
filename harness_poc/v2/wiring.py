@@ -418,27 +418,30 @@ def _build_spawner_adapter(config: HarnessConfig, db: BlackboardDatabase):  # no
             if context_map_block:
                 system_prompt += f"\n\n--- Context Map ({corpus_key}) ---\n{context_map_block}\n---"
 
-            # Also inject the project-level context map so sub-agents have
-            # general project context in addition to their persona-specific map.
-            project_corpus_key = f"{config.project_id}:codebase"
-            if project_corpus_key != corpus_key:
-                try:
-                    project_map = db.get_context_map(project_corpus_key) or []
-                    if project_map:
-                        project_cycle = db.get_cycle(project_corpus_key)
-                        project_block = render_context_map(
-                            project_map, project_cycle, prompt_mode="structured"
-                        )
-                        system_prompt += (
-                            f"\n\n--- Project Context Map ({project_corpus_key}) ---\n"
-                            f"{project_block}\n---"
-                        )
-                except Exception:
-                    logger.debug(
-                        "Failed to load project context map for sub-agent (corpus_key=%s)",
-                        project_corpus_key,
-                        exc_info=True,
-                    )
+            # Truncate if over sub-agent prompt token budget (map before persona —
+            # map is supplementary).  Uses the same TOKEN_CHAR_RATIO heuristic as
+            # message_history.py until Phase 3 unifies token estimation.
+            prompt_max_tokens = config.runtime.sub_agent_prompt_max_tokens
+            if prompt_max_tokens > 0:
+                estimated = len(system_prompt) // 4
+                if estimated > prompt_max_tokens:
+                    # Truncate by dropping characters from the middle (map block)
+                    # to keep persona start and end intact.
+                    overhead = estimated - prompt_max_tokens
+                    trim_chars = overhead * 5  # generous safety margin
+                    map_start = system_prompt.find("--- Context Map")
+                    map_end = system_prompt.rfind("---", map_start + 20)
+                    if map_start > 0 and map_end > map_start:
+                        map_body = system_prompt[map_start:map_end]
+                        if len(map_body) > trim_chars + 200:
+                            truncated_map = map_body[: len(map_body) - trim_chars]
+                            system_prompt = (
+                                system_prompt[:map_start]
+                                + truncated_map
+                                + "\n[map truncated for token budget]\n---"
+                                + system_prompt[map_end + 3 :]
+                            )
+
             # Load agent configuration (tools, permissions)
             tools: list = []
             try:

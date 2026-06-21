@@ -9,7 +9,11 @@ if TYPE_CHECKING:
     from harness_poc.core.permissions import SkillPermissions
     from harness_poc.core.storage.database import BlackboardDatabase
     from harness_poc.core.storage.models import DbDocumentChunk, DbDocumentSource
-    from harness_poc.core.storage.state import StatePayload, StateProposal
+    from harness_poc.core.storage.state import (
+        StatePayload,
+        StateProposal,
+        StateSection,
+    )
 
 
 class BlackboardAccessProxy:
@@ -124,6 +128,50 @@ class BlackboardAccessProxy:
     def read_session_state(self, session_id: str) -> StatePayload | None:
         self._require_read()
         return self._db.read_session_state(session_id)
+
+    # ── Phase 1+2: agent-accessible project/session state ──
+
+    def ensure_project_state(self) -> StatePayload:
+        self._require_read()
+        return self._db.ensure_project_state()
+
+    def read_project_state(self) -> StatePayload | None:
+        self._require_read()
+        return self._db.read_project_state()
+
+    def append_session_state(
+        self, session_id: str, section: StateSection, text: str
+    ) -> StatePayload:
+        self._require_write()
+        return self._db.append_session_state(session_id, section, text)
+
+    def set_project_fact(self, key: str, value: str) -> StatePayload:
+        self._require_write()
+        return self._db.set_project_fact(key, value)
+
+    def get_project_fact(self, key: str) -> str | None:
+        self._require_read()
+        return self._db.get_project_fact(key)
+    def list_pending_proposals(self) -> list[dict[str, Any]]:
+        self._require_read()
+        return self._db.list_pending_proposals()
+
+
+    def is_session_state_dirty(self, session_id: str) -> bool:
+        self._require_read()
+        return self._db.is_session_state_dirty(session_id)
+
+    def list_state_events(
+        self,
+        *,
+        session_id: str | None = None,
+        limit: int = 50,
+        event_types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        self._require_read()
+        return self._db.list_state_events(
+            session_id=session_id, limit=limit, event_types=event_types
+        )
 
     # ---- document metadata write methods ----
 

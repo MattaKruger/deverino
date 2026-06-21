@@ -33,26 +33,45 @@ def _render_events(events: Sequence[ContextMapEvent]) -> str:
 
 
 def _render_current_map(entries: Sequence[MapEntry]) -> str:
-    """Render existing map entries as stable context for the distiller.
+    """Render map entries as stable context for the distiller — down-sampled.
 
-    Gives the distiller orientation about what is already known so it can
-    distinguish between novel observations and re-statements of known facts,
-    and can detect when a new event describes a fix (not a problem).
-    Each entry is rendered as a compact key+summary pair.
+    Sends only the essential orientation: full key list, the 10 most recently
+    updated entries, and high-priority entries (>=0.7).  The distiller needs
+    to know what exists, not see a full replica of the map.
     """
     if not entries:
-        return json.dumps({"prior_keys": [], "current_entries": []})
+        return json.dumps({"prior_keys": [], "recent_entries": [], "high_priority_entries": []})
+
+    prior_keys = [e.key for e in entries]
+
+    # Sort by last_updated descending for recency (explicit — DB order not guaranteed)
+    sorted_by_recency = sorted(entries, key=lambda e: e.last_updated, reverse=True)
+    recent_entries = sorted_by_recency[:10]
+    recent_keys = {e.key for e in recent_entries}
+
+    # High-priority entries not already in recent_entries
+    high_priority_entries = [e for e in entries if e.priority >= 0.7 and e.key not in recent_keys]
+
     return json.dumps(
         {
-            "prior_keys": [e.key for e in entries],
-            "current_entries": [
+            "prior_keys": prior_keys,
+            "recent_entries": [
                 {
                     "key": e.key,
                     "observation_type": e.observation_type,
                     "summary": e.summary,
                     "priority": e.priority,
                 }
-                for e in entries
+                for e in recent_entries
+            ],
+            "high_priority_entries": [
+                {
+                    "key": e.key,
+                    "observation_type": e.observation_type,
+                    "summary": e.summary,
+                    "priority": e.priority,
+                }
+                for e in high_priority_entries
             ],
         },
         indent=2,
@@ -80,7 +99,8 @@ async def run_distiller(
 ) -> list[DistillerEntry]:
     """Run one Distiller cycle. Returns [] on any unrecoverable failure (safe fallback)."""
     t0 = time.monotonic()
-    system_prompt = _load_prompt(config.prompt_template)
+    template = config.prompt_template_compact or config.prompt_template
+    system_prompt = _load_prompt(template)
     agent = Agent(
         model=model,
         output_type=DistilledBatch,

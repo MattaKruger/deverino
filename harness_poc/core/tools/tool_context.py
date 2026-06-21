@@ -39,6 +39,23 @@ class ToolDatabase(Protocol):
 
     def get_corpus_inventory(self, corpus_key: str) -> dict[str, Any] | None: ...
 
+    # ── Project / session state ──
+    # Return types are `Any` to avoid circular imports (StatePayload).
+
+    def ensure_project_state(self) -> Any: ...  # noqa: ANN401
+
+    def read_project_state(self) -> Any | None: ...  # noqa: ANN401
+
+    def ensure_session_state(self, session_id: str) -> Any: ...  # noqa: ANN401
+
+    def read_session_state(self, session_id: str) -> Any | None: ...  # noqa: ANN401
+
+    def append_session_state(self, session_id: str, section: str, text: str) -> Any: ...  # noqa: ANN401
+
+    def set_project_fact(self, key: str, value: str) -> Any: ...  # noqa: ANN401
+
+    def get_project_fact(self, key: str) -> str | None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class ToolContext:

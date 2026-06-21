@@ -18,6 +18,7 @@ class StatePayload:
     open_questions: list[str] = field(default_factory=list)
     constraints: list[str] = field(default_factory=list)
     changelog: list[str] = field(default_factory=list)
+    facts: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any] | None) -> StatePayload:
@@ -32,6 +33,7 @@ class StatePayload:
             open_questions=_string_list(payload.get("open_questions")),
             constraints=_string_list(payload.get("constraints")),
             changelog=_string_list(payload.get("changelog")),
+            facts=_string_dict(payload.get("facts")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -43,6 +45,7 @@ class StatePayload:
             "open_questions": self.open_questions,
             "constraints": self.constraints,
             "changelog": self.changelog,
+            "facts": self.facts,
         }
 
     def append(self, section: StateSection, text: str) -> StatePayload:
@@ -62,6 +65,20 @@ class StatePayload:
             open_questions=[*self.open_questions, *payload.open_questions],
             constraints=[*self.constraints, *payload.constraints],
             changelog=[*self.changelog, *payload.changelog],
+            facts={**self.facts, **payload.facts},
+        )
+
+    def set_fact(self, key: str, value: str) -> StatePayload:
+        """Return a new StatePayload with *key* set to *value* in facts."""
+        return StatePayload(
+            summary=self.summary,
+            notes=self.notes,
+            decisions=self.decisions,
+            next_actions=self.next_actions,
+            open_questions=self.open_questions,
+            constraints=self.constraints,
+            changelog=self.changelog,
+            facts={**self.facts, key: value},
         )
 
     def is_empty(self) -> bool:
@@ -74,6 +91,7 @@ class StatePayload:
                 self.open_questions,
                 self.constraints,
                 self.changelog,
+                self.facts,
             ),
         )
 
@@ -89,6 +107,7 @@ class StatePayload:
             _section_to_markdown("Open Questions", self.open_questions),
             _section_to_markdown("Constraints", self.constraints),
             _section_to_markdown("Changelog", self.changelog),
+            _facts_to_markdown("Facts", self.facts),
         ]
         return "\n".join(sections).strip()
 
@@ -153,6 +172,12 @@ def _string_list(value: object) -> list[str]:
     return [item for item in value if isinstance(item, str)]
 
 
+def _string_dict(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(k): str(v) for k, v in value.items() if isinstance(k, str) and isinstance(v, str)}
+
+
 def _proposal_status(status: str) -> ProposalStatus:
     if status in {"pending", "approved", "rejected"}:
         return cast("ProposalStatus", status)
@@ -164,4 +189,11 @@ def _section_to_markdown(title: str, values: list[str]) -> str:
     if not values:
         return f"### {title}\n_None._\n"
     items = "\n".join(f"- {value}" for value in values)
+    return f"### {title}\n{items}\n"
+
+
+def _facts_to_markdown(title: str, facts: dict[str, str]) -> str:
+    if not facts:
+        return f"### {title}\n_None._\n"
+    items = "\n".join(f"- **{k}**: {v}" for k, v in facts.items())
     return f"### {title}\n{items}\n"

@@ -81,7 +81,9 @@ _DEFAULT_SECTION_BUDGET_SHARE: dict[str, float] = {
 
 _SECTION_BUDGET_SHARE_TOLERANCE = 0.001
 
-_DISTILLER_KNOWN_KEYS = frozenset({"model", "max_retries", "prompt_template", "timeout_seconds"})
+_DISTILLER_KNOWN_KEYS = frozenset(
+    {"model", "max_retries", "prompt_template", "prompt_template_compact", "timeout_seconds"}
+)
 
 _OLD_SCALAR_KEYS = frozenset(
     {"recency_bonus", "recency_cap", "staleness_penalty", "staleness_floor"}
@@ -109,6 +111,7 @@ class DistillerConfig:
     model: str | None = None  # None → fall back to HarnessConfig.llm
     max_retries: int = 3
     prompt_template: str = "distiller_v1"
+    prompt_template_compact: str | None = None  # None → use prompt_template
     timeout_seconds: float = 120.0  # per-attempt timeout for the LLM call
 
     def resolved_model(self, llm_config: LLMConfig) -> str:
@@ -155,6 +158,7 @@ def load_distiller_config(raw: dict[str, Any]) -> DistillerConfig:
         model=raw.get("model"),
         max_retries=int(raw.get("max_retries", 3)),
         prompt_template=str(raw.get("prompt_template", "distiller_v1")),
+        prompt_template_compact=raw.get("prompt_template_compact"),
         timeout_seconds=float(raw.get("timeout_seconds", 120.0)),
     )
 

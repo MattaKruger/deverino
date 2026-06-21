@@ -402,9 +402,19 @@ def build_identity(
     )
 
 
+def _resolve_soul_prompt(config: HarnessConfig) -> str:
+    """Return the SOUL system prompt, preferring the compact variant when available."""
+    soul_path = (
+        config.paths.soul_compact
+        if config.paths.soul_compact is not None and config.paths.soul_compact.exists()
+        else config.paths.soul
+    )
+    return soul_path.read_text(encoding="utf-8")
+
+
 def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
     """Build the reloadable runtime layer."""
-    system_prompt = config.paths.soul.read_text(encoding="utf-8")
+    system_prompt = _resolve_soul_prompt(config)
     project_state = identity.database.ensure_project_state()
     session_state = identity.database.ensure_session_state(identity.session_id)
     corpus_key = identity.database.get_session_corpus_key(
@@ -539,7 +549,7 @@ def build_long_lived(identity: Identity, runtime: Runtime) -> LongLived:
 
 
 def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
-    system_prompt = config.paths.soul.read_text(encoding="utf-8")
+    system_prompt = _resolve_soul_prompt(config)
     project_state = identity.database.ensure_project_state()
     session_state = identity.database.ensure_session_state(identity.session_id)
     state_context = build_state_context(project_state, session_state)

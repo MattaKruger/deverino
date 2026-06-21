@@ -63,6 +63,13 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     query = str(arguments["query"]).strip()
     mode = str(arguments.get("mode") or ctx.config.retrieval.default_mode)
     hits = max(1, int(arguments.get("hits") or ctx.config.retrieval.default_hits))
+    kind = _optional_str(arguments.get("kind"))
+
+    # Project state entries are short factual sentences — semantic
+    # search on them produces hallucinated matches.  Force keyword
+    # mode so the agent gets exact text matches only.
+    if kind == "state":
+        mode = "keyword"
 
     query_embedding = None
     if mode in ("semantic", "hybrid"):
@@ -74,7 +81,7 @@ def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
         mode=mode,
         hits=hits,
         source_id=_optional_str(arguments.get("source_id")),
-        kind=_optional_str(arguments.get("kind")),
+        kind=kind,
         query_embedding=query_embedding,
     )
 

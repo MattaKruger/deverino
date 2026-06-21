@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.context_map import (
     deterministic_cartographer,
+    embed_single,
     embed_summaries,
     run_distiller,
 )
@@ -106,9 +107,23 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
             },
         )
 
+    # ---- Pre-Distiller per-event CopT filter: drop near-duplicate events ----
+    prefiltered_events = _prefilter_events(
+        events, current_map, corpus_key, copt_threshold, db
+    )
+    if len(prefiltered_events) < len(events):
+        logger.info(
+            "Pre-distiller per-event CopT filter: dropped %d/%d redundant events for %s",
+            len(events) - len(prefiltered_events),
+            len(events),
+            corpus_key,
+        )
     try:
         distilled = await run_distiller(
-            events, distiller_model, ctx.config.distiller, current_map=current_map
+            prefiltered_events if prefiltered_events else events,
+            distiller_model,
+            ctx.config.distiller,
+            current_map=current_map,
         )
     except Exception as exc:
         return SkillResult(
@@ -275,6 +290,46 @@ def _events_all_redundant(
 
     return bool(np.all(max_sims >= threshold))
 
+
+def _prefilter_events(
+    events: list[Any],
+    current_map: list[Any],
+    corpus_key: str,
+    threshold: float,
+    db: Any,  # BlackboardDatabase | BlackboardAccessProxy
+) -> list[Any]:
+    """Filter individual events that are near-duplicates of confirmed map entries."""
+    if not db.copt_is_available() or not events or not current_map:
+        return list(events)
+
+    confirmed_entries = [e for e in current_map if e.materialization_count > 1]
+    if not confirmed_entries:
+        return list(events)
+
+    import json as _json  # noqa: PLC0415
+
+    import numpy as np  # noqa: PLC0415
+
+    _corrective_types = frozenset({"fact_disputed", "contextual_insight_discovered"})
+
+    confirmed_summaries = [e.summary for e in confirmed_entries]
+    stored_embeddings = embed_summaries(confirmed_summaries)
+    stored_matrix = np.array(stored_embeddings, dtype=np.float64)
+
+    survivors: list[Any] = []
+    for event in events:
+        event_type = getattr(event, "event_type", "")
+        if event_type in _corrective_types:
+            survivors.append(event)
+            continue
+
+        event_text = _json.dumps(event.model_dump(), default=str)
+        query_emb = np.array([embed_single(event_text)], dtype=np.float64)
+        similarities = query_emb @ stored_matrix.T
+        if float(similarities.max()) < threshold:
+            survivors.append(event)
+
+    return survivors
 
 def _events_from_rows(rows: list[Any], max_event_tokens: int) -> list[ContextMapEvent]:
     """Deserialize pending event rows, respecting a token budget for the Distiller input."""

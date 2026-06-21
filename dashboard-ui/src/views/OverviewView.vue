@@ -203,6 +203,16 @@ const alertCards = computed(() => {
     });
   }
 
+  const proposals = overview.data?.summary.pending_state_proposals ?? 0;
+  if (proposals > 0) {
+    cards.push({
+      label: 'Pending state proposals',
+      value: String(proposals),
+      color: 'var(--color-purple)',
+      link: '/state',
+    });
+  }
+
   return cards;
 });
 

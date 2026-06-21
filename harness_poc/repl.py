@@ -606,6 +606,8 @@ def dispatch_state_command(app_state: AppState, command: str, argument: str) -> 
         reject_state(app_state, argument)
     elif command == "consolidate":
         consolidate_state(app_state, argument)
+    elif command == "events":
+        show_state_events(app_state, argument)
     else:
         return False
     return True
@@ -713,7 +715,8 @@ def print_state_help() -> None:
   state propose
   state approve [proposal_id]
   state reject <proposal_id>
-  state consolidate [preview|propose|approve]""",
+  state consolidate [preview|propose|approve]
+  state events [session_id] [limit]""",
         markup=False,
     )
 
@@ -809,7 +812,7 @@ def handle_debug_command(_app_state: AppState, user_input: str) -> None:
     When on:
     - Enables DEBUG-level logging for distiller, materializer, skill-runner,
       pydantic-runtime, event-bus, and repl.console loggers.
-    - Adds a stderr handler so timing logs appear inline in the REPL.
+    - Debug output routes to the harness log file (no stderr — won't corrupt the TUI).
     - Enables LogTap: all print_text/print_error/print_markdown output is
       duplicated to the log file for session replay.
     """
@@ -837,7 +840,7 @@ def handle_debug_command(_app_state: AppState, user_input: str) -> None:
         get_log_tap().enabled = True
         print_text(
             "[bold green]Debug logging ON[/bold green] — "
-            "distiller timing, LLM tokens, skill duration, console-to-log, stderr"
+            "distiller timing, LLM tokens, skill duration, console-to-log"
         )
     elif target in ("off", "0", "false"):
         for name in loggers:
@@ -849,23 +852,12 @@ def handle_debug_command(_app_state: AppState, user_input: str) -> None:
 
 
 def _ensure_stderr_handler() -> None:
-    """Add a StreamHandler to stderr if not already present on the root logger."""
-    import logging
-    import sys
+    """Ensure debug log output goes to the harness log file.
 
-    root = logging.getLogger()
-    for handler in root.handlers:
-        if isinstance(handler, logging.StreamHandler) and handler.stream is sys.stderr:
-            return
-
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s %(levelname)s [%(name)s] %(message)s",
-            datefmt="%H:%M:%S",
-        )
-    )
-    root.addHandler(handler)
+    The RotatingFileHandler from configure_logging is always present,
+    so this is a no-op — DEBUG messages already route to the file.
+    Stderr is intentionally avoided because it corrupts the TUI display.
+    """
 
 
 def is_skill_name(app_state: AppState, skill_name: str) -> bool:
@@ -1705,3 +1697,46 @@ def _run_react_inline(app_state: AppState, runtime: V2Runtime, user_input: str) 
         print_text(output)
     else:
         print_text("ReAct loop completed (no text output).")
+
+
+def show_state_events(app_state: AppState, argument: str) -> None:
+    """Display recent state events, optionally filtered by session ID."""
+    limit = 50
+    args = argument.strip().split()
+    session_filter: str | None = None
+    for arg in args:
+        if arg.isdigit():
+            limit = min(int(arg), 200)
+        else:
+            session_filter = arg
+    events = app_state.database.list_state_events(
+        session_id=session_filter,
+        limit=limit,
+    )
+    if not events:
+        print_text("No state events found.")
+        return
+    for e in reversed(events):
+        scope_label = e["scope"][:4].upper()  # SESS or PROJ
+        print_text(
+            f"[dim]{e['created_at']}[/dim] "
+            f"[{scope_label}] {e['event_type']} "
+            f"[dim]{_event_detail(e)}[/dim]"
+        )
+
+
+def _event_detail(event: dict) -> str:
+    """Extract a short human-readable detail from a state event payload."""
+    inner = event.get("payload", {})
+    if not isinstance(inner, dict):
+        return ""
+    detail = inner.get("payload", {})
+    if not isinstance(detail, dict):
+        return ""
+    if "text" in detail:
+        return str(detail["text"])[:60]
+    if "key" in detail:
+        return f"{detail['key']}={detail.get('value', '')}"
+    if "proposal_id" in detail:
+        return str(detail["proposal_id"])[:8]
+    return ""

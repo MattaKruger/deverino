@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -102,6 +103,15 @@ class WorkflowRunner:
                     "dict[str, Any]",
                     self._render_value(raw_args, inputs=inputs, states=state_context),
                 )
+                # read_state hook: inject project state section into args
+                read_section = state.get("read_state")
+                if read_section and self.database is not None:
+                    try:
+                        ps = self.database.ensure_project_state()
+                    except Exception:
+                        ps = None
+                    if ps is not None:
+                        rendered_args["project_state"] = getattr(ps, str(read_section), [])
                 result = self.skill_runner.execute_skill(
                     tool_name=skill_name,
                     arguments=rendered_args,
@@ -114,6 +124,13 @@ class WorkflowRunner:
                 )
                 outputs.append(output)
                 state_context[current_state] = result.to_dict()
+                # write_state hook: append result to session state
+                write_section = state.get("write_state")
+                if write_section and self.database is not None and result.content:
+                    with contextlib.suppress(Exception):
+                        self.database.append_session_state(
+                            session_id, str(write_section), result.content
+                        )
                 self.database.write_memory(
                     session_id=session_id,
                     key=f"workflow.{workflow_id}.{current_state}",

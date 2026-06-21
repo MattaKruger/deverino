@@ -26,6 +26,7 @@ class HarnessPaths:
     workflows: Path
     pipelines: Path
     personas: Path
+    soul_compact: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +45,7 @@ class RuntimeConfig:
     materializer_freeze_threshold: int = 3
     materializer_freeze_seconds: int = 300
     materializer_copt_threshold: float = 0.92
+    sub_agent_prompt_max_tokens: int = 4000
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,10 +166,14 @@ class HarnessConfig:
         observability_raw = _mapping(raw.get("observability"), "observability")
         llm_raw = _mapping(raw.get("llm"), "llm")
 
+        soul_compact_raw = paths_raw.get("soul_compact")
         paths = HarnessPaths(
             soul=_resolve_path(
                 project_root,
                 paths_raw.get("soul", "harness_poc/system_prompts/SOUL.md"),
+            ),
+            soul_compact=(
+                _resolve_path(project_root, str(soul_compact_raw)) if soul_compact_raw else None
             ),
             system_tools=_resolve_path(
                 project_root,
@@ -203,6 +209,7 @@ class HarnessConfig:
             materializer_freeze_threshold=int(runtime_raw.get("materializer_freeze_threshold", 3)),
             materializer_freeze_seconds=int(runtime_raw.get("materializer_freeze_seconds", 300)),
             materializer_copt_threshold=float(runtime_raw.get("materializer_copt_threshold", 0.92)),
+            sub_agent_prompt_max_tokens=int(runtime_raw.get("sub_agent_prompt_max_tokens", 4000)),
         )
         observability = ObservabilityConfig(
             logfire_enabled=bool(observability_raw.get("logfire", False)),

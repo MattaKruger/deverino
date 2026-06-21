@@ -6,9 +6,12 @@ import type {
   DashboardSnapshot,
   ErrorSummary,
   EventDetail,
+  ProjectState,
   SessionActivity,
   SessionEventRow,
   SkillCompilationSummary,
+  StateEvent,
+  StateProposal,
   SubAgentNode,
   TokenBucket,
   TokenUsage,
@@ -78,4 +81,18 @@ export function postCompileSkills(): Promise<{ status: string; detail?: string }
 
 export function postCompileSkill(name: string): Promise<{ status: string; detail?: string }> {
   return fetch(`/api/skills/${encodeURIComponent(name)}/compile`, { method: 'POST' }).then(r => r.json())
+}
+
+// ── State API (Phase 3) ──────────────────────────────────────────────────
+
+export function fetchProjectState(opts?: GetOpts): Promise<ProjectState> {
+  return get<ProjectState>('/state/project', opts)
+}
+
+export function fetchStateEvents(limit?: number, opts?: GetOpts): Promise<StateEvent[]> {
+  return get<StateEvent[]>(`/state/events?limit=${limit ?? 50}`, opts)
+}
+
+export function fetchStateProposals(opts?: GetOpts): Promise<StateProposal[]> {
+  return get<StateProposal[]>('/state/proposals', opts)
 }
