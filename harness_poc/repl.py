@@ -26,6 +26,7 @@ from harness_poc.core.events import (
     LLMTextEmitted,
     StreamPaused,
 )
+from harness_poc.core.observe import new_trace
 from harness_poc.core.runtime import (
     AgentRunResult,
     GoalRunner,
@@ -88,6 +89,9 @@ def run_repl(app_state: AppState) -> None:
 
 
 def handle_repl_input(app_state: AppState, user_input: str) -> None:  # noqa: PLR0911
+    new_trace(app_state.session_id)
+    logger.debug("REPL input: %s", user_input[:200])
+
     if _is_repl_help_command(user_input):
         print_repl_help()
         return
@@ -126,6 +130,9 @@ def handle_repl_input(app_state: AppState, user_input: str) -> None:  # noqa: PL
 
     if _is_copy_command(user_input):
         handle_copy_command(app_state)
+    if _is_debug_command(user_input):
+        handle_debug_command(app_state, user_input)
+        return
     if _is_agents_command(user_input):
         handle_agents_command(app_state)
         return
@@ -205,6 +212,7 @@ def print_repl_help() -> None:
   /skill show <name>
   /skills
   /copy
+  /debug [on|off]
   /help
   /exit
 
@@ -787,6 +795,77 @@ def handle_copy_command(app_state: AppState) -> None:
                 print_text(content)
             return
     print_text("No response to copy.")
+
+
+def _is_debug_command(user_input: str) -> bool:
+    return user_input in {"/debug", "debug"} or user_input.startswith(("/debug ", "debug "))
+
+
+def handle_debug_command(_app_state: AppState, user_input: str) -> None:
+    """Toggle debug logging and console-to-log bridging.
+
+    Usage: /debug on|off
+
+    When on:
+    - Enables DEBUG-level logging for distiller, materializer, skill-runner,
+      pydantic-runtime, event-bus, and repl.console loggers.
+    - Adds a stderr handler so timing logs appear inline in the REPL.
+    - Enables LogTap: all print_text/print_error/print_markdown output is
+      duplicated to the log file for session replay.
+    """
+    import logging
+
+    from harness_poc.core.observe import get_log_tap
+
+    parts = user_input.strip().split(maxsplit=1)
+    target = parts[1].strip().lower() if len(parts) > 1 else ""
+
+    loggers = [
+        "harness_poc.core.context_map.distiller",
+        "harness_poc.core.runtime.pydantic_runtime",
+        "harness_poc.core.skills.skill_runner",
+        "harness_poc.core.events.event_bus",
+        "harness_poc.core.events.event_store",
+        "harness_poc.repl.console",
+        "skills.context-map-materializer",
+    ]
+
+    if target in ("on", "1", "true"):
+        _ensure_stderr_handler()
+        for name in loggers:
+            logging.getLogger(name).setLevel(logging.DEBUG)
+        get_log_tap().enabled = True
+        print_text(
+            "[bold green]Debug logging ON[/bold green] — "
+            "distiller timing, LLM tokens, skill duration, console-to-log, stderr"
+        )
+    elif target in ("off", "0", "false"):
+        for name in loggers:
+            logging.getLogger(name).setLevel(logging.NOTSET)
+        get_log_tap().enabled = False
+        print_text("[dim]Debug logging OFF[/dim]")
+    else:
+        print_text("Usage: [bold]/debug on|off[/bold]")
+
+
+def _ensure_stderr_handler() -> None:
+    """Add a StreamHandler to stderr if not already present on the root logger."""
+    import logging
+    import sys
+
+    root = logging.getLogger()
+    for handler in root.handlers:
+        if isinstance(handler, logging.StreamHandler) and handler.stream is sys.stderr:
+            return
+
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+            datefmt="%H:%M:%S",
+        )
+    )
+    root.addHandler(handler)
 
 
 def is_skill_name(app_state: AppState, skill_name: str) -> bool:

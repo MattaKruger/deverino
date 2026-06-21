@@ -1,8 +1,9 @@
 <template>
   <span
-    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+    class="status-badge"
     :class="badgeClass"
   >
+    <span class="h-1.5 w-1.5 rounded-full bg-current" />
     {{ status }}
   </span>
 </template>
@@ -17,18 +18,18 @@ const props = defineProps<{
 const badgeClass = computed(() => {
   const s = props.status.toLowerCase();
   if (s === 'success' || s === 'completed') {
-    return 'bg-green-900/40 text-green-400 border border-green-800';
+    return 'text-[var(--color-green)] bg-[var(--color-green)]/10 border-[var(--color-green)]/35';
   }
   if (s === 'failed' || s === 'error') {
-    return 'bg-red-900/40 text-red-400 border border-red-800';
+    return 'text-[var(--color-red)] bg-[var(--color-red)]/10 border-[var(--color-red)]/35';
   }
   if (s === 'cancelled' || s === 'timeout') {
-    return 'bg-yellow-900/40 text-yellow-400 border border-yellow-800';
+    return 'text-[var(--color-yellow)] bg-[var(--color-yellow)]/10 border-[var(--color-yellow)]/35';
   }
   if (s === 'running' || s === 'active') {
-    return 'bg-blue-900/40 text-blue-400 border border-blue-800';
+    return 'text-[var(--color-blue)] bg-[var(--color-blue)]/10 border-[var(--color-blue)]/35';
   }
   // pending, queued, paused, or unknown
-  return 'bg-gray-800 text-gray-400 border border-gray-700';
+  return 'text-[var(--color-muted)] bg-[var(--color-grid)] border-[var(--color-border)]';
 });
 </script>

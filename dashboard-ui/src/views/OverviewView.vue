@@ -1,7 +1,15 @@
 <template>
-  <div class="p-6 space-y-6 max-w-screen-2xl mx-auto">
-    <!-- 1. Health Banner -->
-    <HealthIndicator :status="healthStatus" :metrics="healthMetrics" />
+  <div class="view-shell view-stack">
+    <header class="page-header">
+      <div class="page-heading">
+        <div class="page-kicker">Control plane</div>
+        <h1 class="page-title">Agentic runtime overview</h1>
+        <p class="page-subtitle">
+          Live operating posture across sessions, context, tool execution, token flow, and runtime events.
+        </p>
+      </div>
+      <HealthIndicator :status="healthStatus" :metrics="healthMetrics" />
+    </header>
 
     <!-- 2. Alert Cards (only when issues exist) -->
     <div v-if="alertCards.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -9,7 +17,7 @@
         v-for="card in alertCards"
         :key="card.label"
         :to="card.link"
-        class="block bg-[var(--color-cbg)] border border-[var(--color-border)] rounded-lg p-4 hover:border-[var(--color-blue)]/50 transition-colors"
+        class="stat-card stat-card--button block"
       >
         <div class="text-2xl font-mono font-bold" :style="{ color: card.color }">
           {{ card.value }}
@@ -20,9 +28,8 @@
       </router-link>
     </div>
 
-    <!-- 3. Metric Bar -->
     <Panel
-      title="Overview"
+      title="Runtime summary"
       :loading="overview.loading"
       :isStale="overview.isStale"
       :error="overview.error"
@@ -32,7 +39,6 @@
       <MetricBar v-if="overview.data" :metrics="summaryMetrics" />
     </Panel>
 
-    <!-- 4. 2x2 Chart Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <Panel
         title="Active Sessions"
@@ -79,7 +85,6 @@
       </Panel>
     </div>
 
-    <!-- 5. Event Firehose -->
     <Panel
       title="Event Firehose"
       :loading="firehose.loading"

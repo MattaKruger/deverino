@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -52,6 +52,7 @@ class FeedSummary:
     fed: int
     failed: int
     failed_ids: list[str]
+    failed_errors: dict[str, str] = field(default_factory=dict)
 
 
 @runtime_checkable

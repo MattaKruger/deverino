@@ -48,6 +48,7 @@ class LiveVespaDocumentClient:
         fed = 0
         failed = 0
         failed_ids: list[str] = []
+        failed_errors: dict[str, str] = {}
         with app.syncio(connections=self._max_workers) as session:
             for chunk in chunks:
                 fields: dict = {
@@ -78,7 +79,13 @@ class LiveVespaDocumentClient:
                 else:
                     failed += 1
                     failed_ids.append(chunk.chunk_id)
-        return FeedSummary(fed=fed, failed=failed, failed_ids=failed_ids)
+                    failed_errors[chunk.chunk_id] = _response_error_message(response)
+        return FeedSummary(
+            fed=fed,
+            failed=failed,
+            failed_ids=failed_ids,
+            failed_errors=failed_errors,
+        )
 
     def delete_source(self, source_id: str) -> None:
         from vespa.application import Vespa  # noqa: PLC0415
@@ -127,6 +134,49 @@ def _format_tensor_values(values: list[float]) -> str:
     """
     cells = ",".join(f"{{x:{i}}}:{v}" for i, v in enumerate(values))
     return "{" + cells + "}"
+
+
+def _response_error_message(response: object) -> str:
+    status_code = getattr(response, "status_code", None)
+    detail = _response_payload_message(response)
+    if detail == "":
+        text = getattr(response, "text", "")
+        if isinstance(text, str):
+            detail = text.strip()
+    if detail == "":
+        detail = str(response)
+    if status_code is None:
+        return detail
+    return f"HTTP {status_code}: {detail}"
+
+
+def _response_payload_message(response: object) -> str:
+    payload_source = getattr(response, "json", None)
+    if callable(payload_source):
+        try:
+            payload = payload_source()
+        except Exception:  # pragma: no cover - defensive for pyvespa response variants
+            return ""
+    else:
+        payload = payload_source
+
+    if isinstance(payload, dict):
+        errors = payload.get("errors")
+        if isinstance(errors, list):
+            messages = [
+                str(error.get("message", "")).strip()
+                for error in errors
+                if isinstance(error, dict) and str(error.get("message", "")).strip()
+            ]
+            if messages:
+                return "; ".join(messages)
+        message = payload.get("message")
+        if isinstance(message, str):
+            return message.strip()
+        return str(payload)
+    if isinstance(payload, str):
+        return payload.strip()
+    return ""
 
 
 def _build_query_body(request: SearchRequest, schema: str, timeout: int) -> dict:

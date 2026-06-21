@@ -23,27 +23,26 @@
 
     <!-- Table -->
     <div v-else class="max-h-[70vh] overflow-auto">
-      <table class="w-full text-sm table-fixed">
-        <thead class="sticky top-0 bg-[var(--color-cbg)] z-10">
-          <tr class="text-left text-[var(--color-muted)] text-xs uppercase tracking-wider">
-            <th class="py-2 pr-3 font-medium w-[15%]">Key</th>
-            <th class="py-2 pr-3 font-medium w-[14%]">Section</th>
-            <th class="py-2 pr-3 font-medium w-[12%]">Type</th>
-            <th class="py-2 pr-3 font-medium w-[8%]">Priority</th>
-            <th class="py-2 pr-3 font-medium text-right w-[8%]">Tokens</th>
-            <th class="py-2 font-medium w-[43%]">Summary</th>
+      <table class="data-table table-fixed">
+        <thead class="sticky top-0 z-10 bg-[var(--color-surface-raised)]">
+          <tr>
+            <th class="w-[15%]">Key</th>
+            <th class="w-[14%]">Section</th>
+            <th class="w-[12%]">Type</th>
+            <th class="w-[8%]">Priority</th>
+            <th class="w-[8%] text-right">Tokens</th>
+            <th class="w-[43%]">Summary</th>
           </tr>
         </thead>
         <TransitionGroup name="list" tag="tbody">
           <tr
             v-for="entry in entries"
             :key="entry.entry_id"
-            class="border-t border-[var(--color-border)] hover:bg-[var(--color-border)]/30 transition-colors"
           >
-            <td class="py-2 pr-3 text-[var(--color-blue)] font-mono text-xs break-all">{{ entry.key }}</td>
-            <td class="py-2 pr-3 text-[var(--color-muted)] break-words">{{ entry.section }}</td>
-            <td class="py-2 pr-3 text-[var(--color-muted)] break-words">{{ entry.observation_type }}</td>
-            <td class="py-2 pr-3">
+            <td class="text-[var(--color-blue)] mono text-xs break-all">{{ entry.key }}</td>
+            <td class="text-[var(--color-muted)] break-words">{{ entry.section }}</td>
+            <td class="text-[var(--color-muted)] break-words">{{ entry.observation_type }}</td>
+            <td>
               <div class="flex items-center gap-1.5">
                 <div
                   class="h-1.5 rounded-full shrink-0"
@@ -52,11 +51,11 @@
                     backgroundColor: priorityColor(entry.priority),
                   }"
                 ></div>
-                <span class="text-xs text-[var(--color-muted)] font-mono">{{ (entry.priority * 100).toFixed(0) }}%</span>
+                <span class="text-xs text-[var(--color-muted)] mono">{{ (entry.priority * 100).toFixed(0) }}%</span>
               </div>
             </td>
-            <td class="py-2 pr-3 text-right font-mono">{{ fmtTokens(entry.token_estimate) }}</td>
-            <td class="py-2 text-[var(--color-muted)] whitespace-pre-wrap break-words">{{ entry.summary }}</td>
+            <td class="text-right mono">{{ fmtTokens(entry.token_estimate) }}</td>
+            <td class="text-[var(--color-muted)] whitespace-pre-wrap break-words">{{ entry.summary }}</td>
           </tr>
         </TransitionGroup>
       </table>

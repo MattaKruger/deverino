@@ -1,12 +1,18 @@
 <template>
-  <div class="p-6 space-y-6 max-w-screen-2xl mx-auto">
-    <div class="flex items-center gap-3">
-      <h2 class="text-lg font-semibold text-[var(--color-text)]">Sessions</h2>
+  <div class="view-shell view-stack">
+    <header class="page-header">
+      <div class="page-heading">
+        <div class="page-kicker">Execution ledger</div>
+        <h1 class="page-title">Sessions</h1>
+        <p class="page-subtitle">
+          Inspect active and historical agent runs with event volume, token cost, failures, and goals.
+        </p>
+      </div>
       <HealthIndicator
         :lastFetched="store.lastFetched"
         :error="store.error"
       />
-    </div>
+    </header>
 
     <Panel
       title="Sessions"
@@ -17,25 +23,24 @@
     >
       <template v-if="store.data && store.data.length > 0">
         <div class="overflow-x-auto">
-          <table class="w-full text-sm">
+          <table class="data-table">
             <thead>
-              <tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)] uppercase tracking-wider">
-                <th class="px-3 py-2 font-medium">Session ID</th>
-                <th class="px-3 py-2 font-medium">Status</th>
-                <th class="px-3 py-2 font-medium text-right">Events</th>
-                <th class="px-3 py-2 font-medium text-right">Tokens</th>
-                <th class="px-3 py-2 font-medium text-right">Errors</th>
-                <th class="px-3 py-2 font-medium">Last Seen</th>
-                <th class="px-3 py-2 font-medium">Goal</th>
+              <tr>
+                <th>Session ID</th>
+                <th>Status</th>
+                <th class="text-right">Events</th>
+                <th class="text-right">Tokens</th>
+                <th class="text-right">Errors</th>
+                <th>Last Seen</th>
+                <th>Goal</th>
               </tr>
             </thead>
             <TransitionGroup name="list" tag="tbody">
               <tr
                 v-for="session in sortedSessions"
                 :key="session.session_id"
-                class="border-b border-[var(--color-grid)] hover:bg-[var(--color-border)] transition-colors"
               >
-                <td class="px-3 py-2 font-mono text-xs">
+                <td class="mono text-xs">
                   <router-link
                     :to="`/sessions/${session.session_id}`"
                     class="text-[var(--color-blue)] hover:underline"
@@ -43,24 +48,24 @@
                     {{ truncateId(session.session_id) }}
                   </router-link>
                 </td>
-                <td class="px-3 py-2">
+                <td>
                   <StatusBadge :status="session.status" />
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-text)]">
+                <td class="text-right mono tabular-nums text-[var(--color-text)]">
                   {{ fmtNum(session.event_count) }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-text)]">
+                <td class="text-right mono tabular-nums text-[var(--color-text)]">
                   {{ fmtNum(session.total_tokens) }}
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums"
+                <td class="text-right mono tabular-nums"
                   :class="session.skill_failures > 0 ? 'text-[var(--color-red)]' : 'text-[var(--color-muted)]'"
                 >
                   {{ session.skill_failures }}
                 </td>
-                <td class="px-3 py-2 text-xs text-[var(--color-muted)] whitespace-nowrap">
+                <td class="text-xs text-[var(--color-muted)] whitespace-nowrap">
                   {{ fmtTime(session.last_seen) }}
                 </td>
-                <td class="px-3 py-2 text-xs text-[var(--color-muted)] max-w-xs truncate">
+                <td class="text-xs text-[var(--color-muted)] max-w-xs truncate">
                   {{ session.goal || '—' }}
                 </td>
               </tr>

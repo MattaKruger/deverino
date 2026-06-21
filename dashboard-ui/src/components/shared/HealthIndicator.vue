@@ -8,7 +8,7 @@
   <!-- Banner mode: status provided -->
   <div
     v-else-if="status"
-    class="flex items-center justify-between px-6 py-4 rounded-lg border text-sm"
+    class="toolbar-card text-sm"
     :class="bannerClass"
   >
     <div class="flex items-center gap-3">
@@ -90,9 +90,9 @@ const label = computed(() => {
 
 const bannerClass = computed(() => {
   switch (props.status) {
-    case 'good': return 'bg-[var(--color-green)]/15 border-[var(--color-green)]/30 text-[var(--color-green)]';
-    case 'degraded': return 'bg-[var(--color-yellow)]/15 border-[var(--color-yellow)]/30 text-[var(--color-yellow)]';
-    case 'bad': return 'bg-[var(--color-red)]/15 border-[var(--color-red)]/30 text-[var(--color-red)]';
+    case 'good': return 'border-[var(--color-green)]/30 text-[var(--color-green)]';
+    case 'degraded': return 'border-[var(--color-yellow)]/30 text-[var(--color-yellow)]';
+    case 'bad': return 'border-[var(--color-red)]/30 text-[var(--color-red)]';
     default: return '';
   }
 });

@@ -1,13 +1,18 @@
 <template>
-  <div class="p-6 space-y-6 max-w-screen-2xl mx-auto">
-    <!-- Page header with health indicator -->
-    <div class="flex items-center gap-3">
-      <h2 class="text-lg font-semibold text-[var(--color-text)]">Context Map</h2>
+  <div class="view-shell view-stack">
+    <header class="page-header">
+      <div class="page-heading">
+        <div class="page-kicker">Blackboard memory</div>
+        <h1 class="page-title">Context Map</h1>
+        <p class="page-subtitle">
+          Browse indexed corpora, pending context events, versions, and retrieved context entries.
+        </p>
+      </div>
       <HealthIndicator
         :lastFetched="store.lastFetched"
         :error="store.error"
       />
-    </div>
+    </header>
 
     <!-- Corpus list loading -->
     <div v-if="store.loading && !store.data" class="animate-pulse space-y-3">
@@ -32,14 +37,14 @@
 
     <template v-else>
       <!-- Corpus selector pills -->
-      <div class="flex flex-wrap gap-2">
+      <div class="pill-row">
         <button
           v-for="cm in store.data"
           :key="cm.corpus_key"
-          class="px-4 py-1.5 rounded-md text-sm font-medium border transition-colors"
+          class="pill"
           :class="selectedCorpus === cm.corpus_key
-            ? 'bg-[var(--color-blue)] border-[var(--color-blue)] text-white'
-            : 'bg-[var(--color-cbg)] border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-muted)]'"
+            ? 'pill-active'
+            : ''"
           @click="selectCorpus(cm.corpus_key)"
         >
           {{ cm.corpus_key }}
@@ -47,11 +52,8 @@
       </div>
 
       <template v-if="selectedCorpus">
-        <!-- Metrics bar -->
         <MetricBar :metrics="selectedMetrics" />
 
-
-        <!-- Full-width entries table -->
         <Panel
           title="Entries"
           :loading="entriesLoading"

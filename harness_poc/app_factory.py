@@ -13,6 +13,7 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from harness_poc.core.config import HarnessConfig
+from harness_poc.core.context_map.format import format_context_window
 from harness_poc.core.context_map.render import render_context_map
 from harness_poc.core.events import EventBus, EventStore
 from harness_poc.core.execution import PipelineRunner, WorkflowRunner
@@ -420,7 +421,16 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
         )
         cross_body = _render_cross_corpus(identity, config, corpus_key)
         inventory = _render_corpus_inventory(identity, corpus_key)
-        context_map_block = f"--- Context Map ---\n{map_body}{cross_body}\n---{inventory}"
+        post_map = ""
+        if cross_body:
+            post_map += cross_body
+        if inventory:
+            post_map += f"\n---{inventory}"
+        context_map_block = format_context_window(
+            map_body,
+            post_map_block=post_map or None,
+            map_label="Context Map",
+        )
     else:
         context_map_block = ""
     state_context = build_state_context(project_state, session_state)
@@ -547,7 +557,16 @@ def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
         )
         cross_body = _render_cross_corpus(identity, config, corpus_key)
         inventory = _render_corpus_inventory(identity, corpus_key)
-        context_map_block = f"--- Context Map ---\n{map_body}{cross_body}\n---{inventory}"
+        post_map = ""
+        if cross_body:
+            post_map += cross_body
+        if inventory:
+            post_map += f"\n---{inventory}"
+        context_map_block = format_context_window(
+            map_body,
+            post_map_block=post_map or None,
+            map_label="Context Map",
+        )
     else:
         context_map_block = ""
     return {
@@ -672,6 +691,12 @@ def build_app_state(
 ) -> AppState:
     config = HarnessConfig.load()
     configure_logging(config.project_root)
+    logger.info(
+        "Building app state: project=%s mode=%s db=%s",
+        config.project_id,
+        mode,
+        config.runtime.database_url.split("@")[-1] if "@" in config.runtime.database_url else "...",
+    )
     identity = build_identity(
         config,
         session_id,

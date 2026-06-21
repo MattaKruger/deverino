@@ -7,12 +7,13 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
 
+from harness_poc.core.observe.log_tap import get_log_tap
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from harness_poc.core.execution import WorkflowRunResult
     from harness_poc.core.skills import SkillRunner
-
 
 
 console = Console()
@@ -42,6 +43,7 @@ def clear_tui_handlers() -> None:
 
 
 def print_markdown(markdown: str) -> None:
+    get_log_tap().on_print_markdown(markdown)
     if _tui_on_markdown is not None:
         _tui_on_markdown(markdown)
     else:
@@ -49,6 +51,7 @@ def print_markdown(markdown: str) -> None:
 
 
 def print_error(message: str) -> None:
+    get_log_tap().on_print_error(message)
     if _tui_on_error is not None:
         _tui_on_error(message)
     else:
@@ -56,6 +59,7 @@ def print_error(message: str) -> None:
 
 
 def print_text(text: str, *, markup: bool = True) -> None:
+    get_log_tap().on_print_text(text, markup=markup)
     if _tui_on_text is not None:
         _tui_on_text(text, markup)
     else:

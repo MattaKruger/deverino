@@ -22,6 +22,8 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.deepseek import DeepSeekProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
+from harness_poc.core.observe import current_trace, timed
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -86,10 +88,23 @@ class PydanticAgentRuntime:
             },
         )
         deps = replace(self.deps, tool_call_counts={})
-        result = self.agent.run_sync(
-            prompt,
-            deps=deps,
-            message_history=message_history,
+
+        trace = current_trace()
+        extra = trace.as_extra() if trace else None
+        with timed("llm_call", logger=logger, extra=extra):
+            result = self.agent.run_sync(
+                prompt,
+                deps=deps,
+                message_history=message_history,
+            )
+
+        llm_usage = result.usage
+        logger.debug(
+            "LLM tokens: input=%d output=%d total=%d",
+            llm_usage.input_tokens,
+            llm_usage.output_tokens,
+            llm_usage.input_tokens + llm_usage.output_tokens,
+            extra=extra,
         )
 
         return AgentRunResult(
@@ -144,7 +159,7 @@ class PydanticAgentRuntime:
             ),
         )
 
-    async def _stream_text_async(  # noqa: PLR0912
+    async def _stream_text_async(  # noqa: PLR0912 PLR0915
         self,
         prompt: str,
         *,
@@ -165,73 +180,86 @@ class PydanticAgentRuntime:
         consecutive_tool_rounds = 0
         capped = False
 
-        async with self.agent.iter(
-            prompt,
-            deps=deps,
-            message_history=message_history,
-            conversation_id="new",
-        ) as agent_run:
-            async for node in agent_run:
-                if Agent.is_model_request_node(node):
-                    turn_chunks: list[str] = []
-                    had_tool_call = False
+        trace = current_trace()
+        extra = trace.as_extra() if trace else None
+        with timed("llm_call", logger=logger, extra=extra):
+            async with self.agent.iter(
+                prompt,
+                deps=deps,
+                message_history=message_history,
+                conversation_id="new",
+            ) as agent_run:
+                async for node in agent_run:
+                    if Agent.is_model_request_node(node):
+                        turn_chunks: list[str] = []
+                        had_tool_call = False
 
-                    # Emit separator between model turns (after tool calls),
-                    # but only when the previous turn actually produced visible text.
-                    if all_output_parts and on_text is not None:
-                        on_text("\n\n")
+                        # Emit separator between model turns (after tool calls),
+                        # but only when the previous turn actually produced visible text.
+                        if all_output_parts and on_text is not None:
+                            on_text("\n\n")
 
-                    async with node.stream(agent_run.ctx) as request_stream:
-                        async for event in request_stream:
-                            if isinstance(event, PartStartEvent):
-                                if isinstance(event.part, TextPart) and event.part.content:
-                                    if on_text is not None:
-                                        on_text(event.part.content)
-                                    turn_chunks.append(event.part.content)
-                            elif isinstance(event, PartDeltaEvent):
-                                if isinstance(event.delta, TextPartDelta):
-                                    delta = event.delta.content_delta
-                                    if delta:
+                        async with node.stream(agent_run.ctx) as request_stream:
+                            async for event in request_stream:
+                                if isinstance(event, PartStartEvent):
+                                    if isinstance(event.part, TextPart) and event.part.content:
                                         if on_text is not None:
-                                            on_text(delta)
-                                        turn_chunks.append(delta)
-                                elif isinstance(event.delta, ToolCallPartDelta):
-                                    had_tool_call = True
+                                            on_text(event.part.content)
+                                        turn_chunks.append(event.part.content)
+                                elif isinstance(event, PartDeltaEvent):
+                                    if isinstance(event.delta, TextPartDelta):
+                                        delta = event.delta.content_delta
+                                        if delta:
+                                            if on_text is not None:
+                                                on_text(delta)
+                                            turn_chunks.append(delta)
+                                    elif isinstance(event.delta, ToolCallPartDelta):
+                                        had_tool_call = True
 
-                    if not had_tool_call:
-                        consecutive_tool_rounds = 0
-                    if turn_chunks:
-                        all_output_parts.append("".join(turn_chunks))
+                        if not had_tool_call:
+                            consecutive_tool_rounds = 0
+                        if turn_chunks:
+                            all_output_parts.append("".join(turn_chunks))
 
-                elif Agent.is_call_tools_node(node):
-                    consecutive_tool_rounds += 1
-                    if (
-                        max_consecutive_tool_rounds is not None
-                        and consecutive_tool_rounds > max_consecutive_tool_rounds
-                    ):
-                        capped = True
-                        logger.warning(
-                            "Consecutive tool call limit (%d) reached, stopping agent loop",
-                            max_consecutive_tool_rounds,
-                            extra={"session_id": self.deps.session_id},
-                        )
-                        break
+                    elif Agent.is_call_tools_node(node):
+                        consecutive_tool_rounds += 1
+                        if (
+                            max_consecutive_tool_rounds is not None
+                            and consecutive_tool_rounds > max_consecutive_tool_rounds
+                        ):
+                            capped = True
+                            logger.warning(
+                                "Consecutive tool call limit (%d) reached, stopping agent loop",
+                                max_consecutive_tool_rounds,
+                                extra={"session_id": self.deps.session_id},
+                            )
+                            break
 
-            if capped and on_text is not None:
-                on_text(
-                    f"\n\n[Consecutive tool call limit ({max_consecutive_tool_rounds}) "
-                    "reached — agent stopped mid-loop. "
-                    "Reply to continue, or set max_consecutive_tool_rounds higher.]"
+                if capped and on_text is not None:
+                    on_text(
+                        f"\n\n[Consecutive tool call limit ({max_consecutive_tool_rounds}) "
+                        "reached — agent stopped mid-loop. "
+                        "Reply to continue, or set max_consecutive_tool_rounds higher.]"
+                    )
+
+                result_output = agent_run.result.output if agent_run.result else None
+                output = (
+                    str(result_output) if result_output is not None else "".join(all_output_parts)
                 )
 
-            result_output = agent_run.result.output if agent_run.result else None
-            output = str(result_output) if result_output is not None else "".join(all_output_parts)
-
-            if not capped and agent_run.result is not None:
-                usage = _usage_to_dict(agent_run.result.usage)
-                all_new_messages = agent_run.result.new_messages()
-            else:
-                all_new_messages = []
+                if not capped and agent_run.result is not None:
+                    llm_usage = agent_run.result.usage
+                    logger.debug(
+                        "LLM tokens: input=%d output=%d total=%d",
+                        llm_usage.input_tokens,
+                        llm_usage.output_tokens,
+                        llm_usage.input_tokens + llm_usage.output_tokens,
+                        extra=extra,
+                    )
+                    usage = _usage_to_dict(llm_usage)
+                    all_new_messages = agent_run.result.new_messages()
+                else:
+                    all_new_messages = []
 
         return AgentRunResult(
             content=str(output),
@@ -248,6 +276,12 @@ def build_model(  # noqa: PLR0911
 ) -> Model:
     if config is None:
         return fallback_model or TestModel(call_tools=[])
+
+    logger.debug(
+        "Building model: provider=%s model=%s",
+        config.provider,
+        config.model,
+    )
 
     api_settings = APISettings.load()
 
@@ -497,6 +531,7 @@ def _execute_builtin_tool(
         return json.dumps({"error": f"Tool runner not available for {tool_name}"})
 
     _emit_tool_progress(ctx, f"  {tool_name}: {_summarise_args(arguments)} ...")
+    _persist_tool_started(ctx, tool_name, arguments)
     try:
         result = ctx.deps.tool_runner.execute_tool(
             tool_name,
@@ -506,10 +541,12 @@ def _execute_builtin_tool(
         )
     except Exception:
         _emit_tool_progress(ctx, f"  {tool_name}: FAILED")
+        _persist_tool_completed(ctx, tool_name, "error", "Tool raised an unexpected error.")
         logger.exception("Built-in tool execution raised: %s", tool_name)
         return json.dumps({"error": f"Tool {tool_name} raised an unexpected error."})
 
     _emit_tool_progress(ctx, f"  {tool_name}: done")
+    _persist_tool_completed(ctx, tool_name, _status_from_tool_result(result), result)
     return result
 
 
@@ -564,6 +601,7 @@ def execute_skill_as_tool(
 
     # Stream progress so the user sees tool activity during execution.
     _emit_tool_progress(ctx, f"  {skill_name}: {_summarise_args(arguments)} ...")
+    _persist_tool_started(ctx, skill_name, arguments)
     try:
         call_id = _tool_call_id(ctx)
         call_kwargs: dict[str, Any] = {}
@@ -579,6 +617,7 @@ def execute_skill_as_tool(
         )
     except Exception:
         _emit_tool_progress(ctx, f"  {skill_name}: FAILED")
+        _persist_tool_completed(ctx, skill_name, "error", "Skill raised an unexpected error.")
         logger.exception(
             "PydanticAI tool adapter skill execution raised",
             extra={
@@ -592,6 +631,7 @@ def execute_skill_as_tool(
         _emit_tool_progress(ctx, f"  {skill_name}: done")
     else:
         _emit_tool_progress(ctx, f"  {skill_name}: {result.status}")
+    _persist_tool_completed(ctx, skill_name, result.status, result.content, result.artifacts)
 
     if result.status == HUMAN_ACTION_REQUIRED_STATUS:
         return json.dumps(
@@ -675,6 +715,58 @@ def _emit_tool_progress(ctx: RunContext[AgentDeps], message: str) -> None:
         handler(message)
 
 
+def _persist_tool_started(
+    ctx: RunContext[AgentDeps],
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> None:
+    try:
+        from harness_poc.core.events import EventStore, SkillCalled  # noqa: PLC0415
+
+        EventStore(ctx.deps.database.engine).persist(
+            SkillCalled(
+                session_id=ctx.deps.session_id,
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+        )
+    except Exception:
+        logger.debug("Could not persist tool start event", exc_info=True)
+
+
+def _persist_tool_completed(
+    ctx: RunContext[AgentDeps],
+    tool_name: str,
+    status: str,
+    content: str,
+    artifacts: dict[str, Any] | None = None,
+) -> None:
+    try:
+        from harness_poc.core.events import EventStore, SkillCompleted  # noqa: PLC0415
+
+        EventStore(ctx.deps.database.engine).persist(
+            SkillCompleted(
+                session_id=ctx.deps.session_id,
+                tool_name=tool_name,
+                status=status,
+                content=content,
+                artifacts=artifacts or {},
+            )
+        )
+    except Exception:
+        logger.debug("Could not persist tool completion event", exc_info=True)
+
+
+def _status_from_tool_result(result: str) -> str:
+    try:
+        parsed = json.loads(result)
+    except json.JSONDecodeError:
+        return "success"
+    if isinstance(parsed, dict) and parsed.get("error"):
+        return "error"
+    return "success"
+
+
 def _tool_budget_exhausted(
     ctx: RunContext[AgentDeps],
     skill_name: str,
@@ -752,13 +844,10 @@ def extract_observations_from_turn(
         observation_type: str = Field(
             ...,
             description=(
-                "One of: entity, schema, insight, dispute, boundary, constant, "
-                "result, architecture"
+                "One of: entity, schema, insight, dispute, boundary, constant, result, architecture"
             ),
         )
-        summary: str = Field(
-            ..., description="One-line summary of the observation, be specific"
-        )
+        summary: str = Field(..., description="One-line summary of the observation, be specific")
         detail: str = Field(
             ...,
             description=(
@@ -789,7 +878,7 @@ def extract_observations_from_turn(
                 '"observation_type": "entity|schema|insight|dispute|boundary|constant|result", '
                 '"summary": "one-line summary", '
                 '"detail": "2-3 sentences explaining why this matters — '
-                'what would the agent do differently knowing this, '
+                "what would the agent do differently knowing this, "
                 'or what would go wrong without it"}]}\n\n'
                 "Rules:\n"
                 "- Only extract NEW discoveries about the codebase\n"

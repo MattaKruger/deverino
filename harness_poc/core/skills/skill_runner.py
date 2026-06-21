@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from harness_poc.core.skills.skill_context import SkillResult
     from harness_poc.core.storage import BlackboardDatabase
 
+from harness_poc.core.observe import current_trace, timed
 from harness_poc.core.permissions import SkillPermissions
 from harness_poc.core.skills.skill_context import CancellationToken, SkillContext
 from harness_poc.core.storage import BlackboardAccessProxy
@@ -166,37 +167,42 @@ class SkillRunner:
             )
             normalized_arguments = self._normalize_arguments(resolved_tool_name, arguments)
 
-            result = execute(context, normalized_arguments)
-            import inspect
+            trace = current_trace()
+            extra = trace.as_extra() if trace else None
+            with timed(
+                f"skill:{resolved_tool_name}", logger=logging.getLogger(__name__), extra=extra
+            ):
+                result = execute(context, normalized_arguments)
+                import inspect
 
-            if inspect.iscoroutine(result):
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    loop = None
+                if inspect.iscoroutine(result):
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = None
 
-                if loop is not None and loop.is_running():
-                    import threading
-                    from concurrent.futures import Future
+                    if loop is not None and loop.is_running():
+                        import threading
+                        from concurrent.futures import Future
 
-                    def run_in_new_loop(coro: Any, fut: Any) -> None:  # noqa: ANN401
-                        new_loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(new_loop)
-                        try:
-                            val = new_loop.run_until_complete(coro)
-                            fut.set_result(val)
-                        except Exception as e:
-                            fut.set_exception(e)
-                        finally:
-                            new_loop.close()
+                        def run_in_new_loop(coro: Any, fut: Any) -> None:  # noqa: ANN401
+                            new_loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(new_loop)
+                            try:
+                                val = new_loop.run_until_complete(coro)
+                                fut.set_result(val)
+                            except Exception as e:
+                                fut.set_exception(e)
+                            finally:
+                                new_loop.close()
 
-                    fut = Future()
-                    t = threading.Thread(target=run_in_new_loop, args=(result, fut))
-                    t.start()
-                    t.join()
-                    result = fut.result()
-                else:
-                    result = asyncio.run(result)
+                        fut = Future()
+                        t = threading.Thread(target=run_in_new_loop, args=(result, fut))
+                        t.start()
+                        t.join()
+                        result = fut.result()
+                    else:
+                        result = asyncio.run(result)
         except Exception:
             logger.exception(
                 "Skill execution raised",

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     from harness_poc.core.config import RetrievalConfig
     from harness_poc.core.retrieval.embedder import TextEmbedder
-    from harness_poc.core.retrieval.retrieval import VespaDocumentClient
+    from harness_poc.core.retrieval.retrieval import FeedSummary, VespaDocumentClient
     from harness_poc.core.storage import BlackboardAccessProxy, BlackboardDatabase
 
 SUPPORTED_EXTENSIONS = frozenset(
@@ -402,7 +402,7 @@ class DocumentIndexer:
 
         feed_summary = self._vespa.feed_chunks(chunks)
         if feed_summary.failed > 0:
-            error_msg = f"{feed_summary.failed} chunk(s) failed to feed"
+            error_msg = _format_feed_failure(feed_summary)
             self._db.upsert_document_source(
                 _make_db_source(
                     source_id=source_id,
@@ -521,6 +521,24 @@ def _resolve_ignore_prefixes(project_root: Path, raw_paths: list[str]) -> list[P
             candidate = project_root / candidate
         resolved.append(candidate.resolve())
     return resolved
+
+
+def _format_feed_failure(feed_summary: FeedSummary) -> str:
+    error_msg = f"{feed_summary.failed} chunk(s) failed to feed"
+    first_error = next(iter(feed_summary.failed_errors.values()), "").strip()
+    if first_error == "":
+        return error_msg
+
+    hint = ""
+    if (
+        "Field 'embedding' is not part of the declared document type" in first_error
+        or 'Field "embedding" is not part of the declared document type' in first_error
+    ):
+        hint = (
+            " The live Vespa application schema is stale; run `just vespa-deploy` "
+            "after starting Vespa, then re-run indexing."
+        )
+    return f"{error_msg}: {first_error}{hint}"
 
 
 def _under_ignore_prefix(path: Path, ignore_prefixes: list[Path]) -> bool:

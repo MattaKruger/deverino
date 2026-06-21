@@ -1,26 +1,31 @@
 <template>
-  <div class="flex flex-col h-full min-w-0">
-    <!-- No session state -->
-    <div v-if="!chatStore.activeSessionId" class="flex-1 flex items-center justify-center">
-      <div class="text-center space-y-4">
-        <div class="text-[var(--color-muted)] text-sm">
-          Select a chat session from the sidebar, or create a new one
+  <div class="chat-workspace flex h-full min-w-0 flex-col bg-[var(--color-bg)]">
+    <div v-if="!chatStore.activeSessionId" class="view-shell flex flex-1 items-center justify-center">
+      <div class="panel w-full max-w-xl">
+        <div class="panel__header">
+          <div class="panel__title-group">
+            <span class="health-dot bg-cyan text-cyan" />
+            <h1 class="panel__title">Agent chat</h1>
+          </div>
         </div>
-        <button
-          class="px-4 py-2 rounded bg-[var(--color-blue)] text-white text-sm hover:opacity-90 transition-opacity"
-          @click="handleNewSession"
-        >
-          New Chat
-        </button>
+        <div class="panel__body text-center">
+          <div class="page-kicker">Conversation workspace</div>
+          <h2 class="mt-1 text-xl font-semibold text-[var(--color-text-strong)]">Start or select a session</h2>
+          <p class="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--color-muted)]">
+            Sessions keep tool calls, delegated tasks, and runtime context together for inspection.
+          </p>
+          <button class="btn btn-primary mt-5" @click="handleNewSession">
+            New Chat
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Active chat -->
     <Chatbot
       v-else
       :key="chatStore.activeSessionId"
       :chat-service-config="chatConfig"
-      class="flex-1"
+      class="agent-chat min-h-0 flex-1"
     />
   </div>
 </template>

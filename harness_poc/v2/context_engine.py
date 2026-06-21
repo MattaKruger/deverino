@@ -14,6 +14,12 @@ import logging
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from harness_poc.core.context_map.format import (
+    format_context_window,
+    format_persona_lens,
+    format_verified_state,
+    format_working_context,
+)
 from harness_poc.core.events.context_map_events import ContextEventBridge
 from harness_poc.core.events.events import ContextWarmed, ProbeFailed
 
@@ -112,9 +118,7 @@ class ContextEngine:
             db_map = self._materializer.materialize(corpus_path)
         except Exception as exc:
             msg = f"Context map materialization failed for corpus '{corpus_path}': {exc}"
-            raise ContextEngineError(
-                msg
-            ) from exc
+            raise ContextEngineError(msg) from exc
 
         # Step 5: unify persona + pedagogy into a filtering lens
         unified_lens = self._unify_persona_pedagogy(persona_text, pedagogy_text)
@@ -237,18 +241,14 @@ class ContextEngine:
         persona_path = self._personas_dir / f"{persona_id}.md"
         if not persona_path.exists():
             msg = f"Persona '{persona_id}' not found at {persona_path}"
-            raise PersonaNotFoundError(
-                msg
-            )
+            raise PersonaNotFoundError(msg)
         return persona_path.read_text(encoding="utf-8")
 
     def _load_pedagogy(self) -> str:
         """Load the developer-pedagogy profile."""
         if not self._pedagogy_path.exists():
             msg = f"Developer pedagogy profile not found at {self._pedagogy_path}"
-            raise PedagogyNotFoundError(
-                msg
-            )
+            raise PedagogyNotFoundError(msg)
         return self._pedagogy_path.read_text(encoding="utf-8")
 
     def _get_verified_state(self) -> dict[str, Any]:
@@ -265,18 +265,10 @@ class ContextEngine:
     ) -> str:
         """Combine persona and pedagogy into a unified filtering lens.
 
-        The persona defines *what* role the agent plays; the pedagogy
-        defines *how* the agent communicates and makes decisions. Together
-        they form a single conceptual layer that filters what matters in
-        the context map.
+        Delegates to the shared ``format_persona_lens`` so both old and v2
+        paths produce identical lens formatting.
         """
-        return (
-            "--- Unified Persona + Pedagogy Lens ---\n\n"
-            f"{persona_text}\n\n"
-            "--- Developer Pedagogy Profile ---\n\n"
-            f"{pedagogy_text}\n\n"
-            "--- End Unified Lens ---"
-        )
+        return format_persona_lens(persona_text, pedagogy_text)
 
     def _format_context_window(
         self,
@@ -289,55 +281,33 @@ class ContextEngine:
     ) -> str:
         """Format the complete prompt context window for model injection.
 
-        Follows the spec hierarchy: SOUL → Unified Persona → Context Map.
-        The SOUL is injected separately by the harness; this method produces
-        the lower two layers.
+        Delegates to the shared ``format_context_window`` so both old and v2
+        paths produce identical section formatting.
         """
-        parts: list[str] = []
-
-        # Layer 1: Unified Persona + Pedagogy
-        unified = self._unify_persona_pedagogy(persona_text, pedagogy_text)
-        parts.append(unified)
-
-        # Layer 2: Verified state constraints (from prior gate passes / probes)
-        if verified_state:
-            parts.append("\n--- Verified Implementation State ---\n")
-            parts.append(self._format_verified_state(verified_state))
-
-        # Layer 3: Materialized context map
-        parts.append("\n--- Materialized Context Map ---\n")
-        parts.append(rendered_map)
-
-        # Layer 4: Working context summary
-        if working_context:
-            parts.append("\n--- Active Working Context ---\n")
-            parts.append(self._format_working_context(working_context))
-
-        return "\n".join(parts)
+        return format_context_window(
+            rendered_map,
+            persona_text=persona_text,
+            pedagogy_text=pedagogy_text,
+            verified_state=verified_state or None,
+            working_context=working_context or None,
+            map_label="Materialized Context Map",
+        )
 
     @staticmethod
     def _format_verified_state(state: dict[str, Any]) -> str:
-        """Render verified state as a compact key-value block."""
-        lines: list[str] = []
-        for k, v in state.items():
-            if isinstance(v, dict):
-                lines.append(f"{k}:")
-                for sk, sv in v.items():
-                    lines.append(f"  {sk}: {sv}")
-            elif isinstance(v, list):
-                lines.append(f"{k}: [{', '.join(str(x) for x in v)}]")
-            else:
-                lines.append(f"{k}: {v}")
-        return "\n".join(lines)
+        """Render verified state as a compact key-value block.
+
+        Delegates to the shared ``format_verified_state``.
+        """
+        return format_verified_state(state)
 
     @staticmethod
     def _format_working_context(ctx: dict[str, Any]) -> str:
-        """Render working context as a compact summary block."""
-        relevant = {"corpus", "goal", "session_id", "active_skill", "constraints"}
-        lines: list[str] = [
-            f"  {k}: {ctx[k]}" for k in sorted(relevant & set(ctx))
-        ]
-        return "\n".join(lines)
+        """Render working context as a compact summary block.
+
+        Delegates to the shared ``format_working_context``.
+        """
+        return format_working_context(ctx)
 
     def _extract_constraints(
         self,
@@ -381,8 +351,7 @@ class ContextEngine:
                 {
                     "type": "io_boundary",
                     "detail": (
-                        "File access boundary hit — "
-                        "may indicate missing corpus or permission gap"
+                        "File access boundary hit — may indicate missing corpus or permission gap"
                     ),
                 }
             )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -8,6 +9,8 @@ from typing import TYPE_CHECKING, Any
 import tiktoken
 from sqlalchemy import inspect, text
 from sqlmodel import Session, col, select
+
+from harness_poc.core.observe import current_trace, timed
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
@@ -34,6 +37,8 @@ from harness_poc.core.storage.models import (
     SQLModel,
 )
 from harness_poc.core.storage.state import StatePayload, StateProposal
+
+logger = logging.getLogger(__name__)
 
 
 class BlackboardDatabase:
@@ -74,19 +79,22 @@ class BlackboardDatabase:
         *,
         active_corpus_key: str | None = None,
     ) -> str:
-        session_id = str(uuid.uuid4())
-        with Session(self._engine) as session:
-            session.add(
-                DbSession(
-                    session_id=session_id,
-                    global_objective=objective,
-                    status="active",
-                    created_at=self._utc_now(),
-                    active_corpus_key=active_corpus_key,
+        trace = current_trace()
+        extra = trace.as_extra() if trace else None
+        with timed("db:start_session", logger=logger, extra=extra):
+            session_id = str(uuid.uuid4())
+            with Session(self._engine) as session:
+                session.add(
+                    DbSession(
+                        session_id=session_id,
+                        global_objective=objective,
+                        status="active",
+                        created_at=self._utc_now(),
+                        active_corpus_key=active_corpus_key,
+                    )
                 )
-            )
-            session.commit()
-        return session_id
+                session.commit()
+            return session_id
 
     def append_session_messages(
         self,
@@ -217,21 +225,24 @@ class BlackboardDatabase:
         return list(rows)
 
     def ensure_project_state(self, project_id: str = "default") -> StatePayload:
-        payload = self.read_project_state(project_id)
-        if payload is not None:
-            return payload
-        empty_state = StatePayload()
-        with Session(self._engine) as session:
-            session.add(
-                DbProjectState(
-                    project_id=project_id,
-                    state_payload=empty_state.to_dict(),
-                    version=1,
-                    updated_at=self._utc_now(),
+        trace = current_trace()
+        extra = trace.as_extra() if trace else None
+        with timed("db:ensure_project_state", logger=logger, extra=extra):
+            payload = self.read_project_state(project_id)
+            if payload is not None:
+                return payload
+            empty_state = StatePayload()
+            with Session(self._engine) as session:
+                session.add(
+                    DbProjectState(
+                        project_id=project_id,
+                        state_payload=empty_state.to_dict(),
+                        version=1,
+                        updated_at=self._utc_now(),
+                    )
                 )
-            )
-            session.commit()
-        return empty_state
+                session.commit()
+            return empty_state
 
     def read_project_state(self, project_id: str = "default") -> StatePayload | None:
         with Session(self._engine) as session:
@@ -241,22 +252,25 @@ class BlackboardDatabase:
         return StatePayload.from_dict(row.state_payload)
 
     def ensure_session_state(self, session_id: str) -> StatePayload:
-        payload = self.read_session_state(session_id)
-        if payload is not None:
-            return payload
-        empty_state = StatePayload()
-        with Session(self._engine) as session:
-            session.add(
-                DbSessionState(
-                    session_id=session_id,
-                    state_payload=empty_state.to_dict(),
-                    version=1,
-                    dirty=False,
-                    updated_at=self._utc_now(),
+        trace = current_trace()
+        extra = trace.as_extra() if trace else None
+        with timed("db:ensure_session_state", logger=logger, extra=extra):
+            payload = self.read_session_state(session_id)
+            if payload is not None:
+                return payload
+            empty_state = StatePayload()
+            with Session(self._engine) as session:
+                session.add(
+                    DbSessionState(
+                        session_id=session_id,
+                        state_payload=empty_state.to_dict(),
+                        version=1,
+                        dirty=False,
+                        updated_at=self._utc_now(),
+                    )
                 )
-            )
-            session.commit()
-        return empty_state
+                session.commit()
+            return empty_state
 
     def read_session_state(self, session_id: str) -> StatePayload | None:
         with Session(self._engine) as session:
@@ -297,37 +311,41 @@ class BlackboardDatabase:
         return next_state
 
     def create_state_proposal(self, session_id: str) -> StateProposal:
-        session_state = self.ensure_session_state(session_id)
-        if session_state.is_empty():
-            msg = "Session state is empty; nothing to propose"
-            raise ValueError(msg)
-        proposal = StateProposal.create(session_id=session_id, payload=session_state)
-        now = self._utc_now()
-        with Session(self._engine) as session:
-            session.add(
-                DbStateProposal(
-                    proposal_id=proposal.proposal_id,
-                    session_id=proposal.session_id,
-                    status=proposal.status,
-                    proposal_payload=proposal.payload.to_dict(),
-                    created_at=now,
-                    resolved_at=None,
+        trace = current_trace()
+        extra = trace.as_extra() if trace else None
+        with timed("db:create_state_proposal", logger=logger, extra=extra):
+            session_state = self.ensure_session_state(session_id)
+            if session_state.is_empty():
+                msg = "Session state is empty; nothing to propose"
+                logger.warning("%s session_id=%s", msg, session_id, extra=extra)
+                raise ValueError(msg)
+            proposal = StateProposal.create(session_id=session_id, payload=session_state)
+            now = self._utc_now()
+            with Session(self._engine) as session:
+                session.add(
+                    DbStateProposal(
+                        proposal_id=proposal.proposal_id,
+                        session_id=proposal.session_id,
+                        status=proposal.status,
+                        proposal_payload=proposal.payload.to_dict(),
+                        created_at=now,
+                        resolved_at=None,
+                    )
                 )
-            )
-            session.add(
-                DbStateEvent(
-                    scope="session",
-                    scope_id=session_id,
-                    event_type="proposal_created",
-                    payload={
-                        "event_type": "proposal_created",
-                        "payload": {"proposal_id": proposal.proposal_id},
-                    },
-                    created_at=now,
+                session.add(
+                    DbStateEvent(
+                        scope="session",
+                        scope_id=session_id,
+                        event_type="proposal_created",
+                        payload={
+                            "event_type": "proposal_created",
+                            "payload": {"proposal_id": proposal.proposal_id},
+                        },
+                        created_at=now,
+                    )
                 )
-            )
-            session.commit()
-        return proposal
+                session.commit()
+            return proposal
 
     def read_state_proposal(self, proposal_id: str) -> StateProposal | None:
         with Session(self._engine) as session:
@@ -346,62 +364,67 @@ class BlackboardDatabase:
         proposal_id: str,
         project_id: str = "default",
     ) -> StatePayload:
-        now = self._utc_now()
-        with Session(self._engine) as session:
-            proposal_row = session.get(DbStateProposal, proposal_id)
-            if proposal_row is None:
-                msg = f"State proposal not found: {proposal_id}"
-                raise ValueError(msg)
-            if proposal_row.status != "pending":
-                msg = f"State proposal is not pending: {proposal_id}"
-                raise ValueError(msg)
+        trace = current_trace()
+        extra = trace.as_extra() if trace else None
+        with timed("db:approve_state_proposal", logger=logger, extra=extra):
+            now = self._utc_now()
+            with Session(self._engine) as session:
+                proposal_row = session.get(DbStateProposal, proposal_id)
+                if proposal_row is None:
+                    msg = f"State proposal not found: {proposal_id}"
+                    logger.error("%s", msg, extra=extra)
+                    raise ValueError(msg)
+                if proposal_row.status != "pending":
+                    msg = f"State proposal is not pending: {proposal_id}"
+                    logger.error("%s", msg, extra=extra)
+                    raise ValueError(msg)
 
-            proposal_payload = StatePayload.from_dict(proposal_row.proposal_payload)
+                proposal_payload = StatePayload.from_dict(proposal_row.proposal_payload)
 
-            project_row = session.get(DbProjectState, project_id)
-            if project_row is None:
-                project_row = DbProjectState(
-                    project_id=project_id,
-                    state_payload=StatePayload().to_dict(),
-                    version=0,
-                    updated_at=now,
+                project_row = session.get(DbProjectState, project_id)
+                if project_row is None:
+                    project_row = DbProjectState(
+                        project_id=project_id,
+                        state_payload=StatePayload().to_dict(),
+                        version=0,
+                        updated_at=now,
+                    )
+                    session.add(project_row)
+                    session.flush()
+
+                next_state = StatePayload.from_dict(project_row.state_payload).append_payload(
+                    proposal_payload
                 )
-                session.add(project_row)
-                session.flush()
+                project_row.state_payload = next_state.to_dict()
+                project_row.version += 1
+                project_row.updated_at = now
 
-            next_state = StatePayload.from_dict(project_row.state_payload).append_payload(
-                proposal_payload
-            )
-            project_row.state_payload = next_state.to_dict()
-            project_row.version += 1
-            project_row.updated_at = now
+                proposal_row.status = "approved"
+                proposal_row.resolved_at = now
 
-            proposal_row.status = "approved"
-            proposal_row.resolved_at = now
+                session_state_row = session.get(DbSessionState, proposal_row.session_id)
+                if session_state_row is not None:
+                    session_state_row.dirty = False
+                    session_state_row.updated_at = now
 
-            session_state_row = session.get(DbSessionState, proposal_row.session_id)
-            if session_state_row is not None:
-                session_state_row.dirty = False
-                session_state_row.updated_at = now
-
-            session.add(
-                DbStateEvent(
-                    scope="project",
-                    scope_id=project_id,
-                    event_type="proposal_approved",
-                    payload={
-                        "event_type": "proposal_approved",
-                        "payload": {
-                            "proposal_id": proposal_id,
-                            "session_id": proposal_row.session_id,
+                session.add(
+                    DbStateEvent(
+                        scope="project",
+                        scope_id=project_id,
+                        event_type="proposal_approved",
+                        payload={
+                            "event_type": "proposal_approved",
+                            "payload": {
+                                "proposal_id": proposal_id,
+                                "session_id": proposal_row.session_id,
+                            },
                         },
-                    },
-                    created_at=now,
+                        created_at=now,
+                    )
                 )
-            )
-            session.commit()
+                session.commit()
 
-        return next_state
+            return next_state
 
     def approve_latest_proposal(self, project_id: str = "default") -> StatePayload:
         with Session(self._engine) as session:
@@ -420,30 +443,35 @@ class BlackboardDatabase:
         )
 
     def reject_state_proposal(self, proposal_id: str) -> None:
-        now = self._utc_now()
-        with Session(self._engine) as session:
-            proposal_row = session.get(DbStateProposal, proposal_id)
-            if proposal_row is None:
-                msg = f"State proposal not found: {proposal_id}"
-                raise ValueError(msg)
-            if proposal_row.status != "pending":
-                msg = f"State proposal is not pending: {proposal_id}"
-                raise ValueError(msg)
-            proposal_row.status = "rejected"
-            proposal_row.resolved_at = now
-            session.add(
-                DbStateEvent(
-                    scope="session",
-                    scope_id=proposal_row.session_id,
-                    event_type="proposal_rejected",
-                    payload={
-                        "event_type": "proposal_rejected",
-                        "payload": {"proposal_id": proposal_id},
-                    },
-                    created_at=now,
+        trace = current_trace()
+        extra = trace.as_extra() if trace else None
+        with timed("db:reject_state_proposal", logger=logger, extra=extra):
+            now = self._utc_now()
+            with Session(self._engine) as session:
+                proposal_row = session.get(DbStateProposal, proposal_id)
+                if proposal_row is None:
+                    msg = f"State proposal not found: {proposal_id}"
+                    logger.error("%s", msg, extra=extra)
+                    raise ValueError(msg)
+                if proposal_row.status != "pending":
+                    msg = f"State proposal is not pending: {proposal_id}"
+                    logger.error("%s", msg, extra=extra)
+                    raise ValueError(msg)
+                proposal_row.status = "rejected"
+                proposal_row.resolved_at = now
+                session.add(
+                    DbStateEvent(
+                        scope="session",
+                        scope_id=proposal_row.session_id,
+                        event_type="proposal_rejected",
+                        payload={
+                            "event_type": "proposal_rejected",
+                            "payload": {"proposal_id": proposal_id},
+                        },
+                        created_at=now,
+                    )
                 )
-            )
-            session.commit()
+                session.commit()
 
     def upsert_document_source(self, source: DbDocumentSource) -> None:
         if self._engine.dialect.name == "postgresql":
@@ -528,7 +556,12 @@ class BlackboardDatabase:
             )
 
     def append_context_map_event(self, event: ContextMapEvent) -> None:
-        with Session(self._engine) as session:
+        trace = current_trace()
+        extra = trace.as_extra() if trace else None
+        with (
+            timed("db:append_context_map_event", logger=logger, extra=extra),
+            Session(self._engine) as session,
+        ):
             session.add(
                 DbContextMapEvent(
                     event_id=event.event_id,
@@ -637,39 +670,42 @@ class BlackboardDatabase:
         event_ids: list[str],
         freeze_until: str | None = None,
     ) -> None:
-        now = self._utc_now()
-        serialized = json.dumps(
-            [entry.model_dump(mode="json") for entry in map_entries],
-            sort_keys=True,
-        )
-        with Session(self._engine) as session:
-            row = session.get(DbContextMap, corpus_key)
-            if row is None:
-                session.add(
-                    DbContextMap(
-                        corpus_key=corpus_key,
-                        map_json=serialized,
-                        token_count=token_count,
-                        version=1,
-                        last_updated=now,
-                        freeze_until=freeze_until,
-                        schema_version=2,
+        trace = current_trace()
+        extra = trace.as_extra() if trace else None
+        with timed("db:write_map", logger=logger, extra=extra):
+            now = self._utc_now()
+            serialized = json.dumps(
+                [entry.model_dump(mode="json") for entry in map_entries],
+                sort_keys=True,
+            )
+            with Session(self._engine) as session:
+                row = session.get(DbContextMap, corpus_key)
+                if row is None:
+                    session.add(
+                        DbContextMap(
+                            corpus_key=corpus_key,
+                            map_json=serialized,
+                            token_count=token_count,
+                            version=1,
+                            last_updated=now,
+                            freeze_until=freeze_until,
+                            schema_version=2,
+                        )
                     )
-                )
-            else:
-                row.map_json = serialized
-                row.token_count = token_count
-                row.version += 1
-                row.last_updated = now
-                row.freeze_until = freeze_until
-                row.schema_version = 2
-                session.add(row)
-            for event_id in event_ids:
-                event_row = session.get(DbContextMapEvent, event_id)
-                if event_row is not None:
-                    event_row.processed = 1
-                    session.add(event_row)
-            session.commit()
+                else:
+                    row.map_json = serialized
+                    row.token_count = token_count
+                    row.version += 1
+                    row.last_updated = now
+                    row.freeze_until = freeze_until
+                    row.schema_version = 2
+                    session.add(row)
+                for event_id in event_ids:
+                    event_row = session.get(DbContextMapEvent, event_id)
+                    if event_row is not None:
+                        event_row.processed = 1
+                        session.add(event_row)
+                session.commit()
 
     def get_and_bump_cycle(self, corpus_key: str) -> int:
         """Atomically increment and return the post-increment cycle_n for a corpus.
@@ -901,21 +937,23 @@ class BlackboardDatabase:
         corpus_key: str,
         entries: list[tuple[str, list[float]]],
     ) -> None:
-        """Upsert embeddings for (entry_key, embedding) pairs."""
+        """Upsert embeddings for (entry_key, embedding) pairs in a single batch."""
         if not entries or not self.copt_is_available():
             return
+        params = [
+            {"ck": corpus_key, "ek": ek, "emb": _serialize_embedding(emb)} for ek, emb in entries
+        ]
         with self._engine.begin() as conn:
-            for entry_key, embedding in entries:
-                conn.execute(
-                    text(
-                        "INSERT INTO context_map_embeddings "
-                        "(corpus_key, entry_key, embedding) "
-                        "VALUES (:ck, :ek, :emb) "
-                        "ON CONFLICT (corpus_key, entry_key) "
-                        "DO UPDATE SET embedding = :emb"
-                    ),
-                    {"ck": corpus_key, "ek": entry_key, "emb": _serialize_embedding(embedding)},
-                )
+            conn.execute(
+                text(
+                    "INSERT INTO context_map_embeddings "
+                    "(corpus_key, entry_key, embedding) "
+                    "VALUES (:ck, :ek, :emb) "
+                    "ON CONFLICT (corpus_key, entry_key) "
+                    "DO UPDATE SET embedding = EXCLUDED.embedding"
+                ),
+                params,
+            )
 
     def copt_query_similarity(
         self,
@@ -936,6 +974,26 @@ class BlackboardDatabase:
                 {"ck": corpus_key, "query": _serialize_embedding(embedding)},
             ).first()
         return float(row[0]) if row is not None else 0.0
+
+    def copt_get_all_embeddings(
+        self,
+        corpus_key: str,
+    ) -> list[tuple[str, list[float]]]:
+        """Return all stored (entry_key, embedding) pairs for a corpus.
+
+        Used by the CopT gate to fetch stored embeddings once and compute
+        similarities in Python instead of making N individual pgvector queries.
+        """
+        if not self.copt_is_available():
+            return []
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT entry_key, embedding FROM context_map_embeddings WHERE corpus_key = :ck"
+                ),
+                {"ck": corpus_key},
+            ).all()
+        return [(str(row[0]), _deserialize_embedding(str(row[1]))) for row in rows]
 
     @staticmethod
     def _utc_now() -> str:
@@ -959,6 +1017,18 @@ def _serialize_embedding(embedding: list[float]) -> str:
     ``[0.1, 0.2, …]`` instead of ``[np.float64(0.1), …]``.
     """
     return str([float(x) for x in embedding])
+
+
+def _deserialize_embedding(raw: str) -> list[float]:
+    """Parse a pgvector-serialized embedding string back to a float list.
+
+    pgvector stores vectors as strings like ``[0.1, 0.2, 0.3]``.
+    psycopg2 returns these as strings when not using the pgvector Python
+    adapter, so we parse them manually.
+    """
+    import json
+
+    return [float(x) for x in json.loads(raw)]
 
 
 def _legacy_to_entries(raw: dict[str, Any], _corpus_key: str) -> list[MapEntry]:

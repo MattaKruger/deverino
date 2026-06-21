@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import time
 from collections.abc import Sequence
 from importlib import resources
 from typing import cast
@@ -15,6 +17,8 @@ from pydantic_ai.models import Model
 from harness_poc.core.context_map.config import DistillerConfig
 from harness_poc.core.context_map.schema import DistilledBatch, DistillerEntry, MapEntry
 from harness_poc.core.events.context_map_events import ContextMapEvent
+
+logger = logging.getLogger(__name__)
 
 
 def _load_prompt(template_name: str) -> str:
@@ -75,8 +79,14 @@ async def run_distiller(
     current_map: Sequence[MapEntry] | None = None,
 ) -> list[DistillerEntry]:
     """Run one Distiller cycle. Returns [] on any unrecoverable failure (safe fallback)."""
+    t0 = time.monotonic()
     system_prompt = _load_prompt(config.prompt_template)
-    agent = Agent(model=model, output_type=DistilledBatch, system_prompt=system_prompt)
+    agent = Agent(
+        model=model,
+        output_type=DistilledBatch,
+        system_prompt=system_prompt,
+        model_settings={"timeout": config.timeout_seconds},
+    )
     known_ids = {e.event_id for e in events}
 
     # Build user prompt: current map context → events payload
@@ -87,8 +97,16 @@ async def run_distiller(
     else:
         user_prompt = events_payload
 
+    logger.debug(
+        "Distiller starting: %d events, %d map entries, %.0fs timeout, %d max retries",
+        len(events),
+        len(current_map) if current_map else 0,
+        config.timeout_seconds,
+        config.max_retries,
+    )
+
     last_error: str | None = None
-    for _attempt in range(config.max_retries + 1):
+    for attempt in range(config.max_retries + 1):
         prompt = user_prompt
         if last_error is not None:
             prompt = (
@@ -97,20 +115,38 @@ async def run_distiller(
                 "Reissue conforming output."
             )
         try:
-            run = await asyncio.wait_for(
-                agent.run(prompt), timeout=config.timeout_seconds
-            )
+            t_attempt = time.monotonic()
+            run = await asyncio.wait_for(agent.run(prompt), timeout=config.timeout_seconds)
+            elapsed = time.monotonic() - t_attempt
+            logger.debug("Distiller attempt %d completed in %.1fs", attempt + 1, elapsed)
             batch: DistilledBatch = cast("DistilledBatch", run.output)
         except TimeoutError:
             last_error = f"LLM call timed out after {config.timeout_seconds}s"
+            logger.warning(
+                "Distiller attempt %d timed out after %.0fs", attempt + 1, config.timeout_seconds
+            )
             continue
         except ValidationError as exc:
             last_error = f"schema validation failed: {exc}"
+            logger.warning("Distiller attempt %d validation failed: %s", attempt + 1, exc)
             continue
 
         errors = _validate_against_events(batch, known_ids)
         if not errors:
+            total_elapsed = time.monotonic() - t0
+            logger.debug(
+                "Distiller succeeded in %.1fs (%d attempt(s), %d entries distilled)",
+                total_elapsed,
+                attempt + 1,
+                len(batch.entries),
+            )
             return list(batch.entries)
         last_error = "; ".join(errors)
 
+    total_elapsed = time.monotonic() - t0
+    logger.warning(
+        "Distiller failed after %d attempt(s) in %.1fs — returning empty",
+        config.max_retries + 1,
+        total_elapsed,
+    )
     return []  # safe fallback after max_retries

@@ -93,9 +93,7 @@ class BlackboardAccessProxy:
         self._require_read()
         return self._db.get_context_map(corpus_key)
 
-    def get_pending_context_map_events(
-        self, corpus_key: str, limit: int = 50
-    ) -> list[Any]:
+    def get_pending_context_map_events(self, corpus_key: str, limit: int = 50) -> list[Any]:
         self._require_read()
         return self._db.get_pending_context_map_events(corpus_key, limit)
 
@@ -187,6 +185,13 @@ class BlackboardAccessProxy:
     ) -> float:
         self._require_read()
         return self._db.copt_query_similarity(corpus_key, embedding)
+
+    def copt_get_all_embeddings(
+        self,
+        corpus_key: str,
+    ) -> list[tuple[str, list[float]]]:
+        self._require_read()
+        return self._db.copt_get_all_embeddings(corpus_key)
 
     def copt_upsert_embeddings(
         self,

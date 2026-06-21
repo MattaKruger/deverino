@@ -1,15 +1,24 @@
 <template>
-  <div class="p-6 space-y-6 max-w-screen-2xl mx-auto">
-    <!-- Back link -->
-    <router-link
-      to="/sessions"
-      class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
-    >
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-      </svg>
-      Back to Sessions
-    </router-link>
+  <div class="view-shell view-stack">
+    <header class="page-header">
+      <div class="page-heading">
+        <router-link
+          to="/sessions"
+          class="mb-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Sessions
+        </router-link>
+        <div class="page-kicker">Session trace</div>
+        <h1 class="page-title mono break-all">{{ sessionId }}</h1>
+        <p class="page-subtitle">
+          Event-by-event timeline with token usage, elapsed time, rendered content, and raw payloads.
+        </p>
+      </div>
+      <StatusBadge v-if="sessionStatus" :status="sessionStatus" />
+    </header>
 
     <!-- Loading state -->
     <div v-if="loading" class="animate-pulse space-y-4">
@@ -36,18 +45,8 @@
     />
 
     <template v-else-if="events">
-      <!-- Session header -->
-      <div class="flex items-center gap-3 flex-wrap">
-        <h2 class="text-lg font-semibold text-[var(--color-text)] font-mono text-sm">
-          {{ sessionId }}
-        </h2>
-        <StatusBadge v-if="sessionStatus" :status="sessionStatus" />
-      </div>
-
-      <!-- Metrics bar -->
       <MetricBar :metrics="sessionMetrics" />
 
-      <!-- Event timeline -->
       <Panel title="Event Timeline">
         <div class="divide-y divide-[var(--color-grid)]">
           <div
@@ -55,8 +54,8 @@
             :key="event.event_id"
           >
             <div
-              class="flex items-start gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-[var(--color-border)] transition-colors"
-              :class="expandedId === event.event_id ? 'bg-[var(--color-border)]' : ''"
+              class="flex items-start gap-3 rounded-md px-3 py-2.5 text-sm cursor-pointer hover:bg-[var(--color-surface-raised)] transition-colors"
+              :class="expandedId === event.event_id ? 'bg-[var(--color-surface-raised)]' : ''"
               :style="{ borderLeft: `3px solid ${eventColor(event.event_type, event.status)}` }"
               role="button"
               tabindex="0"
@@ -66,7 +65,7 @@
               @keydown.enter.prevent="toggleExpand(event)"
               @keydown.space.prevent="toggleExpand(event)"
             >
-              <span class="text-xs text-[var(--color-muted)] font-mono whitespace-nowrap pt-0.5">
+              <span class="text-xs text-[var(--color-muted)] mono whitespace-nowrap pt-0.5">
                 {{ fmtTimestamp(event.created_at) }}
               </span>
 
@@ -79,14 +78,14 @@
 
               <span
                 v-if="event.tokens_used > 0"
-                class="text-xs text-[var(--color-muted)] font-mono tabular-nums whitespace-nowrap"
+                class="text-xs text-[var(--color-muted)] mono tabular-nums whitespace-nowrap"
               >
                 {{ fmtNum(event.tokens_used) }} tok
               </span>
 
               <span
                 v-if="event.time_delta > 0"
-                class="text-xs text-[var(--color-muted)] font-mono tabular-nums whitespace-nowrap"
+                class="text-xs text-[var(--color-muted)] mono tabular-nums whitespace-nowrap"
               >
                 {{ event.time_delta.toFixed(1) }}s
               </span>
@@ -105,8 +104,7 @@
             <!-- Expanded content -->
             <div
               v-if="expandedId === event.event_id"
-              class="px-4 py-3 border-l-[3px] border-[var(--color-blue)] bg-[var(--color-bg)]"
-              :style="{ marginLeft: '3px' }"
+              class="mx-3 mb-3 rounded-md border border-[var(--color-border)] border-l-[3px] border-l-[var(--color-blue)] bg-[var(--color-surface-muted)] px-4 py-3"
               @keydown.escape="expandedId = null"
             >
               <!-- Loading skeleton -->
@@ -136,7 +134,7 @@
                     Raw payload
                   </summary>
                   <pre
-                    class="mt-2 text-xs text-[var(--color-muted)] bg-[var(--color-border)] rounded p-2 overflow-x-auto max-h-64 font-mono leading-relaxed whitespace-pre-wrap break-all"
+                    class="mt-2 max-h-64 overflow-x-auto rounded-md border border-[var(--color-border)] bg-[var(--color-grid)] p-3 text-xs leading-relaxed text-[var(--color-muted)] mono whitespace-pre-wrap break-all"
                   >{{ detailPayload }}</pre>
                 </details>
               </template>

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from harness_poc.core.events.events import BaseEvent
 
 from harness_poc.core.events.events import EVENT_REGISTRY
+from harness_poc.core.observe import current_trace
 
 
 def _DbStateEvent():
@@ -49,6 +50,13 @@ class EventStore:
             session.commit()
             session.refresh(row)
             event.id = row.id or 0
+            trace = current_trace()
+            logger.debug(
+                "Persisted event: %s (session=%s)",
+                type(event).__name__,
+                getattr(event, "session_id", "?"),
+                extra=trace.as_extra() if trace else None,
+            )
 
     async def persist_async(self, event: BaseEvent) -> None:
         await asyncio.to_thread(self.persist, event)

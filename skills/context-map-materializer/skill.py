@@ -2,10 +2,14 @@
 
 See docs/superpowers/specs/2026-05-24-deterministic-cartographer-deferred-features.md §3.1.
 
-CopT gate (plans/09-copt-gate-plan.md): skips the Cartographer LLM call when the
-Distiller's observations are semantically redundant with the existing context map.
-Embeds summaries with all-MiniLM-L6-v2, queries pgvector for cosine similarity,
-and bypasses Cartographer when max_similarity > threshold (default 0.92).
+Two CopT gates (plans/09-copt-gate-plan.md):
+- Pre-Distiller gate: embeds raw event payloads and compares against stored
+  embeddings.  Skips the expensive Distiller LLM call entirely when all events
+  are semantically redundant (max_similarity > threshold, default 0.92).
+- Post-Distiller gate: embeds distilled summaries and bypasses the Cartographer
+  stage when all observations are redundant with the existing context map.
+Both use all-MiniLM-L6-v2 via sentence-transformers for embedding and numpy
+for batched cosine-similarity computation.
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from harness_poc.core.context_map import (
     deterministic_cartographer,
-    embed_single,
+    embed_summaries,
     run_distiller,
 )
 from harness_poc.core.events import (
@@ -27,15 +31,15 @@ from harness_poc.core.skills import SkillResult
 
 if TYPE_CHECKING:
     from harness_poc.core.context_map.schema import MapEntry
-    from harness_poc.core.events import (
-        ContextMapEvent,
-    )
+    from harness_poc.core.events import ContextMapEvent
     from harness_poc.core.skills import SkillContext
+    from harness_poc.core.storage.blackboard_proxy import BlackboardAccessProxy
+    from harness_poc.core.storage.database import BlackboardDatabase
 
 logger = logging.getLogger(__name__)
 
 
-async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:  # noqa: PLR0912
+async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult:
     corpus_key = str(arguments.get("corpus_key") or "").strip()
     if not corpus_key:
         return SkillResult(
@@ -65,6 +69,43 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult: 
     )  # resolved_model handles the fallback
 
     events = _events_from_rows(pending, ctx.config.runtime.materializer_max_event_tokens)
+    copt_threshold = ctx.config.runtime.materializer_copt_threshold
+
+    # ---- Pre-Distiller CopT Gate: skip LLM call if raw events are redundant ----
+    if (
+        db.copt_is_available()
+        and events
+        and current_map
+        and _events_all_redundant(events, corpus_key, copt_threshold, db)
+    ):
+        logger.info(
+            "Pre-distiller CopT gate: all %d event(s) redundant for %s — skipping Distiller",
+            len(events),
+            corpus_key,
+        )
+        db.write_map_and_mark_processed(
+            corpus_key,
+            current_map,
+            sum(e.token_estimate for e in current_map),
+            [row.event_id for row in pending],
+        )
+        return SkillResult(
+            status="success",
+            content=(
+                f"Pre-distiller CopT gate: all {len(events)} event(s) redundant "
+                f"for {corpus_key}. Skipped Distiller LLM call. "
+                f"Map unchanged at {sum(e.token_estimate for e in current_map)} tokens."
+            ),
+            artifacts={
+                "corpus_key": corpus_key,
+                "events_processed": len(pending),
+                "token_count": sum(e.token_estimate for e in current_map),
+                "map_changed": False,
+                "cycle_n": cycle_n,
+                "pre_distiller_copt_skipped": True,
+            },
+        )
+
     try:
         distilled = await run_distiller(
             events, distiller_model, ctx.config.distiller, current_map=current_map
@@ -77,15 +118,8 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult: 
         )
 
     # ---- CopT Gate: skip Cartographer if all observations are redundant ----
-    copt_threshold = ctx.config.runtime.materializer_copt_threshold
     if db.copt_is_available() and distilled and current_map:
-        all_redundant = True
-        for entry in distilled:
-            embedding = embed_single(entry.summary)
-            sim = db.copt_query_similarity(corpus_key, embedding)
-            if sim < copt_threshold:
-                all_redundant = False
-                break
+        all_redundant = _copt_all_redundant(distilled, corpus_key, copt_threshold, db)
         if all_redundant:
             db.write_map_and_mark_processed(
                 corpus_key,
@@ -153,10 +187,11 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult: 
     # ---- CopT Gate: upsert embeddings for future batches ----
     if db.copt_is_available() and distilled:
         try:
-            embedding_pairs: list[tuple[str, list[float]]] = []
-            for entry in distilled:
-                emb = embed_single(entry.summary)
-                embedding_pairs.append((entry.key, emb))
+            summaries = [entry.summary for entry in distilled]
+            embeddings = embed_summaries(summaries)
+            embedding_pairs = [
+                (entry.key, emb) for entry, emb in zip(distilled, embeddings, strict=True)
+            ]
             db.copt_upsert_embeddings(corpus_key, embedding_pairs)
         except Exception:
             logger.warning("CopT embedding upsert failed", exc_info=True)
@@ -174,6 +209,71 @@ async def execute(ctx: SkillContext, arguments: dict[str, Any]) -> SkillResult: 
             "cycle_n": cycle_n,
         },
     )
+
+
+def _copt_all_redundant(
+    distilled: list[Any],
+    corpus_key: str,
+    threshold: float,
+    db: BlackboardDatabase | BlackboardAccessProxy,
+) -> bool:
+    """Check if all distilled entries are redundant with stored embeddings.
+
+    Batch-embeds all summaries, fetches stored embeddings in one query,
+    and computes cosine similarities in Python with numpy.
+    This replaces N individual embed + pgvector roundtrips with a single
+    batch embed + single DB fetch + vectorized numpy computation.
+    """
+    import numpy as np
+
+    summaries = [entry.summary for entry in distilled]
+    query_embeddings = embed_summaries(summaries)  # (N, 384) normalized
+
+    stored = db.copt_get_all_embeddings(corpus_key)
+    if not stored:
+        return False  # no stored embeddings, all entries are novel
+
+    stored_matrix = np.array([emb for _key, emb in stored], dtype=np.float64)  # (M, 384)
+    query_matrix = np.array(query_embeddings, dtype=np.float64)  # (N, 384)
+
+    # Cosine similarity of L2-normalized vectors = dot product
+    # similarities shape: (N, M) — each query against each stored embedding
+    similarities = query_matrix @ stored_matrix.T
+    max_sims = similarities.max(axis=1)  # best match per query
+
+    return bool(np.all(max_sims >= threshold))
+
+
+def _events_all_redundant(
+    events: list[Any],
+    corpus_key: str,
+    threshold: float,
+    db: BlackboardDatabase | BlackboardAccessProxy,
+) -> bool:
+    """Pre-Distiller gate: check if raw events are semantically redundant.
+
+    Serializes each event to JSON, batch-embeds the payloads, and compares
+    against stored CopT embeddings.  If all events are similar to known
+    entries, the expensive Distiller LLM call can be skipped entirely.
+    """
+    import json
+
+    import numpy as np
+
+    event_texts = [json.dumps(e.model_dump(), default=str) for e in events]
+    query_embeddings = embed_summaries(event_texts)  # (N, 384) normalized
+
+    stored = db.copt_get_all_embeddings(corpus_key)
+    if not stored:
+        return False  # no stored embeddings, all events are novel
+
+    stored_matrix = np.array([emb for _key, emb in stored], dtype=np.float64)  # (M, 384)
+    query_matrix = np.array(query_embeddings, dtype=np.float64)  # (N, 384)
+
+    similarities = query_matrix @ stored_matrix.T
+    max_sims = similarities.max(axis=1)
+
+    return bool(np.all(max_sims >= threshold))
 
 
 def _events_from_rows(rows: list[Any], max_event_tokens: int) -> list[ContextMapEvent]:

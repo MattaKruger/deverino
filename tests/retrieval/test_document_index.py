@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -10,6 +11,7 @@ from harness_poc.core.config import RetrievalConfig
 from harness_poc.core.retrieval import (
     DocumentChunk,
     DocumentIndexer,
+    FeedSummary,
     compute_content_hash,
     document_index,
     make_chunk_id,
@@ -17,6 +19,21 @@ from harness_poc.core.retrieval import (
 )
 from harness_poc.core.storage import BlackboardDatabase
 from tests.retrieval.test_vespa_client import FakeVespaClient
+
+
+class FailingFeedVespaClient(FakeVespaClient):
+    def __init__(self, error: str) -> None:
+        super().__init__()
+        self._error = error
+
+    def feed_chunks(self, chunks: Iterable[DocumentChunk]) -> FeedSummary:
+        chunk_list = list(chunks)
+        return FeedSummary(
+            fed=0,
+            failed=len(chunk_list),
+            failed_ids=[chunk.chunk_id for chunk in chunk_list],
+            failed_errors={chunk.chunk_id: self._error for chunk in chunk_list},
+        )
 
 
 def _make_indexer(
@@ -167,6 +184,7 @@ def test_index_pdf_file(
         title="Guide",
         kind="source",
         max_tokens=100,
+        ocr_service_url=None,
     )
 
 
@@ -346,3 +364,32 @@ def test_vespa_unavailable_marks_source_failed(db_engine: Engine, tmp_path: Path
     source = db.get_document_source("doc-md")
     assert source is not None
     assert source.status == "failed"
+
+
+def test_feed_schema_error_surfaces_redeploy_hint(db_engine: Engine, tmp_path: Path) -> None:
+    doc = tmp_path / "doc.md"
+    doc.write_text("Content here.", encoding="utf-8")
+
+    error = (
+        "HTTP 400: Operation contains invalid input: Field 'embedding' is not part "
+        "of the declared document type 'doc_chunk'"
+    )
+    db = BlackboardDatabase(db_engine)
+    vespa = FailingFeedVespaClient(error)
+    indexer = _make_indexer(db, vespa)
+
+    result = indexer.index_paths(project_root=tmp_path, paths=["doc.md"])
+
+    assert result.failed == 1
+    assert result.indexed == 0
+    assert len(result.failures) == 1
+    assert "Field 'embedding' is not part of the declared document type" in result.failures[0][
+        "error"
+    ]
+    assert "just vespa-deploy" in result.failures[0]["error"]
+
+    source = db.get_document_source("doc-md")
+    assert source is not None
+    assert source.status == "failed"
+    assert source.error is not None
+    assert "just vespa-deploy" in source.error

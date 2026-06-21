@@ -1,17 +1,17 @@
 <template>
-  <div class="flex flex-row gap-6">
+  <div class="stat-grid">
     <div
       v-for="metric in metrics"
       :key="metric.label"
-      class="flex flex-col items-start"
+      class="stat-card"
     >
       <span
-        class="text-2xl font-bold font-mono"
+        class="metric-value mono"
         :style="{ color: metric.color || 'var(--color-blue)' }"
       >
         {{ metric.value }}
       </span>
-      <span class="text-xs text-[var(--color-muted)] uppercase tracking-wider">
+      <span class="metric-label">
         {{ metric.label }}
       </span>
     </div>

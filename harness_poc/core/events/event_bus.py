@@ -7,6 +7,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from harness_poc.core.events.events import BaseEvent
+from harness_poc.core.observe import current_trace
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable, Generator
@@ -35,6 +36,14 @@ class EventBus:
     def publish(self, event: BaseEvent) -> _Published:
         self._store.persist(event)
         self._dispatch(event)
+        trace = current_trace()
+        handlers = self._handlers.get(event.event_type, [])
+        logger.debug(
+            "Published event: %s (handlers=%d)",
+            type(event).__name__,
+            len(handlers),
+            extra=trace.as_extra() if trace else None,
+        )
         return _Published()
 
     async def publish_async(self, event: BaseEvent) -> None:

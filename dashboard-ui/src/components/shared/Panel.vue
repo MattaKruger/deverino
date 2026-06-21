@@ -1,28 +1,19 @@
 <template>
-  <div
-    class="bg-[var(--color-cbg)] border border-[var(--color-border)] rounded-lg"
-    role="region"
-    :aria-label="title"
-    tabindex="0"
-  >
-    <!-- Title bar with accent stripe -->
-    <div
-      class="flex items-center justify-between gap-2 px-4 py-3 border-b border-[var(--color-border)]"
-      :style="{ borderLeft: `3px solid var(--color-blue)` }"
-    >
-      <div class="flex items-center gap-2">
-        <span v-if="health" class="w-2 h-2 rounded-full shrink-0" :class="healthDotClass" />
-        <h3 class="text-sm font-semibold text-[var(--color-text)] uppercase tracking-wider">
+  <div class="panel" role="region" :aria-label="title || 'Dashboard panel'" tabindex="0">
+    <div v-if="title || health || timeAgoText || isStale" class="panel__header">
+      <div class="panel__title-group">
+        <span v-if="health" class="health-dot" :class="healthDotClass" />
+        <h3 v-if="title" class="panel__title">
           {{ title }}
         </h3>
-        <span v-if="isStale" class="text-xs text-[var(--color-yellow)] animate-pulse">
+        <span v-if="isStale" class="panel__meta text-[var(--color-yellow)]">
           updating…
         </span>
       </div>
-      <span v-if="timeAgoText" class="text-xs text-[var(--color-muted)] shrink-0">{{ timeAgoText }}</span>
+      <span v-if="timeAgoText" class="panel__meta">{{ timeAgoText }}</span>
     </div>
 
-    <div class="p-4">
+    <div class="panel__body">
       <!-- Loading skeleton — first load only -->
       <div v-if="loading" class="space-y-2">
         <SkeletonRow :widths="['75%', '50%']" />
@@ -63,9 +54,9 @@ const props = defineProps<{
 
 const healthDotClass = computed(() => {
   switch (props.health) {
-    case 'fresh': return 'bg-[var(--color-green)]';
-    case 'stale': return 'bg-[var(--color-yellow)]';
-    case 'error': return 'bg-[var(--color-red)]';
+    case 'fresh': return 'text-[var(--color-green)] bg-[var(--color-green)]';
+    case 'stale': return 'text-[var(--color-yellow)] bg-[var(--color-yellow)]';
+    case 'error': return 'text-[var(--color-red)] bg-[var(--color-red)]';
     default: return '';
   }
 });

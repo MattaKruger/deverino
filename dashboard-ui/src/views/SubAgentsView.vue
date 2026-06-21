@@ -1,12 +1,18 @@
 <template>
-  <div class="p-6 space-y-6 max-w-screen-2xl mx-auto">
-    <div class="flex items-center gap-3">
-      <h2 class="text-lg font-semibold text-[var(--color-text)]">Sub-Agents</h2>
+  <div class="view-shell view-stack">
+    <header class="page-header">
+      <div class="page-heading">
+        <div class="page-kicker">Delegation graph</div>
+        <h1 class="page-title">Sub-Agents</h1>
+        <p class="page-subtitle">
+          Track delegated work by persona, parent session, lifecycle state, duration, objective, and result summary.
+        </p>
+      </div>
       <HealthIndicator
         :lastFetched="store.lastFetched"
         :error="store.error"
       />
-    </div>
+    </header>
 
     <Panel
       title="Sub-Agents"
@@ -17,39 +23,38 @@
     >
       <template v-if="store.data && store.data.length > 0">
         <div class="overflow-x-auto">
-          <table class="w-full text-sm">
+          <table class="data-table">
             <thead>
-              <tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)] uppercase tracking-wider">
-                <th class="px-3 py-2 font-medium">Persona</th>
-                <th class="px-3 py-2 font-medium">Parent Session</th>
-                <th class="px-3 py-2 font-medium">Status</th>
-                <th class="px-3 py-2 font-medium text-right">Duration</th>
-                <th class="px-3 py-2 font-medium">Objective</th>
-                <th class="px-3 py-2 font-medium">Summary</th>
+              <tr>
+                <th>Persona</th>
+                <th>Parent Session</th>
+                <th>Status</th>
+                <th class="text-right">Duration</th>
+                <th>Objective</th>
+                <th>Summary</th>
               </tr>
             </thead>
             <tbody>
               <tr
                 v-for="agent in sortedAgents"
                 :key="agent.sub_session_id"
-                class="border-b border-[var(--color-grid)] hover:bg-[var(--color-border)] transition-colors"
               >
-                <td class="px-3 py-2 font-medium text-[var(--color-text)] whitespace-nowrap">
+                <td class="font-medium text-[var(--color-text)] whitespace-nowrap">
                   {{ agent.persona }}
                 </td>
-                <td class="px-3 py-2 font-mono text-xs text-[var(--color-muted)]">
+                <td class="mono text-xs text-[var(--color-muted)]">
                   {{ truncateId(agent.parent_session_id) }}
                 </td>
-                <td class="px-3 py-2">
+                <td>
                   <StatusBadge :status="agent.status" />
                 </td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-[var(--color-muted)] whitespace-nowrap">
+                <td class="text-right mono tabular-nums text-[var(--color-muted)] whitespace-nowrap">
                   {{ fmtDuration(agent.duration_s) }}
                 </td>
-                <td class="px-3 py-2 text-xs text-[var(--color-muted)] max-w-xs truncate">
+                <td class="text-xs text-[var(--color-muted)] max-w-xs truncate">
                   {{ agent.objective || '—' }}
                 </td>
-                <td class="px-3 py-2 text-xs text-[var(--color-muted)] max-w-xs truncate">
+                <td class="text-xs text-[var(--color-muted)] max-w-xs truncate">
                   {{ agent.summary || '—' }}
                 </td>
               </tr>

@@ -125,16 +125,18 @@ def _build_chat_runtime(
 ) -> PydanticAgentRuntime:
     """Build a lightweight PydanticAgentRuntime for a chat session.
 
-    Reuses the same construction as the TUI/REPL (``build_primary_agent``
-    + ``AgentDeps``), but skips context maps, skill catalogs, workflows,
-    and pipelines — just the agent with tools.
+    Reuses the same construction path as the TUI/REPL for the agent,
+    available toolset, skill catalog, and knowledge skill context. Web chat
+    still skips TUI-only workflows/pipelines, but the model sees the same
+    skill catalog and ``skills_list``/``skill_view`` context.
     """
-    from harness_poc.core.runtime.pydantic_runtime import (  # noqa: PLC0415
-        AgentDeps,
-        build_primary_agent,
-    )
-    from harness_poc.core.skills import SkillRunner  # noqa: PLC0415
+    from harness_poc.app_factory import _TUI_BLOCKED_SKILLS  # noqa: PLC0415
+    from harness_poc.core.permissions import SkillPermissions  # noqa: PLC0415
+    from harness_poc.core.runtime.pydantic_runtime import build_runtime  # noqa: PLC0415
+    from harness_poc.core.skills import SkillRunner, build_skill_catalog  # noqa: PLC0415
+    from harness_poc.core.storage import BlackboardAccessProxy  # noqa: PLC0415
     from harness_poc.core.tools import ToolRunner  # noqa: PLC0415
+    from harness_poc.system_tools.knowledge_tools import init_knowledge_context  # noqa: PLC0415
 
     # ── System prompt ─────────────────────────────────────────────────────
     soul_path = config.paths.soul
@@ -142,44 +144,47 @@ def _build_chat_runtime(
 
     # ── Skill & tool runners ──────────────────────────────────────────────
     skill_runner = SkillRunner(database=db, config=config)
+    db_proxy = BlackboardAccessProxy(
+        db,
+        SkillPermissions(blackboard="read_write", workspace="read_write"),
+    )
     tool_runner = ToolRunner(
         config=config,
         skill_runner=skill_runner,
-        database=db,
+        database=db_proxy,
         runtime_config=config.runtime,
     )
 
-    # ── Block TUI-specific skills in web context ──────────────────────────
-    _web_blocked = frozenset(
-        {
-            "append_event",
-            "consolidate_state",
-            "read_memory",
-            "summarize_memory",
-            "inspect_db",
-            "trace_session",
-        }
+    # ── Knowledge skill context and catalog ───────────────────────────────
+    knowledge_dirs = [config.paths.project_skills]
+    if config.paths.system_skills.exists():
+        knowledge_dirs.append(config.paths.system_skills)
+
+    init_knowledge_context(
+        knowledge_dirs,
+        project_root=config.project_root,
+        scratch_base=None,
+        session_id=session_id,
+        skill_runner=skill_runner,
     )
+    skill_catalog = build_skill_catalog(knowledge_dirs)
 
     # ── Agent ─────────────────────────────────────────────────────────────
-    agent = build_primary_agent(
-        system_prompt=system_prompt,
-        skill_runner=skill_runner,
-        tool_runner=tool_runner,
-        llm=config.llm,
-        enable_tools=True,
-        blocked_skills=_web_blocked,
-    )
-
-    deps = AgentDeps(
+    runtime = build_runtime(
         session_id=session_id,
         database=db,
         config=config,
         skill_runner=skill_runner,
         tool_runner=tool_runner,
+        system_prompt=system_prompt,
+        llm=config.llm,
+        enable_tools=True,
+        blocked_skills=_TUI_BLOCKED_SKILLS,
+        skill_catalog=skill_catalog,
     )
+    tool_runner.system_prompt = "\n\n".join(runtime.agent._system_prompts)  # noqa: SLF001
 
-    return PydanticAgentRuntime(agent=agent, deps=deps)
+    return runtime
 
 
 def _deserialize_messages(raw: list[dict[str, Any]]) -> list[Any]:
