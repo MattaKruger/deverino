@@ -4,13 +4,13 @@ import asyncio
 import contextlib
 import logging
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from harness_poc.core.events.events import BaseEvent
 from harness_poc.core.observe import current_trace
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Callable, Generator
+    from collections.abc import AsyncGenerator, Callable
 
     from harness_poc.core.events.event_store import EventStore
 
@@ -19,21 +19,13 @@ logger = logging.getLogger(__name__)
 E = TypeVar("E", bound=BaseEvent)
 
 
-class _Published:
-    def __await__(self) -> Generator[None]:
-        if False:
-            yield None
-        return None
-
-
 class EventBus:
     def __init__(self, event_store: EventStore) -> None:
         self._store: EventStore = event_store
-        self._queue: asyncio.Queue[BaseEvent] = asyncio.Queue()
         self._handlers: dict[str, list[Callable[[Any], None]]] = defaultdict(list)
         self._async_subscribers: list[asyncio.Queue[BaseEvent]] = []
 
-    def publish(self, event: BaseEvent) -> _Published:
+    def publish(self, event: BaseEvent) -> None:
         self._store.persist(event)
         self._dispatch(event)
         trace = current_trace()
@@ -44,42 +36,33 @@ class EventBus:
             len(handlers),
             extra=trace.as_extra() if trace else None,
         )
-        return _Published()
 
     async def publish_async(self, event: BaseEvent) -> None:
         await self._store.persist_async(event)
         self._dispatch(event)
 
-    @overload
-    def subscribe(self, event_type: type[E], handler: Callable[[E], None]) -> None: ...
-
-    @overload
-    def subscribe(self, session_id: str) -> AsyncGenerator[BaseEvent]: ...
-
-    def subscribe(
-        self,
-        event_type_or_session_id: type[E] | str,
-        handler: Callable[[E], None] | None = None,
-    ) -> AsyncGenerator[BaseEvent] | None:
-        if handler is not None:
-            if isinstance(event_type_or_session_id, str):
-                msg = "Handler EventBus subscription requires an event type"
-                raise TypeError(msg)
-            self._handlers[event_type_or_session_id.__name__].append(handler)  # type: ignore[arg-type]
-            return None
-
-        if not isinstance(event_type_or_session_id, str):
-            msg = "Async EventBus subscription requires a session_id string"
+    def subscribe(self, event_type: type[E], handler: Callable[[E], None]) -> None:
+        if not isinstance(event_type, type):
+            msg = "subscribe() requires an event type as first argument; use subscribe_session() for async session subscriptions"
             raise TypeError(msg)
-
-        return self._subscribe_session(event_type_or_session_id)
+        self._handlers[event_type.__name__].append(handler)  # type: ignore[arg-type]
 
     def unsubscribe(self, event_type: type[E], handler: Callable[[E], None]) -> None:
         with contextlib.suppress(ValueError):
             self._handlers[event_type.__name__].remove(handler)  # type: ignore[arg-type]
 
-    def subscribe_session(self, session_id: str) -> AsyncGenerator[BaseEvent]:
-        return self._subscribe_session(session_id)
+    async def subscribe_session(self, session_id: str) -> AsyncGenerator[BaseEvent]:
+        # ponytail: maxsize caps memory per slow subscriber; QueueFull drops with warning
+        queue: asyncio.Queue[BaseEvent] = asyncio.Queue(maxsize=500)
+        self._async_subscribers.append(queue)
+        try:
+            while True:
+                event = await queue.get()
+                if event.session_id == session_id:
+                    yield event
+        finally:
+            with contextlib.suppress(ValueError):
+                self._async_subscribers.remove(queue)
 
     def get_recent_events(
         self,
@@ -94,26 +77,16 @@ class EventBus:
         )
 
     def _dispatch(self, event: BaseEvent) -> None:
-        self._queue.put_nowait(event)
         for subscriber in list(self._async_subscribers):
-            subscriber.put_nowait(event)
+            try:
+                subscriber.put_nowait(event)
+            except asyncio.QueueFull:
+                logger.warning(
+                    "Subscriber queue full, dropping event: %s", type(event).__name__
+                )
 
         for handler in list(self._handlers.get(event.event_type, [])):
             try:
                 handler(event)
             except Exception:
                 logger.exception("Event handler raised for %s", event.event_type)
-
-    async def _subscribe_session(
-        self,
-        session_id: str,
-    ) -> AsyncGenerator[BaseEvent]:
-        queue: asyncio.Queue[BaseEvent] = asyncio.Queue()
-        self._async_subscribers.append(queue)
-        try:
-            while True:
-                event = await queue.get()
-                if event.session_id == session_id:
-                    yield event
-        finally:
-            self._async_subscribers.remove(queue)

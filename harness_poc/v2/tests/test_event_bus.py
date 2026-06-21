@@ -91,6 +91,11 @@ class TestEventBusPublish:
         assert isinstance(store.events[0], ProbeFailed)
         assert store.events[0].session_id == "sess-2"
 
+    def test_publish_returns_none(self):
+        bus = _make_bus()
+        result = bus.publish(AgentInputAdded(session_id="s", user_content="x"))
+        assert result is None
+
 
 class TestEventBusSubscribe:
     """Acceptance criterion: subscribe fires the handler on matching events."""
@@ -192,6 +197,33 @@ class TestEventBusUnsubscribe:
 
         # Should not raise
         bus.unsubscribe(AgentInputAdded, handler)
+
+
+class TestEventBusSubscribeHandlerOnly:
+    """subscribe() accepts only (event_type, handler) after overload removal."""
+
+    def test_subscribe_string_raises_type_error(self):
+        import pytest
+
+        bus = _make_bus()
+        with pytest.raises(TypeError):
+            bus.subscribe("some-session-id")  # type: ignore[call-arg]
+
+    def test_dispatch_warns_and_does_not_raise_on_full_queue(self, caplog):
+        import asyncio
+        import logging
+
+        bus = _make_bus()
+        full_queue: asyncio.Queue = asyncio.Queue(maxsize=1)
+        full_queue.put_nowait(AgentInputAdded(session_id="x", user_content="pre-fill"))
+        bus._async_subscribers.append(full_queue)
+
+        with caplog.at_level(logging.WARNING):
+            bus.publish(AgentInputAdded(session_id="x", user_content="overflow"))
+
+        assert "queue full" in caplog.text.lower()
+        assert full_queue.qsize() == 1
+        bus._async_subscribers.remove(full_queue)
 
 
 # ---------------------------------------------------------------------------
