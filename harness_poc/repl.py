@@ -55,7 +55,7 @@ if TYPE_CHECKING:
         TokenAccounting,
     )
     from harness_poc.core.storage import StateSection
-    from harness_poc.v2.runtime import V2Runtime
+    from harness_poc.v2.wiring import V2Runtime
 
 
 MIN_WORKFLOW_PARTS = 2
@@ -366,7 +366,9 @@ def _fire_observations_async(app_state: AppState, response: object) -> None:
 
 
 def handle_chat_input(app_state: AppState, user_input: str) -> None:
-    if app_state.active_mode in ("pipeline", "react"):
+    # Default + react + pipeline run the v2 event loop. `chat` is the explicit
+    # native-streaming escape hatch (token-by-token, native pydantic-ai tools).
+    if app_state.active_mode != "chat":
         _handle_v2_mode_input(app_state, user_input)
         return
 
@@ -1561,10 +1563,13 @@ def handle_mode_command(app_state: AppState, user_input: str) -> None:
 def _handle_v2_mode_input(app_state: AppState, user_input: str) -> None:
     """Handle a plain-text input when active_mode is pipeline or react."""
     mode = app_state.active_mode
+    if app_state.v2_runtime is None:
+        from harness_poc.v2.wiring import build_v2_runtime
+
+        app_state.v2_runtime = build_v2_runtime(
+            app_state.identity, app_state.config, mode=mode
+        )
     runtime = app_state.v2_runtime
-    if runtime is None:
-        print_error(f"No v2 runtime available for mode '{mode}'. Use /mode first.")
-        return
 
     print_text(f"[cyan]Running {mode} mode...[/cyan]")
     print_text(f"Objective: [bold]{user_input}[/bold]")
@@ -1627,35 +1632,22 @@ def _run_react_inline(app_state: AppState, runtime: V2Runtime, user_input: str) 
     import asyncio
     import threading
 
-    if runtime.circuit_breaker is None:
-        print_error("CircuitBreaker not available")
-        return
-    if runtime.llm_worker is None:
-        print_error("LlmWorker not available")
-        return
-    if runtime.tool_worker is None:
-        print_error("ToolWorker not available")
-        return
-    if runtime.goal_evaluator is None:
-        print_error("GoalEvaluator not available")
-        return
-
-    # Narrowed after the None guards above — safe to use.
-    cb = runtime.circuit_breaker
-    lw = runtime.llm_worker
-    tw = runtime.tool_worker
-    ge = runtime.goal_evaluator
-
     session_id = app_state.session_id
     bus = runtime.bus
-
     output_parts: list[str] = []
+    # Drive the shared streaming seam so output renders in both surfaces: the
+    # REPL's default callbacks print to the console; the TUI's callbacks render
+    # into chat widgets and on_finish clears the "worker running" state.
+    # ponytail: react LlmWorker uses run_text, so on_text fires once (not
+    # token-streamed); tool events aren't forwarded to the TUI tool panel yet.
+    streaming = app_state.streaming
 
     def _run() -> None:
         terminal_event = asyncio.Event()
 
         def on_text(event: LLMTextEmitted) -> None:
             output_parts.append(event.content)
+            streaming.on_text(event.content)
             terminal_event.set()
 
         def on_pause(_event: StreamPaused) -> None:
@@ -1669,22 +1661,14 @@ def _run_react_inline(app_state: AppState, runtime: V2Runtime, user_input: str) 
         bus.subscribe(GoalEvaluated, on_goal)
 
         async def _react() -> None:
-            tasks = [
-                asyncio.create_task(cb.run(bus, session_id)),
-                asyncio.create_task(lw.run(bus, session_id)),
-                asyncio.create_task(tw.run(bus, session_id)),
-                asyncio.create_task(ge.run(bus, session_id)),
-            ]
+            await runtime.start(session_id)
             try:
                 bus.publish(AgentInputAdded(session_id=session_id, user_content=user_input))
                 await asyncio.wait_for(terminal_event.wait(), timeout=120.0)
             except TimeoutError:
                 output_parts.append("Time budget exhausted.")
             finally:
-                bus.publish(
-                    StreamPaused(session_id=session_id, reason="completed", threshold_breached="50")
-                )
-                await asyncio.gather(*tasks, return_exceptions=True)
+                await runtime.stop(session_id)
 
         asyncio.run(_react())
 
@@ -1692,11 +1676,9 @@ def _run_react_inline(app_state: AppState, runtime: V2Runtime, user_input: str) 
     thread.start()
     thread.join(timeout=130.0)
 
-    output = "\n".join(output_parts).strip()
-    if output:
-        print_text(output)
-    else:
-        print_text("ReAct loop completed (no text output).")
+    if not output_parts:
+        streaming.on_text("ReAct loop completed (no text output).")
+    streaming.on_finish("\n".join(output_parts).strip())
 
 
 def show_state_events(app_state: AppState, argument: str) -> None:

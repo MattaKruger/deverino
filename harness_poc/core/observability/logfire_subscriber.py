@@ -20,7 +20,12 @@ if TYPE_CHECKING:
 
 
 def configure_logfire(*, include_content: bool = False) -> None:
-    logfire.configure()
+    # Disable Logfire console output entirely. The span traces default to stdout,
+    # which pollutes CLI JSON output; redirecting to stderr corrupts the TUI
+    # (Textual takes over the terminal). The harness has its own logging via
+    # RotatingFileHandler (.harness/logs/harness.log), and Logfire telemetry
+    # still ships to the cloud — console traces are redundant.
+    logfire.configure(console=False)
     logfire.instrument_pydantic_ai(include_content=include_content)
 
 

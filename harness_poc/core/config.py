@@ -26,6 +26,7 @@ class HarnessPaths:
     workflows: Path
     pipelines: Path
     personas: Path
+    react_spec: Path
     soul_compact: Path | None = None
 
 
@@ -56,7 +57,7 @@ class ObservabilityConfig:
 
 @dataclass(frozen=True, slots=True)
 class LLMConfig:
-    provider: str  # "deepseek" | "openai" | "anthropic"
+    provider: str  # "deepseek" | "openai" | "anthropic" | "glm"
     model: str
     base_url: str | None  # None unless overriding endpoint (openai-compatible only)
 
@@ -110,6 +111,7 @@ class APISettings(BaseSettings):
     deepseek_api_key: str | None = Field(default=None, validation_alias="DEEPSEEK_API_KEY")
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     anthropic_api_key: str | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
+    glm_api_key: str | None = Field(default=None, validation_alias="GLM_API_KEY")
 
     @classmethod
     def load(cls) -> APISettings:
@@ -130,11 +132,6 @@ class CompilerConfig:
     provider: str | None = None
     """Override provider for compilation.  None = use ``llm.provider``."""
 
-    be_enabled: bool = False
-    """Stage 5: Binding Evidence — LLM prunes spurious call-sites."""
-
-    rc_enabled: bool = False
-    """Stage 6: Residual Cleanup — LLM fixes prose-contract mismatches."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +184,9 @@ class HarnessConfig:
             workflows=_resolve_path(project_root, paths_raw.get("workflows", "workflows")),
             pipelines=_resolve_path(project_root, paths_raw.get("pipelines", "pipelines")),
             personas=_resolve_path(project_root, paths_raw.get("personas", "personas")),
+            react_spec=_resolve_path(
+                project_root, paths_raw.get("react_spec", "deverino_react.acdl")
+            ),
         )
         runtime = RuntimeConfig(
             database_url=str(
@@ -267,8 +267,6 @@ class HarnessConfig:
             enabled=bool(compiler_raw.get("enabled", True)),
             model=compiler_raw.get("model"),  # None is fine — use llm.model
             provider=compiler_raw.get("provider"),  # None is fine
-            be_enabled=bool(compiler_raw.get("be_enabled", False)),
-            rc_enabled=bool(compiler_raw.get("rc_enabled", False)),
         )
 
         project_raw = _mapping(raw.get("project"), "project")

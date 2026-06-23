@@ -6,7 +6,6 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-import tiktoken
 from sqlalchemy import inspect, text
 from sqlmodel import Session, col, select
 
@@ -725,9 +724,6 @@ class BlackboardDatabase:
             raw = json.loads(row.map_json)
         except json.JSONDecodeError:
             return None
-        if row.schema_version == 1:
-            return _legacy_to_entries(raw, corpus_key)
-        # schema_version >= 2: deserialize list[MapEntry] directly
         return [MapEntry.model_validate(e) for e in raw] if isinstance(raw, list) else []
 
     def is_map_frozen(self, corpus_key: str, now: str | None = None) -> bool:
@@ -841,9 +837,7 @@ class BlackboardDatabase:
                 raw = json.loads(row.map_json)
             except json.JSONDecodeError:
                 continue
-            if row.schema_version == 1:
-                entries = _legacy_to_entries(raw, row.corpus_key)
-            elif isinstance(raw, list):
+            if isinstance(raw, list):
                 entries = [MapEntry.model_validate(e) for e in raw]
             else:
                 continue
@@ -1116,55 +1110,3 @@ def _deserialize_embedding(raw: str) -> list[float]:
     return [float(x) for x in json.loads(raw)]
 
 
-def _legacy_to_entries(raw: dict[str, Any], _corpus_key: str) -> list[MapEntry]:
-    """Translate legacy schema_version=1 dict format to list[MapEntry].
-
-    Best-effort: each {section: {key: {entry_id, content, priority_score}}} becomes
-    a MapEntry with observation_type inferred from section, cycle fields zeroed,
-    materialization_count = 0, and token_estimate recomputed via tiktoken.
-
-    The section → observation_type mapping is reversed from sections.py SECTION_MAP.
-    """
-    from datetime import UTC, datetime
-
-    from harness_poc.core.context_map.sections import SECTION_MAP
-
-    # Reverse mapping: section_name → observation_type (best-guess, may be ambiguous)
-    _section_to_type: dict[str, str] = {}
-    for obs_type, sec in SECTION_MAP.items():
-        if sec not in _section_to_type:
-            _section_to_type[sec] = obs_type
-
-    encoder = tiktoken.get_encoding("cl100k_base")
-    now = datetime.now(tz=UTC)
-    entries: list[MapEntry] = []
-
-    for section, section_entries in raw.items():
-        if not isinstance(section_entries, dict):
-            continue
-        obs_type = _section_to_type.get(section, "insight")
-        for key, value in section_entries.items():
-            if not isinstance(value, dict):
-                continue
-            content = str(value.get("content", ""))
-            entry_id = str(value.get("entry_id", ""))
-            priority = float(value.get("priority_score", 0.5))
-            entries.append(
-                MapEntry(
-                    entry_id=entry_id,
-                    key=str(key),
-                    section=section,
-                    observation_type=obs_type,  # ty: ignore
-                    summary=content,
-                    priority=priority,
-                    source_event_ids=[],
-                    first_seen=now,
-                    last_updated=now,
-                    materialization_count=0,
-                    first_seen_cycle=0,
-                    last_seen_cycle=0,
-                    token_estimate=len(encoder.encode(content)),
-                )
-            )
-
-    return entries

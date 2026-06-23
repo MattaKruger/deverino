@@ -29,8 +29,6 @@ from harness_poc.v2.contracts import (
     GOAL_TO_DELEGATED_STATUS,
     GOAL_TO_EXTERNAL_STATUS,
     RENDER_MODES,
-    # Soul
-    REQUIRED_SECTIONS,
     # ContextMap
     ContextMapMaterializer,
     CorpusNotFoundError,
@@ -38,8 +36,6 @@ from harness_poc.v2.contracts import (
     DelegatedTaskOutput,
     DelegatedTaskResult,
     MaterializationError,
-    SoulConstitution,
-    SoulIntegrityError,
     SubAgentSpawner,
     map_delegated_to_external,
     map_goal_status_to_delegated,
@@ -84,8 +80,6 @@ __all__ = [
     "GOAL_TO_DELEGATED_STATUS",
     "GOAL_TO_EXTERNAL_STATUS",
     "RENDER_MODES",
-    # Contracts — Soul
-    "REQUIRED_SECTIONS",
     # Engines — Context
     "ContextEngine",
     "ContextEngineError",
@@ -110,8 +104,6 @@ __all__ = [
     "PersonaNotFoundError",
     "ProbeError",
     "ProbeResult",
-    "SoulConstitution",
-    "SoulIntegrityError",
     "SpecExecutionError",
     "SubAgentPoolFullError",
     "SubAgentResult",

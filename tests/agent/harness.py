@@ -186,7 +186,7 @@ class SessionHarness:
             skill_catalog="",
         )
         long_lived = LongLived(
-            materializer=None,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            materializer_runner=None,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             supervisor=None,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
         )
         state = AppState(

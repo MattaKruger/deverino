@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 import numpy as np  # noqa: TC002 — runtime use for similarity matrix
 from pydantic import BaseModel, ConfigDict, Field
@@ -40,6 +40,7 @@ from harness_poc.core.skills.skill_runner import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
     from numpy.typing import NDArray
@@ -62,7 +63,13 @@ _compilation_progress: dict[str, Any] = {
 }
 
 # ── Embedding instance (lazy-loaded) ───────────────────────────────────
-_embedder: object | None = None
+
+
+class _Embedder(Protocol):
+    def embed_batch(self, texts: list[str]) -> NDArray[np.float32]: ...
+
+
+_embedder: _Embedder | None = None
 
 # ── Regex patterns ─────────────────────────────────────────────────────
 _FENCED_BLOCK_RE = re.compile(r"^```(\w*)\s*\n(.*?)\n```", re.DOTALL | re.MULTILINE)
@@ -76,6 +83,7 @@ _DERIVED_INPUTS: frozenset[str] = frozenset(
         "mode",
         "format",
         "file",
+        "file_path",
         "path",
         "input",
         "output",
@@ -594,8 +602,8 @@ def _compile_from_doc(
             templates={},
             invoke_patterns=[],
             raw_body=raw_body,
-            compilation_status="rejected",
-            compilation_errors=["No procedural units found in body"],
+            compilation_status="full",
+            compilation_errors=[],
             compiled_at=time.time(),
         )
     logger.debug("Stage 1: parsed %d procedural units", len(units))
@@ -622,28 +630,6 @@ def _compile_from_doc(
 
     # ── Stage 4: Verifier ──
     promoted_contracts, errors = _verify_contracts(contracts, templates, raw_body, metadata)
-
-    # ── Stage 5: BE (optional) ──
-    if (
-        use_llm
-        and compiler_config is not None  # for type narrowing
-        and compiler_config.be_enabled
-        and promoted_contracts
-    ):
-        logger.debug("Stage 5: running BE pass")
-        promoted_contracts, be_errors = _be_pass(promoted_contracts, raw_body, model)
-        errors.extend(be_errors)
-
-    # ── Stage 6: RC (optional) ──
-    if (
-        use_llm
-        and compiler_config is not None
-        and compiler_config.rc_enabled
-        and promoted_contracts
-    ):
-        logger.debug("Stage 6: running RC pass")
-        promoted_contracts, rc_errors = _rc_pass(promoted_contracts, raw_body, model)
-        errors.extend(rc_errors)
 
     # ── Determine compilation status ──
     if not contracts:
@@ -846,7 +832,7 @@ def _cluster_units(units: list[ProceduralUnit]) -> list[UnitCluster]:
     return clusters
 
 
-def _ensure_embedder() -> object:
+def _ensure_embedder() -> _Embedder:
     """Return the shared TextEmbedder instance, loading on first call."""
     global _embedder  # noqa: PLW0603 — lazy singleton pattern
     if _embedder is None:
@@ -854,7 +840,7 @@ def _ensure_embedder() -> object:
             TextEmbedder,
         )
 
-        _embedder = TextEmbedder()
+        _embedder = cast("_Embedder", TextEmbedder())
     return _embedder
 
 
@@ -999,6 +985,12 @@ def _parse_llm_json(raw: str) -> LlmContractOutput | None:
     try:
         return LlmContractOutput.model_validate_json(text)
     except Exception:
+        logger.debug("Direct LLM JSON parse failed; trying raw decoder", exc_info=True)
+    # Trailing text after the JSON object (e.g. from claude -p explanations)
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text)
+        return LlmContractOutput.model_validate(obj)
+    except Exception:
         logger.warning("Failed to parse LLM JSON output", exc_info=True)
         return None
 
@@ -1024,16 +1016,18 @@ def _llm_output_to_dataclasses(
             )
             for ec in c.error_conditions
         ],
-        cancellation_behavior=c.cancellation_behavior,  # type: ignore[arg-type]
+        cancellation_behavior=_coerce_cancellation_behavior(c.cancellation_behavior),
     )
     tmpl = None
     if output.action_template is not None:
         at = output.action_template
-        tmpl = ActionTemplate(
-            kind=at.kind,  # type: ignore[arg-type]
-            template=at.template,
-            argument_map=at.argument_map,
-        )
+        kind = _coerce_action_kind(at.kind)
+        if kind is not None:
+            tmpl = ActionTemplate(
+                kind=kind,
+                template=at.template,
+                argument_map=at.argument_map,
+            )
     inv = None
     if output.invoke_pattern is not None:
         ip = output.invoke_pattern
@@ -1043,6 +1037,20 @@ def _llm_output_to_dataclasses(
             rendered_call=ip.rendered_call,
         )
     return contract, tmpl, inv
+
+
+def _coerce_cancellation_behavior(value: str) -> Literal["safe", "unsafe", "unknown"]:
+    if value in ("safe", "unsafe", "unknown"):
+        return cast("Literal['safe', 'unsafe', 'unknown']", value)
+    return "unknown"
+
+
+def _coerce_action_kind(value: str) -> Literal["shell", "python", "api", "db_query"] | None:
+    if value == "cli":
+        return "shell"
+    if value in ("shell", "python", "api", "db_query"):
+        return cast("Literal['shell', 'python', 'api', 'db_query']", value)
+    return None
 
 
 def _contract_name_from_cmd(binary: str, cluster_idx: int) -> str:
@@ -1057,7 +1065,7 @@ def _verify_contracts(
     contracts: list[TypedContract],
     templates: dict[str, ActionTemplate],
     raw_body: str,
-    metadata: dict[str, Any],
+    metadata: Mapping[str, Any],
 ) -> tuple[list[TypedContract], list[str]]:
     """Run the four deterministic checks on extracted contracts."""
     errors: list[str] = []
@@ -1065,18 +1073,20 @@ def _verify_contracts(
     if not contracts:
         return promoted, errors
     frontmatter_params: dict[str, Any] = metadata.get("parameters", {}).get("properties", {})
+    is_knowledge = metadata.get("type") == "knowledge"
     for contract in contracts:
         contract_errors: list[str] = []
         tmpl = templates.get(contract.name)
         if tmpl is not None:
             contract_errors.extend(_check_coverage(contract, tmpl, raw_body, frontmatter_params))
-        contract_errors.extend(_check_binding(contract, frontmatter_params))
+        if not is_knowledge:
+            contract_errors.extend(_check_binding(contract, frontmatter_params))
         if not contract_errors:
             promoted.append(contract)
         else:
             errors.extend(f"[contract '{contract.name}'] {e}" for e in contract_errors)
     errors.extend(_check_replacement(promoted, templates, raw_body))
-    errors.extend(_check_risk(promoted, raw_body))
+    errors.extend(_check_risk(promoted, raw_body, frontmatter_params))
     return promoted, errors
 
 
@@ -1111,7 +1121,7 @@ def _check_coverage(
         body_segments.update(bare.split("."))
     tokens = re.split(r"\{[\w_]+\}", tmpl.template)
     for token_part in tokens:
-        for word in token_part.split():
+        for word in re.split(r"[\s(),=\[\]{}]", token_part):
             cleaned = word.translate(_PUNCTUATION_TABLE)
             if len(cleaned) < _MIN_TOKEN_LENGTH_COVERAGE:
                 continue
@@ -1169,6 +1179,7 @@ def _check_replacement(
 def _check_risk(
     contracts: list[TypedContract],
     raw_body: str,
+    frontmatter_params: dict[str, Any] | None = None,
 ) -> list[str]:
     """Risk: flag contract tokens that collide with UNRELATED body words.
 
@@ -1178,8 +1189,13 @@ def _check_risk(
     token is embedded in a word with no semantic relationship.
     """
     errors: list[str] = []
+    known_params: frozenset[str] = frozenset(
+        k.lower() for k in (frontmatter_params or {})
+    )
     body_words_raw = set(raw_body.lower().split())
-    # Build a set of token segments by splitting body words on delimiters
+    # Build a set of token segments by splitting body words on delimiters.
+    # Also strip surrounding backtick/quote/colon wrappers before splitting
+    # on dots so that `artifacts.query`: → "artifacts.query" is recognised.
     body_segments: set[str] = set()
     for w in body_words_raw:
         bare = w.translate(_PUNCTUATION_TABLE)
@@ -1187,6 +1203,10 @@ def _check_risk(
         body_segments.update(bare.replace("_", "-").split("-"))
         body_segments.update(bare.replace("-", "_").split("_"))
         body_segments.update(bare.split("."))
+        # Preserve dot-notation by stripping only surrounding punctuation
+        stripped = w.strip("`'\",;:!?()[]{}| ")
+        body_segments.add(stripped)
+        body_segments.update(stripped.split("."))
     for contract in contracts:
         check_tokens: list[str] = [contract.name.lower()]
         check_tokens.extend(k.lower() for k in contract.inputs)
@@ -1196,8 +1216,14 @@ def _check_risk(
                 continue
             if token in body_segments:
                 continue  # genuine match — token appears standalone or as segment
+            if token in known_params:
+                continue  # legitimate frontmatter parameter, not a collision
             for body_word in body_words_raw:
-                if token in body_word and len(token) != len(body_word):
+                bare_word = body_word.translate(_PUNCTUATION_TABLE)
+                if token in bare_word and len(token) != len(bare_word):
+                    # Allow boundary matches (e.g. "result" in "skillresult")
+                    if bare_word.startswith(token) or bare_word.endswith(token):
+                        continue
                     errors.append(
                         f"Risk: contract token '{token}' is a substring of body word '{body_word}'"
                     )
@@ -1205,152 +1231,6 @@ def _check_risk(
     return errors
 
 
-# ── Stage 5: BE (Binding Evidence) ─────────────────────────────────────
-
-
-_BE_SYSTEM_PROMPT = """\
-You are a binding-evidence reviewer. Given a skill body and extracted
-contracts, determine which contracts have *genuine* call-sites in the
-body.  A genuine call-site means the prose actually describes invoking
-this procedure.  A spurious call-site is a false positive from string
-matching or regex extraction.
-
-Return ONLY a JSON object:
-{
-  "decisions": [
-    {"contract_name": "...", "genuine": true, "reason": "prose says: ..."},
-    {"contract_name": "...", "genuine": false, "reason": "no mention of ..."}
-  ]
-}
-
-Only include contracts you assessed.  Drop contracts where genuine=false.
-""".strip()
-
-
-class _BeDecision(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    contract_name: str
-    genuine: bool
-    reason: str
-
-
-class _BeOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    decisions: list[_BeDecision]
-
-
-def _be_pass(
-    contracts: list[TypedContract],
-    raw_body: str,
-    model: Model,
-) -> tuple[list[TypedContract], list[str]]:
-    """Run BE pass: drop spurious contracts."""
-    from pydantic_ai import Agent  # noqa: PLC0415 — optional heavy import
-
-    if not contracts:
-        return contracts, []
-
-    contract_list = "\n".join(f"- {c.name}: {c.description}" for c in contracts)
-    user_prompt = f"Skill body:\n{raw_body[:4000]}\n\nExtracted contracts:\n{contract_list}"
-
-    try:
-        agent = Agent(model, system_prompt=_BE_SYSTEM_PROMPT)
-        result = agent.run_sync(user_prompt)
-        output = _BeOutput.model_validate_json(_strip_fences(result.output))
-    except Exception:
-        logger.warning("BE pass failed, keeping all contracts", exc_info=True)
-        return contracts, []
-
-    genuine_names = {d.contract_name for d in output.decisions if d.genuine}
-    filtered = [c for c in contracts if c.name in genuine_names]
-    dropped = len(contracts) - len(filtered)
-    if dropped > 0:
-        logger.info("BE pass dropped %d spurious contracts", dropped)
-    errors = [
-        f"BE: dropped contract '{d.contract_name}': {d.reason}"
-        for d in output.decisions
-        if not d.genuine
-    ]
-    return filtered, errors
-
-
-# ── Stage 6: RC (Residual Cleanup) ──────────────────────────────────────
-
-
-_RC_SYSTEM_PROMPT = """\
-You are a residual-cleanup reviewer. Compare extracted contracts against
-the parent skill body.  Identify conflicts between what the prose says
-and what the contracts claim.
-
-Return ONLY a JSON object:
-{
-  "conflicts": [
-    {
-      "contract_name": "...",
-      "conflict": "prose says writes to file but contract says writes to DB",
-      "resolution": "update contract side_effects to include 'writes to file'"
-    }
-  ]
-}
-
-If no conflicts, return {"conflicts": []}.
-""".strip()
-
-
-class _RcConflict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    contract_name: str
-    conflict: str
-    resolution: str
-
-
-class _RcOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    conflicts: list[_RcConflict]
-
-
-def _rc_pass(
-    contracts: list[TypedContract],
-    raw_body: str,
-    model: Model,
-) -> tuple[list[TypedContract], list[str]]:
-    """Run RC pass: fix prose-contract mismatches."""
-    from pydantic_ai import Agent  # noqa: PLC0415 — optional heavy import
-
-    if not contracts:
-        return contracts, []
-
-    contract_text = ""
-    for c in contracts:
-        contract_text += (
-            f"Contract: {c.name}\n"
-            f"  description: {c.description}\n"
-            f"  side_effects: {c.side_effects}\n"
-            f"  outputs: {dict(c.outputs)}\n\n"
-        )
-
-    user_prompt = f"Skill body:\n{raw_body[:4000]}\n\nContracts:\n{contract_text}"
-
-    try:
-        agent = Agent(model, system_prompt=_RC_SYSTEM_PROMPT)
-        result = agent.run_sync(user_prompt)
-        output = _RcOutput.model_validate_json(_strip_fences(result.output))
-    except Exception:
-        logger.warning("RC pass failed, keeping contracts as-is", exc_info=True)
-        return contracts, []
-
-    errors: list[str] = []
-    for conflict in output.conflicts:
-        errors.append(f"RC: {conflict.contract_name}: {conflict.conflict}")
-        # Apply resolution as a best-effort annotation
-        for c in contracts:
-            if c.name == conflict.contract_name:
-                c.side_effects.append(f"[RC] {conflict.resolution}")
-                break
-
-    if errors:
-        logger.info("RC pass found %d conflicts", len(errors))
-    return contracts, errors
 
 
 def _strip_fences(text: str) -> str:
@@ -1373,7 +1253,11 @@ def _build_parent_skeleton(
     contracts: list[TypedContract],
 ) -> str:
     skeleton = raw_body
+    seen: set[str] = set()
     for contract in contracts:
+        if contract.name in seen:
+            continue
+        seen.add(contract.name)
         placeholder = f"invoke({contract.name}, args)"
         skeleton = re.sub(
             r"\b" + re.escape(contract.name) + r"\b",

@@ -1,0 +1,8 @@
+# Harness Engineer sub-agent configuration
+# Tools: file reading and code search for harness analysis
+persona: harness_engineer
+tools:
+  - read_file
+  - semble_search
+permissions:
+  workspace: read_only

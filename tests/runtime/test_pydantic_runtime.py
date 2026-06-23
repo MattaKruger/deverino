@@ -36,6 +36,19 @@ def test_build_model_uses_test_model_without_api_key(
     assert isinstance(model, TestModel)
 
 
+def test_build_model_supports_glm_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GLM_API_KEY", "sk-test")
+    config = LLMConfig(
+        provider="glm",
+        model="glm-5.2",
+        base_url="https://open.bigmodel.cn/api/coding/paas/v4",
+    )
+
+    model = build_model(config)
+
+    assert not isinstance(model, TestModel)
+
+
 def test_build_skill_tools_reuses_discovered_skill_schema(
     test_config: HarnessConfig, db_engine: Engine,
 ) -> None:

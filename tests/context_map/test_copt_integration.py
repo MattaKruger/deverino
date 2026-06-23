@@ -6,10 +6,12 @@ extension installed. Uses the existing db_engine fixture from conftest.py.
 
 from __future__ import annotations
 
-import numpy as np
+import pytest
 from sqlalchemy import Engine, text
 
 from harness_poc.core.storage.database import BlackboardDatabase
+
+np = pytest.importorskip("numpy", reason="numpy required for CopT tests")
 
 
 class TestCoptPgvectorIntegration:

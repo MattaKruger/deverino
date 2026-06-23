@@ -25,11 +25,6 @@ from .event_runtime import (
     map_delegated_to_external,
     map_goal_status_to_delegated,
 )
-from .soul_constitution import (
-    REQUIRED_SECTIONS,
-    SoulConstitution,
-    SoulIntegrityError,
-)
 from .sub_agent_spawner import (
     DELEGATED_OUTPUT_BLOCKED,
     DELEGATED_OUTPUT_COMPLETED,
@@ -57,15 +52,12 @@ __all__ = [
     "GOAL_TO_DELEGATED_STATUS",
     "GOAL_TO_EXTERNAL_STATUS",
     "RENDER_MODES",
-    "REQUIRED_SECTIONS",
     "ContextMapMaterializer",
     "CorpusNotFoundError",
     "DbContextMap",
     "DelegatedTaskOutput",
     "DelegatedTaskResult",
     "MaterializationError",
-    "SoulConstitution",
-    "SoulIntegrityError",
     "SubAgentSpawner",
     "map_delegated_to_external",
     "map_goal_status_to_delegated",

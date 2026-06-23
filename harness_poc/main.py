@@ -10,7 +10,7 @@ async def run_async_main(session_id: str | None = None) -> None:
     app_state = build_app_state(session_id=session_id)
     await app_state.long_lived.supervisor.start(app_state.runtime)
     materializer_task = asyncio.create_task(
-        app_state.long_lived.materializer.run_forever(),
+        app_state.long_lived.materializer_runner.run_forever(),
         name="materializer",
     )
     try:

@@ -4,24 +4,49 @@
       "initialization_options": {
         "settings": {
           "lineLength": 100,
-          "configuration": "pyproject.toml"
-        }
-      }
-    }
+          "configuration": "pyproject.toml",
+        },
+      },
+    },
   },
   "languages": {
     "Python": {
       "language_servers": ["ty", "ruff", "!basedpyright", "!pyright", "!pylsp"],
       "formatter": {
         "language_server": {
-          "name": "ruff"
-        }
+          "name": "ruff",
+        },
       },
       "format_on_save": "on",
       "code_actions_on_format": {
         "source.fixAll.ruff": true,
-        "source.organizeImports.ruff": true
-      }
-    }
-  }
+        "source.organizeImports.ruff": true,
+      },
+    },
+  },
+  "language_models": {
+    "openai": {
+      "api_url": "https://api.z.ai/v1",
+      "low_speed_timeout_in_seconds": 60,
+      "available_models": [
+        {
+          "name": "glm-5.2",
+          "max_tokens": 1048576,
+        },
+      ],
+    },
+  },
+  "assistant": {
+    "version": "2",
+    "provider": {
+      "name": "openai",
+      "model": "glm-5.2",
+    },
+  },
+  "inline_assistant": {
+    "provider": {
+      "name": "openai",
+      "model": "glm-5.2",
+    },
+  },
 }

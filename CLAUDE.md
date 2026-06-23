@@ -80,13 +80,14 @@ Container tools mount `/workspace:ro` (read-only) and `/scratch:rw` (session-sco
 
 ### Event-driven processing
 
-The runtime is event-driven. `core/events/events.py` defines typed event dataclasses (`LLMTextEmitted`, `LLMActionEmitted`, `SkillCompleted`, `AgentInputAdded`, `StreamPaused`, `PipelineStarted`, …). Three async processors handle the event loop:
+`core/events/` is the **shared foundation** for all orchestration: one `EventBus` (async pub/sub, `event_bus.py`), one `EventStore` (`event_store.py`), and the typed event dataclasses in `events.py` (`LLMTextEmitted`, `LLMActionEmitted`, `SkillCompleted`, `AgentInputAdded`, `StreamPaused`, `PipelineStarted`, …).
 
-- `core/processors/llm_worker.py` — drives LLM streaming and tool dispatch
-- `core/processors/tool_worker.py` — executes skills and writes results back
-- `core/processors/circuit_breaker.py` — catches unhandled exceptions, emits error events
+There are **two orchestration layers** on that bus, selected by `AppState.active_mode`:
 
-`core/events/event_store.py` persists events; `core/events/event_bus.py` provides async pub/sub between processors.
+- **v2 (active, the future)** — `harness_poc/v2/`. The `react` and `pipeline` modes wire `v2/subscribers/` (`llm_worker`, `tool_worker`, `circuit_breaker`, `goal_evaluator`) plus `execution_engine` / `workflow_orchestrator` / `context_engine` via `v2/wiring.py`. v2 reuses the shared `core/` foundation (events, `PydanticAgentRuntime`, skills, storage) — it did not fork it. The v2 workers parse skill requests from JSON text and dispatch via the bus (`enable_tools=False`).
+- **v1 (legacy)** — `core/processors/` (`llm_worker`, `tool_worker`, `circuit_breaker`, `processor_supervisor`). Still used by `harness-poc goal` (without `--refine`). `ProcessorSupervisor` is wired into `AppState` but only started by `main.py:run_async_main`, which nothing calls — effectively dead. v2/subscribers are a strict **superset** of these (they carry the v1 `[entry:<id>]` context-map citation tracking and skill cancellation).
+
+**Interactive default is v2 react.** `active_mode` defaults to `"react"`, so plain REPL/TUI input runs the v2 react event loop. `/mode chat` is an escape hatch that uses direct `PydanticAgentRuntime` streaming with native pydantic-ai tools (`repl.py:handle_chat_input`, `tui.py`). `/mode pipeline` runs the v2 DAG orchestrator.
 
 ### Blackboard (PostgreSQL / SQLite state)
 
@@ -118,9 +119,13 @@ State promotion is a two-step process: a skill proposes a change (`state_proposa
 
 `core/runtime/pydantic_runtime.py` (`PydanticAgentRuntime`) manages streaming agent execution with tool support. Uses `agent.iter()` (full-graph iterator) instead of `agent.run_stream()`. `GoalRunner` (`core/runtime/goal_runner.py`) runs the autonomous ReAct loop — async internally with `await agent.run()`, semantic stuck detection (normalized argument comparison against failed actions), and context window compression (Summarizer + sliding window with 8000-char budget). `GoalRunner` intercepts `evaluate_goal` tool calls to decide loop termination.
 
+### ACDL (system-prompt assembly)
+
+`core/acdl/` parses `.acdl` files (Agent Context Definition Language). The spec is **executable**, not just documentation: `deverino_react.acdl` (path from `config.paths.react_spec`) owns system-prompt *composition* — fragment order, literal headers, the context-map conditional. `core/acdl/executor.py` (`assemble_system_prompt`) interprets the spec's `S:` block, resolving `sys.*` variables against `bindings`; Python still *computes the values* (soul, state, context-map render). `app_factory.compose_system_prompt()` is the single seam both the message-history path and the runtime path go through. Scope is prompt composition only — the turn loop stays in pydantic-ai.
+
 ### REPL & TUI
 
-`repl.py` uses `prompt-toolkit` to provide tab-completion over skill names, workflow names, pipeline names, and commands. It runs a message loop that feeds user input to the LLM client.
+`repl.py` uses `prompt-toolkit` to provide tab-completion over skill names, workflow names, pipeline names, and commands. Plain input dispatches by `active_mode` (`handle_chat_input`): the default `react` and `pipeline` modes run the v2 event loop; `/mode chat` runs direct `PydanticAgentRuntime` streaming.
 
 `tui.py` (`ChatApp`) is a full Textual TUI alternative with markdown rendering, file-path linkification, token count display, animated spinner, and auto-completion. Launch with `uv run harness-poc tui`.
 

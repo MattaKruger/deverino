@@ -63,7 +63,7 @@ if TYPE_CHECKING:
     from harness_poc.core.observability import (
         DashboardSnapshot,
     )
-    from harness_poc.v2.runtime import V2Runtime
+    from harness_poc.v2.wiring import V2Runtime
 
 
 @dataclass(frozen=True, slots=True)
@@ -511,6 +511,43 @@ def documents_index_state() -> None:
         print_text(f"State indexed: {result.chunks_indexed} chunks fed, {result.failed} failed.")
 
     _run_command(_run)
+
+
+@documents_app.command("search")
+def documents_search(
+    query: Annotated[str, typer.Argument(help="Search query.")],
+    mode: Annotated[
+        str,
+        typer.Option("--mode", "-m", help="Retrieval mode: hybrid, semantic, or keyword."),
+    ] = "hybrid",
+    hits: Annotated[
+        int,
+        typer.Option("--hits", "-n", help="Maximum chunks to return."),
+    ] = 8,
+    source_id: Annotated[
+        str | None,
+        typer.Option("--source-id", help="Filter by source document ID slug."),
+    ] = None,
+    kind: Annotated[
+        str | None,
+        typer.Option("--kind", help="Filter by document kind: spec, plan, doc, source."),
+    ] = None,
+) -> None:
+    """Search indexed project documents via Vespa.
+
+    Embeddings are computed client-side (Snowflake arctic-embed-l-v2.0, 1024-dim),
+    so no Vespa server-side embedder is required. Hybrid and semantic modes load
+    the model on first use (~20 s cold start). Output is JSON for easy parsing.
+    """
+    _run_command(
+        lambda: _search_documents(
+            query=query,
+            mode=mode,
+            hits=hits,
+            source_id=source_id,
+            kind=kind,
+        )
+    )
 
 
 @app.command()
@@ -988,6 +1025,64 @@ def _index_documents(
     console.print(result.content, markup=False)
     if result.status != "success":
         raise typer.Exit(1)
+
+
+def _search_documents(
+    *,
+    query: str,
+    mode: str,
+    hits: int,
+    source_id: str | None,
+    kind: str | None,
+) -> None:
+    from harness_poc.core.retrieval import (
+        LiveVespaDocumentClient,
+        SearchRequest,
+        TextEmbedder,
+    )
+
+    config = HarnessConfig.load()
+
+    query_embedding: list[float] | None = None
+    if mode in ("semantic", "hybrid"):
+        embedder = TextEmbedder()
+        query_embedding = embedder.embed_single(query)
+
+    request = SearchRequest(
+        query=query,
+        mode=mode,
+        hits=hits,
+        source_id=source_id,
+        kind=kind,
+        query_embedding=query_embedding,
+    )
+
+    vespa = LiveVespaDocumentClient(config.retrieval)
+    try:
+        results = vespa.search(request)
+    except Exception as exc:
+        print_error(f"Search failed: {exc}. Is Vespa running? Run 'documents index' first.")
+        raise typer.Exit(1) from exc
+
+    output = {
+        "query": query,
+        "mode": mode,
+        "total_results": len(results),
+        "results": [
+            {
+                "source_id": r.source_id,
+                "uri": r.uri,
+                "title": r.title,
+                "chunk_id": r.chunk_id,
+                "chunk_index": r.chunk_index,
+                "relevance": r.relevance,
+                "kind": r.kind,
+                "text": r.text,
+            }
+            for r in results
+        ],
+    }
+    print(json.dumps(output, indent=2))
 
 
 def _new_app_state(
@@ -1647,7 +1742,7 @@ async def _run_v2_react_mode(  # noqa: PLR0913
     *,
     app_state: AppState,
     objective: str,
-    max_iterations: int,
+    max_iterations: int,  # noqa: ARG001
     max_seconds: float | None,
     max_tokens: int | None,  # noqa: ARG001
 ) -> None:
@@ -1655,24 +1750,10 @@ async def _run_v2_react_mode(  # noqa: PLR0913
     bus = runtime.bus
     session_id = app_state.session_id
 
-    if runtime.circuit_breaker is None:
-        print_error("CircuitBreaker not available")
-        return
-    if runtime.llm_worker is None:
-        print_error("LlmWorker not available")
-        return
-    if runtime.tool_worker is None:
-        print_error("ToolWorker not available")
-        return
-    if runtime.goal_evaluator is None:
-        print_error("GoalEvaluator not available")
-        return
-
     terminal_event = asyncio.Event()
     output_parts: list[str] = []
     iteration = 0
 
-    # Progress output — surface what the agent is doing
     def on_text(event: LLMTextEmitted) -> None:
         output_parts.append(event.content)
         terminal_event.set()
@@ -1683,22 +1764,18 @@ async def _run_v2_react_mode(  # noqa: PLR0913
     def on_goal(_event: GoalEvaluated) -> None:
         terminal_event.set()
 
-    # Progress output — surface what the agent is doing
     def on_llm_action(event: LLMActionEmitted) -> None:
         nonlocal iteration
         iteration += 1
-        tokens = event.tokens_used
-        print_text(f"  [{iteration}] LLM response ({tokens} tokens)")
+        print_text(f"  [{iteration}] LLM response ({event.tokens_used} tokens)")
 
     def on_tool_request(event: SkillRequested) -> None:
-        skill = event.skill_name
-        print_text(f"  [{iteration}] \u2192 calling {skill}()")
+        print_text(f"  [{iteration}] \u2192 calling {event.skill_name}()")
 
     def on_tool_complete(event: SkillCompleted) -> None:
-        status = event.status
         tool = event.skill_name or event.tool_name or "unknown"
-        marker = "\u2713" if status == "success" else "\u2717"
-        print_text(f"  [{iteration}] \u2190 {tool}() {marker} ({status})")
+        marker = "\u2713" if event.status == "success" else "\u2717"
+        print_text(f"  [{iteration}] \u2190 {tool}() {marker} ({event.status})")
 
     bus.subscribe(LLMTextEmitted, on_text)
     bus.subscribe(StreamPaused, on_pause)
@@ -1707,33 +1784,15 @@ async def _run_v2_react_mode(  # noqa: PLR0913
     bus.subscribe(SkillRequested, on_tool_request)
     bus.subscribe(SkillCompleted, on_tool_complete)
 
-    tasks = [
-        asyncio.create_task(runtime.circuit_breaker.run(bus, session_id)),
-        asyncio.create_task(runtime.llm_worker.run(bus, session_id)),
-        asyncio.create_task(runtime.tool_worker.run(bus, session_id)),
-        asyncio.create_task(runtime.goal_evaluator.run(bus, session_id)),
-    ]
-
+    await runtime.start(session_id)
     try:
         await asyncio.sleep(0)
-        bus.publish(
-            AgentInputAdded(
-                session_id=session_id,
-                user_content=objective,
-            )
-        )
+        bus.publish(AgentInputAdded(session_id=session_id, user_content=objective))
         await asyncio.wait_for(terminal_event.wait(), timeout=max_seconds)
     except TimeoutError:
         output_parts.append(f"Time budget ({max_seconds}s) exhausted before the goal completed.")
     finally:
-        bus.publish(
-            StreamPaused(
-                session_id=session_id,
-                reason="completed",
-                threshold_breached=str(max_iterations),
-            )
-        )
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await runtime.stop(session_id)
 
     output = "\n".join(output_parts).strip()
     if output:

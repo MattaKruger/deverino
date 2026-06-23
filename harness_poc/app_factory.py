@@ -5,6 +5,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -13,7 +14,6 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from harness_poc.core.config import HarnessConfig
-from harness_poc.core.context_map.format import format_context_window
 from harness_poc.core.context_map.render import render_context_map
 from harness_poc.core.events import EventBus, EventStore
 from harness_poc.core.execution import PipelineRunner, WorkflowRunner
@@ -32,7 +32,6 @@ from harness_poc.core.skills import SkillRunner, SkillScaffolder, build_skill_ca
 from harness_poc.core.storage import (
     BlackboardAccessProxy,
     BlackboardDatabase,
-    build_state_context,
     create_db_engine,
 )
 from harness_poc.core.tools import ToolRunner
@@ -61,13 +60,14 @@ if TYPE_CHECKING:
     from pydantic_ai.messages import ModelMessage
     from pydantic_ai.models import Model
 
+    from harness_poc.core.acdl.ast import ACDLFile
     from harness_poc.core.execution import MaterializerRunner
     from harness_poc.core.processors import ProcessorSupervisor
     from harness_poc.core.runtime import (
         Message,
         PydanticAgentRuntime,
     )
-    from harness_poc.v2.runtime import V2Runtime
+    from harness_poc.v2.wiring import V2Runtime
 
 
 def _default_on_text(chunk: str) -> None:
@@ -127,7 +127,7 @@ class Runtime:
 
 @dataclass(slots=True)
 class LongLived:
-    materializer: MaterializerRunner
+    materializer_runner: MaterializerRunner
     supervisor: ProcessorSupervisor
 
 
@@ -148,48 +148,19 @@ class AppState:
     messages: list[Message]
     streaming: StreamingContext
     v2_runtime: V2Runtime | None = None
-    active_mode: str = "chat"
+    # Default interaction is the v2 ReAct event loop. Native streaming chat is
+    # still reachable via `/mode chat`.
+    active_mode: str = "react"
     active_run: ActiveRunHandle | None = None
 
-    @property
-    def session_id(self) -> str:
-        return self.identity.session_id
-
-    @property
-    def database(self) -> BlackboardDatabase:
-        return self.identity.database
-
-    @property
-    def event_bus(self) -> EventBus:
-        return self.identity.event_bus
-
-    @property
-    def config(self) -> HarnessConfig:
-        return self.runtime.config
-
-    @property
-    def skill_runner(self) -> SkillRunner:
-        return self.runtime.skill_runner
-
-    @property
-    def tool_runner(self) -> ToolRunner:
-        return self.runtime.tool_runner
-
-    @property
-    def skill_scaffolder(self) -> SkillScaffolder:
-        return self.runtime.skill_scaffolder
-
-    @property
-    def workflow_runner(self) -> WorkflowRunner:
-        return self.runtime.workflow_runner
-
-    @property
-    def pipeline_runner(self) -> PipelineRunner:
-        return self.runtime.pipeline_runner
-
-    @property
-    def pydantic_runtime(self) -> PydanticAgentRuntime:
-        return self.runtime.pydantic_runtime
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
+        for sub in (self.identity, self.runtime, self.long_lived):
+            try:
+                return getattr(sub, name)
+            except AttributeError:
+                continue
+        msg = f"{type(self).__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg)
 
     @property
     def tools(self) -> list[dict[str, Any]]:
@@ -198,10 +169,6 @@ class AppState:
     @tools.setter
     def tools(self, value: list[dict[str, Any]]) -> None:
         self.runtime.tools = value
-
-    @property
-    def materializer_runner(self) -> MaterializerRunner:
-        return self.long_lived.materializer
 
 
 def _check_vespa_health(config: HarnessConfig) -> None:
@@ -414,46 +381,7 @@ def _resolve_soul_prompt(config: HarnessConfig) -> str:
 
 def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
     """Build the reloadable runtime layer."""
-    system_prompt = _resolve_soul_prompt(config)
-    project_state = identity.database.ensure_project_state()
-    session_state = identity.database.ensure_session_state(identity.session_id)
-    corpus_key = identity.database.get_session_corpus_key(
-        identity.session_id,
-        default=f"{identity.config_project_id}:codebase",
-    )
-    context_map = identity.database.get_context_map(corpus_key)
-    cycle_n = identity.database.get_cycle(corpus_key)
-    if context_map and config.cartographer.prompt_block != "none":
-        map_body = render_context_map(
-            context_map,
-            cycle_n,
-            prompt_mode=config.cartographer.prompt_block,
-        )
-        cross_body = _render_cross_corpus(identity, config, corpus_key)
-        inventory = _render_corpus_inventory(identity, corpus_key)
-        post_map = ""
-        if cross_body:
-            post_map += cross_body
-        if inventory:
-            post_map += f"\n---{inventory}"
-        context_map_block = format_context_window(
-            map_body,
-            post_map_block=post_map or None,
-            map_label="Context Map",
-        )
-    else:
-        context_map_block = ""
-    state_context = build_state_context(project_state, session_state)
-    full_system_prompt = "\n\n".join(
-        filter(
-            None,
-            [
-                system_prompt,
-                state_context,
-                context_map_block or None,
-            ],
-        ),
-    )
+    full_system_prompt = compose_system_prompt(identity, config)
 
     skill_runner = SkillRunner(database=identity.database, config=config)
     db_proxy = BlackboardAccessProxy(identity.database, _permissive_for_tools())
@@ -543,22 +471,43 @@ def build_long_lived(identity: Identity, runtime: Runtime) -> LongLived:
         poll_interval=runtime.config.runtime.materializer_poll_interval,
     )
     return LongLived(
-        materializer=materializer,
+        materializer_runner=materializer,
         supervisor=ProcessorSupervisor(identity),
     )
 
 
-def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
-    system_prompt = _resolve_soul_prompt(config)
+@lru_cache(maxsize=4)
+def _load_react_spec(spec_path: Path) -> ACDLFile:
+    """Parse the ReAct .acdl spec once per path. The spec drives prompt composition."""
+    from harness_poc.core.acdl import parse  # noqa: PLC0415
+
+    return parse(spec_path.read_text(encoding="utf-8"), filename=str(spec_path))
+
+
+def compose_system_prompt(identity: Identity, config: HarnessConfig) -> str:
+    """Assemble the system prompt — composition driven by the .acdl spec.
+
+    Python computes the values (soul, state, context-map render); the spec's
+    ``S:`` block owns fragment order, headers, and the context-map conditional.
+    Shared by the message-history path (``_system_message_for``) and the
+    runtime path (``build_runtime_layer``) so there's one source of truth.
+    """
+    from harness_poc.core.acdl.executor import assemble_system_prompt  # noqa: PLC0415
+
     project_state = identity.database.ensure_project_state()
     session_state = identity.database.ensure_session_state(identity.session_id)
-    state_context = build_state_context(project_state, session_state)
     corpus_key = identity.database.get_session_corpus_key(
         identity.session_id,
         default=f"{identity.config_project_id}:codebase",
     )
     context_map = identity.database.get_context_map(corpus_key)
     cycle_n = identity.database.get_cycle(corpus_key)
+
+    bindings = {
+        "sys.soul_charter": _resolve_soul_prompt(config),
+        "sys.project_state": project_state.to_markdown("Project State"),
+        "sys.session_state": session_state.to_markdown("Current Session State"),
+    }
     if context_map and config.cartographer.prompt_block != "none":
         map_body = render_context_map(
             context_map,
@@ -572,26 +521,13 @@ def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
             post_map += cross_body
         if inventory:
             post_map += f"\n---{inventory}"
-        context_map_block = format_context_window(
-            map_body,
-            post_map_block=post_map or None,
-            map_label="Context Map",
-        )
-    else:
-        context_map_block = ""
-    return {
-        "role": "system",
-        "content": "\n\n".join(
-            filter(
-                None,
-                [
-                    system_prompt,
-                    state_context,
-                    context_map_block or None,
-                ],
-            ),
-        ),
-    }
+        bindings["sys.context_map"] = map_body + post_map
+
+    return assemble_system_prompt(_load_react_spec(config.paths.react_spec), bindings)
+
+
+def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
+    return {"role": "system", "content": compose_system_prompt(identity, config)}
 
 
 _MIN_CROSS_CORPUS_PARTS = 2  # Header line + at least one entry to be meaningful

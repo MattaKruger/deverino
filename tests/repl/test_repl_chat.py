@@ -167,6 +167,8 @@ class _FakeDatabase:
 
 class _FakeAppState:
     def __init__(self) -> None:
+        # Native streaming chat is the explicit `chat` mode (default is react).
+        self.active_mode = "chat"
         self.session_id = "test-session"
         self.messages: list[dict[str, str]] = []
         self.pydantic_messages: list[Any] = []

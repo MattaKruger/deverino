@@ -1,5 +1,6 @@
 ---
 name: paper-catalog
+type: knowledge
 version: 1.1
 description: >-
   Enumerate the indexed paper corpus from the database and search paper

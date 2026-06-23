@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from harness_poc.core.skills import SkillRunner
 
 from harness_poc.core.events.events import (
+    SkillCalled,
+    SkillCancelled,
     SkillCompleted,
     SkillRequested,
     StreamPaused,
@@ -47,14 +49,14 @@ class ToolWorker:
         async for event in bus.subscribe_session(session_id):
             if isinstance(event, StreamPaused):
                 break
-            if not isinstance(event, SkillRequested):
+            if not isinstance(event, (SkillCalled, SkillRequested)):
                 continue
 
-            skill_name = event.skill_name
-            arguments = event.arguments
+            skill_name, arguments = _skill_request_parts(event)
+            call_id = event.event_id
 
             if self._on_call_started is not None:
-                self._on_call_started("", skill_name)
+                self._on_call_started(call_id, skill_name)
 
             try:
                 try:
@@ -63,7 +65,27 @@ class ToolWorker:
                         tool_name=skill_name,
                         arguments=arguments,
                         session_id=session_id,
-                        call_id=getattr(event, "call_id", ""),
+                        call_id=call_id,
+                    )
+                    if result.status == "cancelled":
+                        bus.publish(
+                            SkillCancelled(
+                                session_id=session_id,
+                                call_id=call_id,
+                                skill_name=skill_name,
+                                reason=_cancel_reason(result.content),
+                            )
+                        )
+                    bus.publish(
+                        SkillCompleted(
+                            session_id=session_id,
+                            skill_name=skill_name,
+                            tool_name=skill_name,
+                            status=result.status,
+                            content=result.content,
+                            result=result.content,
+                            artifacts=result.artifacts,
+                        )
                     )
                 except Exception as exc:
                     bus.publish(
@@ -76,18 +98,19 @@ class ToolWorker:
                             result=str(exc),
                         )
                     )
-                else:
-                    bus.publish(
-                        SkillCompleted(
-                            session_id=session_id,
-                            skill_name=skill_name,
-                            tool_name=skill_name,
-                            status=result.status,
-                            content=result.content,
-                            result=result.content,
-                            artifacts=result.artifacts,
-                        )
-                    )
             finally:
                 if self._on_call_ended is not None:
-                    self._on_call_ended("")
+                    self._on_call_ended(call_id)
+
+
+def _skill_request_parts(event: SkillCalled | SkillRequested) -> tuple[str, dict[str, Any]]:
+    if isinstance(event, SkillRequested):
+        return event.skill_name, event.arguments
+    return event.tool_name, event.arguments
+
+
+def _cancel_reason(content: str) -> str:
+    prefix = "cancelled:"
+    if content.startswith(prefix):
+        return content.removeprefix(prefix).strip()
+    return content or "cancelled"

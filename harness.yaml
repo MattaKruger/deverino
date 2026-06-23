@@ -4,8 +4,9 @@ project:
   id: deverino
 
 llm:
-  provider: deepseek
-  model: deepseek-v4-flash
+  provider: glm
+  model: glm-5.2
+  base_url: https://open.bigmodel.cn/api/coding/paas/v4
 
 paths:
   # Engine Paths
@@ -74,7 +75,7 @@ retrieval:
     - __pycache__
 
 distiller:
-  model: deepseek/deepseek-v4-flash
+  model: glm/glm-5.2
   max_retries: 3
   prompt_template: distiller_v2          # updated: includes architecture + obsolete
   # prompt_template_compact: distiller_v2_compact  # uncomment for token-efficient variant

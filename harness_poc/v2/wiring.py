@@ -7,12 +7,14 @@ app_factory.py and CLI commands without modifying existing harness internals.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-
-logger = logging.getLogger(__name__)
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from harness_poc.v2.runtime import V2Runtime
+from harness_poc.core.events.events import StreamPaused
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from harness_poc.app_factory import Identity
@@ -22,7 +24,57 @@ if TYPE_CHECKING:
     from harness_poc.v2.context_engine import ContextEngine
     from harness_poc.v2.contracts.sub_agent_spawner import DelegatedTaskOutput
     from harness_poc.v2.execution_engine import ExecutionEngine
+    from harness_poc.v2.subscribers.circuit_breaker import CircuitBreaker
+    from harness_poc.v2.subscribers.goal_evaluator import GoalEvaluator
+    from harness_poc.v2.subscribers.llm_worker import LlmWorker
+    from harness_poc.v2.subscribers.tool_worker import ToolWorker
     from harness_poc.v2.workflow_orchestrator import WorkflowOrchestrator
+
+
+@dataclass
+class V2Runtime:
+    """Container for a v2 mode's engines and subscribers.
+
+    Every instance has a ``.bus`` (the shared v1 ``EventBus``).  The
+    remaining fields are populated based on ``.mode``:
+
+    * ``"pipeline"`` → ``context_engine``, ``execution_engine``, ``orchestrator``
+    * ``"react"``    → ``llm_worker``, ``tool_worker``, ``circuit_breaker``, ``goal_evaluator``
+    """
+
+    mode: str
+    bus: EventBus
+
+    # Pipeline mode
+    context_engine: ContextEngine | None = None
+    execution_engine: ExecutionEngine | None = None
+    orchestrator: WorkflowOrchestrator | None = None
+
+    # ReAct mode
+    llm_worker: LlmWorker | None = None
+    tool_worker: ToolWorker | None = None
+    circuit_breaker: CircuitBreaker | None = None
+    goal_evaluator: GoalEvaluator | None = None
+
+    _tasks: list[asyncio.Task[None]] = field(default_factory=list, init=False, repr=False, compare=False)
+
+    async def start(self, session_id: str) -> None:
+        """Start all ReAct workers as asyncio tasks."""
+        if self.mode != "react":
+            return
+        workers = [self.circuit_breaker, self.llm_worker, self.tool_worker, self.goal_evaluator]
+        self._tasks = [
+            asyncio.create_task(w.run(self.bus, session_id))
+            for w in workers
+            if w is not None
+        ]
+
+    async def stop(self, session_id: str) -> None:
+        """Signal workers to exit and wait for them to finish."""
+        self.bus.publish(StreamPaused(session_id=session_id, reason="completed", threshold_breached=""))
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks.clear()
+
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +401,7 @@ def _build_spawner_adapter(config: HarnessConfig, db: BlackboardDatabase):  # no
         try:
             serialized = _json.dumps(value, default=str)
             return serialized[:100_000]
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return repr(value)[:1000]
 
     max_error_length = 500
@@ -534,87 +586,3 @@ def _build_blackboard_adapter(db: BlackboardDatabase):  # noqa: ANN202
     return _HarnessBlackboard()
 
 
-# ---------------------------------------------------------------------------
-# Soul adapter
-# ---------------------------------------------------------------------------
-
-
-def build_soul_constitution(config: HarnessConfig):  # noqa: ANN201
-    """Build a SoulConstitution adapter from the SOUL.md file.
-
-    Parses ``## N. Section Name`` headings and exposes section access
-    via the SoulConstitution protocol. Validation checks the contract's
-    REQUIRED_SECTIONS against the actual sections present in the file.
-
-    Returns an object satisfying the SoulConstitution protocol.
-
-    Raises:
-        FileNotFoundError: If SOUL.md does not exist at config.paths.soul.
-        SoulIntegrityError: If the SOUL file has no parseable sections.
-    """
-    from harness_poc.v2.contracts.soul_constitution import (
-        REQUIRED_SECTIONS,
-        SoulIntegrityError,
-    )
-
-    soul_path = config.paths.soul
-    if not soul_path.exists():
-        _msg = f"SOUL.md not found at {soul_path}"
-        raise FileNotFoundError(_msg)
-
-    raw = soul_path.read_text(encoding="utf-8")
-    parsed = _parse_soul_sections(raw)
-
-    if not parsed:
-        raise SoulIntegrityError(
-            missing=REQUIRED_SECTIONS,
-            extra=set(),
-        )
-
-    class _HarnessSoul:
-        @property
-        def sections(self) -> set[str]:
-            return set(parsed.keys())
-
-        def get(self, section: str) -> str | None:
-            return parsed.get(section)
-
-        def validate(self) -> None:
-            actual = set(parsed.keys())
-            missing = REQUIRED_SECTIONS - actual
-            extra = actual - REQUIRED_SECTIONS
-            if missing:
-                raise SoulIntegrityError(missing=missing, extra=extra)
-
-    return _HarnessSoul()
-
-
-def _parse_soul_sections(raw: str) -> dict[str, str]:
-    """Parse ``## N. Section Name`` headings and their body text.
-
-    Extracts the section name (everything after the leading number
-    and dot, e.g. "Operating Principles" from "## 2. Operating Principles")
-    and collects all lines until the next ``##`` heading as the body.
-    """
-    import re
-
-    sections: dict[str, str] = {}
-    current_name: str | None = None
-    current_lines: list[str] = []
-
-    heading_re = re.compile(r"^##\s+(?:\d+\.\s+)?(.+)$")
-
-    for line in raw.splitlines():
-        m = heading_re.match(line)
-        if m:
-            if current_name is not None:
-                sections[current_name] = "\n".join(current_lines).strip()
-            current_name = m.group(1).strip()
-            current_lines = []
-        elif current_name is not None:
-            current_lines.append(line)
-
-    if current_name is not None:
-        sections[current_name] = "\n".join(current_lines).strip()
-
-    return sections

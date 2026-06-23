@@ -6,7 +6,13 @@
 // turn-level user input, tool invocation and observation, history truncation,
 // and the autonomous goal variant.
 //
-// Based on: harness_poc/core/pydantic_runtime.py, app_factory.py,
+// EXECUTABLE: the DeverinoChatLoop `S:` block is interpreted at runtime by
+// harness_poc/core/acdl/executor.py (assemble_system_prompt) — it owns system
+// prompt *composition* (fragment order, headers, the context-map conditional).
+// Python computes the bound values (sys.soul_charter, sys.project_state, …).
+// The turn loop (RoleFrag/ForEach) remains descriptive; pydantic-ai runs it.
+//
+// Based on: harness_poc/core/runtime/pydantic_runtime.py, app_factory.py,
 //           goal_runner.py, system_prompts/SOUL.md
 //##############################################################################
 
@@ -19,10 +25,13 @@ StrFrag SoulCharter: {
 }
 
 StrFrag StateBlock: {
-    "# Project State"
+    // Headers are carried by the bound values (StatePayload.to_markdown emits
+    // "## Project State" / "## Current Session State"). This frag owns only the
+    // preamble and the blank-line composition — matching build_state_context().
+    "Runtime STATE is compact durable context, not a transcript."
+    ""
     sys.project_state
     ""
-    "# Current Session State"
     sys.session_state
 }
 

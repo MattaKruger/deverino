@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
@@ -274,6 +275,12 @@ def build_model(  # noqa: PLR0911
     *,
     fallback_model: Model | None = None,
 ) -> Model:
+    # Offline switch: force the canned TestModel even when a (possibly broken or
+    # uncredited) API key is configured. Lets the TUI/REPL/react loop run with no
+    # network. Single chokepoint — covers native chat, v1 workers, and v2 react.
+    if os.environ.get("HARNESS_FAKE_LLM"):
+        return fallback_model or TestModel(call_tools=[])
+
     if config is None:
         return fallback_model or TestModel(call_tools=[])
 
@@ -314,10 +321,10 @@ def build_model(  # noqa: PLR0911
         )
 
     # "openai" or any openai-compatible provider
-    if config.provider == "openai":
-        api_key = api_settings.openai_api_key
+    if config.provider in {"openai", "glm"}:
+        api_key = api_settings.glm_api_key if config.provider == "glm" else api_settings.openai_api_key
         if not api_key:
-            logger.info("No OpenAI API key configured; using fallback PydanticAI model")
+            logger.info("No %s API key configured; using fallback PydanticAI model", config.provider)
             return fallback_model or TestModel(call_tools=[])
         provider_kwargs: dict[str, Any] = {"api_key": api_key}
         if config.base_url:
