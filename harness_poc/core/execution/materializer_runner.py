@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -69,6 +70,9 @@ class MaterializerRunner:
         map_changed = bool(result.artifacts.get("map_changed", True))
         if map_changed:
             self._no_change_count[corpus_key] = 0
+            # Post-write hook: embed entries for semantic retrieval
+            with suppress(Exception):
+                self._embed_retrieval_vectors(corpus_key)
             return
 
         self._no_change_count[corpus_key] = self._no_change_count.get(corpus_key, 0) + 1
@@ -82,3 +86,26 @@ class MaterializerRunner:
         ).isoformat(timespec="seconds")
         self._db.set_map_freeze(corpus_key, freeze_until)
         logger.info("Froze map for %s until %s", corpus_key, freeze_until)
+
+    def _embed_retrieval_vectors(self, corpus_key: str) -> None:
+        """Embed materialized map entries with bge for semantic retrieval.
+
+        Best-effort: failures are logged at DEBUG and do not affect
+        materialization. Only runs when semantic retrieval is enabled.
+        """
+        with suppress(Exception):
+            entries = self._db.get_context_map(corpus_key) or []
+            if not entries:
+                return
+
+            from harness_poc.core.context_map.retrieval_embedder import RetrievalEmbedder  # noqa: PLC0415, I001
+
+            embedder = RetrievalEmbedder()
+            summaries = [e.summary for e in entries]
+            vectors = embedder.embed_entries(summaries)
+
+            entry_vectors = [
+                (e.entry_id.replace("-", ""), v)
+                for e, v in zip(entries, vectors, strict=True)
+            ]
+            self._db.retrieval_upsert_embeddings(corpus_key, entry_vectors)
