@@ -40,6 +40,11 @@ StrFrag ContextMapBlock: {
     sys.context_map
     "---"
 }
+// Cross-corpus enrichment is injected per-turn by the
+// @agent.system_prompt(dynamic=True) decorator. It is NOT part of
+// sys.context_map. Position: appended after the S: block by PydanticAI.
+// Ranking strategy: "semantic" (cosine similarity) or "deterministic"
+// (priority), controlled by cartographer.cross_corpus.retrieval config.
 
 StrFrag SkillCatalogBlock: {
     sys.available_skills
