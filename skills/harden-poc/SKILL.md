@@ -1,13 +1,14 @@
 ---
 name: harden-poc
-type: skill
 description: >
   Map a design spec against its implementation to find gaps, POC shortcuts,
-  missing tests, and hardening opportunities. Produces a prioritized report
-  for moving from POC to stable codebase. Use when reviewing a feature branch
+  over-engineering, and hardening opportunities. Integrates ponytail-full
+  principles: enforces the lazy ladder — stdlib before custom code, deletion
+  before addition, one line before fifty. Produces a prioritized report for
+  moving from POC to stable codebase. Use when reviewing a feature branch
   before merge, auditing a POC for production readiness, or planning a
   hardening sprint.
-version: "1.0"
+version: "1.1"
 auto_invokable: false
 parameters:
   type: object
@@ -98,13 +99,37 @@ Scan the implementation for:
 
 **Dead Code** — unused imports, unreachable branches, commented-out code, leftover debug logging.
 
+**Over-Engineering** (ponytail-full) — code that exists but shouldn't, or is
+more complex than needed. The ladder is enforced: stop at the first rung
+that holds.
+
+The ponytail ladder (check top-down, stop at first match):
+1. **Does this need to exist at all?** Speculative need = delete it, say so.
+2. **Stdlib does it?** Use it. Delete the custom code.
+3. **Native platform feature covers it?** Use it over custom code.
+4. **Already-installed dependency solves it?** Use it. Never add a new dep.
+5. **Can it be one line?** One line. Delete the rest.
+6. **Only then:** the minimum code that works.
+
+Common over-engineering patterns to flag:
+- Interface with one implementation — delete the interface, use the concrete type
+- Factory for one product — inline the construction, delete the factory
+- Config for a value that never changes — hardcode as a constant, delete the config field
+- Custom wrapper around stdlib where the wrapper adds no value beyond what the lib already does — delete the wrapper, use the lib directly
+- Speculative abstraction "for later" — delete it. Later can scaffold for itself.
+- Dependency added for what a few lines of stdlib can do — remove the dep, use stdlib
+- Boilerplate that duplicates an existing pattern in the codebase — delete the duplicate, reuse the pattern
+
+For each finding: name the simpler alternative AND state what to delete.
+The recommendation is prescriptive, not advisory — "delete X, replace with Y."
+
 ### 3. Severity Assignment
 
 | Severity | Criteria |
 |---|---|
 | **Critical** | Will cause data loss, security breach, or crash in production. Must fix before merge. |
 | **Important** | Will cause incorrect behavior, poor performance, or maintenance pain. Should fix before merge. |
-| **Minor** | Code smell, missing docs, style issue. Fix when convenient. |
+| **Minor** | Code smell, missing docs, style issue, over-engineering. Fix when convenient. |
 | **Info** | Observation, no action needed. Deviations that are improvements, design notes. |
 
 ### 4. Hardening Priorities
@@ -137,10 +162,10 @@ Write to `docs/reviews/YYYY-MM-DD-<feature>-review.md`:
 
 ### F001: [Title]
 - **Severity:** Critical / Important / Minor / Info
-- **Category:** Spec Drift / Missing Test / POC Shortcut / Performance / Security / Dead Code
+- **Category:** Spec Drift / Missing Test / POC Shortcut / Performance / Security / Dead Code / Over-Engineering
 - **Location:** `file.py:NNN`
 - **Description:** What's wrong.
-- **Recommendation:** What to do.
+- **Recommendation:** What to do. For over-engineering: name the simpler alternative.
 
 ## Hardening Priorities
 
@@ -157,16 +182,21 @@ Recommendation: MERGE / MERGE WITH FIXES / DO NOT MERGE.
 
 ## Common POC Patterns to Flag
 
-| Pattern | Why It's a POC Shortcut | Hardening Fix |
+| Pattern | Why It's a Problem | Hardening Fix |
 |---|---|---|
 | `suppress(Exception)` | Swallows errors silently | Log at WARNING/ERROR, only suppress expected exceptions |
-| Hardcoded model name | Can't swap models without code change | Move to config |
-| `retrieval_mode[0]` mutable hack | Works but fragile | Use a proper mutable container or threading-safe wrapper |
+| Hardcoded model name | Can't swap without code change | Move to config |
+| `retrieval_mode[0]` mutable hack | Works but fragile | Replace with a proper mutable container or threading-safe wrapper |
 | N+1 DB queries per turn | Fine for <10 corpora, breaks at scale | Batch query across corpora |
-| No embedding cache invalidation | Stale embeddings after map rematerialization | Version-check embeddings against map cycle |
-| `import` inside function | Lazy import for circular dep avoidance | Restructure imports or document why |
+| No embedding cache invalidation | Stale embeddings after rematerialization | Version-check embeddings against map cycle |
+| `import` inside function | Lazy import for circular dep avoidance | Restructure imports or document why with `# noqa: PLC0415` |
 | Test mocks entire DB | Tests pass but don't test real pgvector | Add integration test marker for PostgreSQL tests |
-| `# noqa: PLC0415` | Suppresses import-outside-top-level lint | Document why or restructure |
+| `# noqa: PLC0415` without comment | Suppresses lint without explaining why | Add a comment: `# noqa: PLC0415 — lazy import to avoid circular dep` |
+| Custom wrapper around stdlib | Adds indirection without value | Delete the wrapper, use the stdlib directly |
+| Interface with one implementation | Speculative generality | Delete the interface, use the concrete type |
+| Config field that never changes | Adds config surface for no benefit | Hardcode as a module constant, delete the config field |
+| Factory for one product | Indirection without purpose | Inline the construction, delete the factory |
+| Speculative abstraction "for later" | YAGNI — later can scaffold for itself | Delete it. Add when the need is real. |
 
 ## Integration with SDD
 
