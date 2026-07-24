@@ -147,6 +147,13 @@ class CartographerConfig:
     cross_corpus_max_entries: int = 16
     cross_corpus_min_priority: float = 0.7
     cross_corpus_auto_discover: bool = True
+    # --- Semantic retrieval ---
+    cross_corpus_retrieval: str = "deterministic"  # "semantic" | "deterministic"
+    cross_corpus_retrieval_model: str = "BAAI/bge-base-en-v1.5"
+    cross_corpus_query_turns: int = 3
+    cross_corpus_query_max_chars: int = 4000
+    cross_corpus_semantic_top_k: int = 5
+    cross_corpus_min_similarity: float = 0.3
 
 
 def load_distiller_config(raw: dict[str, Any]) -> DistillerConfig:
@@ -230,6 +237,14 @@ def load_cartographer_config(raw: dict[str, Any]) -> CartographerConfig:
         cross_corpus_max_entries=int(cc_dict.get("max_cross_entries", 16)),
         cross_corpus_min_priority=float(cc_dict.get("min_priority", 0.7)),
         cross_corpus_auto_discover=bool(raw.get("cross_corpus_auto_discover", True)),
+        cross_corpus_retrieval=str(cc_dict.get("retrieval", "deterministic")),
+        cross_corpus_retrieval_model=str(
+            cc_dict.get("retrieval_model", "BAAI/bge-base-en-v1.5")
+        ),
+        cross_corpus_query_turns=int(cc_dict.get("query_turns", 3)),
+        cross_corpus_query_max_chars=int(cc_dict.get("query_max_chars", 4000)),
+        cross_corpus_semantic_top_k=int(cc_dict.get("semantic_top_k", 5)),
+        cross_corpus_min_similarity=float(cc_dict.get("min_similarity", 0.3)),
     )
 
 
