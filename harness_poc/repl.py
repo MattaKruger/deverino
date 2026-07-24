@@ -163,6 +163,10 @@ def handle_repl_input(app_state: AppState, user_input: str) -> None:  # noqa: PL
     if _is_slice_command(user_input):
         handle_slice_command(app_state, user_input)
         return
+
+    if _is_corpus_retrieval_command(user_input):
+        handle_corpus_retrieval_command(app_state, user_input)
+        return
     if _handle_direct_resource_command(app_state, user_input):
         return
 
@@ -1432,6 +1436,30 @@ def _message_contains_marker(msg: object, marker: str) -> bool:
         if hasattr(part, "content") and marker in getattr(part, "content", ""):
             return True
     return False
+
+
+# ------------------------------------------------------------------
+# /corpus-retrieval command
+# ------------------------------------------------------------------
+
+
+def _is_corpus_retrieval_command(user_input: str) -> bool:
+    return user_input.startswith(("/corpus-retrieval", "corpus-retrieval "))
+
+
+def handle_corpus_retrieval_command(app_state: AppState, user_input: str) -> None:
+    """Toggle cross-corpus retrieval mode: /corpus-retrieval [semantic|deterministic]."""
+    normalized = user_input.removeprefix("/").removeprefix("corpus-retrieval").strip()
+    if not normalized:
+        current = app_state.runtime.pydantic_runtime.deps.retrieval_mode[0]
+        print_text(f"Active retrieval mode: [bold]{current}[/bold]")
+        return
+    mode = normalized.lower()
+    if mode not in ("semantic", "deterministic"):
+        print_text("Usage: /corpus-retrieval [semantic|deterministic]")
+        return
+    app_state.runtime.pydantic_runtime.deps.retrieval_mode[0] = mode
+    print_text(f"Retrieval mode set to: [bold]{mode}[/bold]")
 
 
 def handle_goal_command(app_state: AppState, user_input: str) -> None:

@@ -445,7 +445,9 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
             enable_tools=True,
             blocked_skills=_TUI_BLOCKED_SKILLS,
             skill_catalog=skill_catalog,
-            retrieval_mode=config.cartographer.cross_corpus_retrieval,
+            retrieval_mode=os.environ.get(
+                "HARNESS_CORPUS_RETRIEVAL", config.cartographer.cross_corpus_retrieval
+            ),
         ),
         tools=tools,
         skill_catalog=skill_catalog,

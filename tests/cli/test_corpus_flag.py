@@ -20,3 +20,11 @@ def test_corpus_flag_appears_in_help() -> None:
     result = runner.invoke(app, ["--help"])
     assert "--corpus" in result.output
     assert "Active corpus key" in result.output
+
+
+def test_corpus_retrieval_flag_accepted() -> None:
+    """--corpus-retrieval flag is accepted by the CLI."""
+    # Use --help to avoid actually starting the REPL
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "--corpus-retrieval" in result.output or "corpus-retrieval" in result.output
