@@ -204,3 +204,21 @@ class DbContextMapEmbedding:
     corpus_key: str
     entry_key: str
     embedding: list[float]
+
+
+
+@dataclass
+class DbContextMapRetrievalEmbedding:
+    """A single retrieval embedding row for semantic corpus retrieval.
+
+    Stored in the ``context_map_retrieval_embeddings`` table (created via raw SQL,
+    not SQLModel metadata, because pgvector is PostgreSQL-only).
+
+    Uses BAAI/bge-base-en-v1.5 (768-dim), separate from the CopT gate's
+    all-MiniLM-L6-v2 (384-dim) embeddings in ``context_map_embeddings``.
+    """
+
+    corpus_key: str
+    entry_key: str
+    embedding: list[float]
+    model: str = "BAAI/bge-base-en-v1.5"
