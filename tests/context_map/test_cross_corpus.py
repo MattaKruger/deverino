@@ -173,3 +173,71 @@ def test_multiple_related_corpora_both_rendered(db: BlackboardDatabase) -> None:
 
     assert f"## {related_a}" in out
     assert f"## {related_b}" in out
+
+
+
+# ---------------------------------------------------------------------------
+# Static prompt excludes cross-corpus (Task 7 — decorator owns it now)
+# ---------------------------------------------------------------------------
+
+
+def test_compose_system_prompt_excludes_cross_corpus_in_both_modes(db: BlackboardDatabase) -> None:
+    """compose_system_prompt should NOT include cross-corpus in sys.context_map.
+
+    The dynamic decorator handles cross-corpus per-turn now, so the static
+    system prompt must never embed "Related Corpora" — regardless of mode.
+    """
+    from pathlib import Path
+
+    from harness_poc.app_factory import compose_system_prompt
+    from harness_poc.core.config import (
+        HarnessConfig,
+        HarnessPaths,
+        LLMConfig,
+        ObservabilityConfig,
+        RuntimeConfig,
+    )
+    from harness_poc.core.context_map.config import CartographerConfig
+
+    active = "deverino:codebase"
+    related = "deverino:related"
+    # Active corpus map — enters the context_map binding block.
+    db.write_map_and_mark_processed(active, [_make_entry(priority=0.9)], 10, [])
+    db.get_and_bump_cycle(active)
+    # Related corpus map that cross-corpus would normally render.
+    db.write_map_and_mark_processed(related, [_make_entry(priority=0.9)], 10, [])
+    db.get_and_bump_cycle(related)
+    # A real session row is required (session_state has an FK to it).
+    session_id = db.start_session("test", active_corpus_key=active)
+
+    config = HarnessConfig(
+        project_root=Path.cwd(),
+        config_path=Path.cwd() / "harness.yaml",
+        paths=HarnessPaths(
+            soul=Path.cwd() / "harness_poc/system_prompts/SOUL.md",
+            system_tools=Path.cwd() / "harness_poc/system_tools",
+            system_skills=Path.cwd() / "harness_poc/system_skills",
+            project_skills=Path.cwd() / "skills",
+            workflows=Path.cwd() / "workflows",
+            pipelines=Path.cwd() / "pipelines",
+            personas=Path.cwd() / "personas",
+            react_spec=Path.cwd() / "deverino_react.acdl",
+        ),
+        runtime=RuntimeConfig(database_url="sqlite:///:memory:", default_container_image="python:3.14"),
+        observability=ObservabilityConfig(logfire_enabled=False),
+        llm=LLMConfig(provider="deepseek", model="deepseek-v4-flash", base_url=None),
+        cartographer=CartographerConfig(
+            cross_corpus_enabled=True,
+            cross_corpus_related_corpora={active: [related]},
+        ),
+    )
+
+    identity = SimpleNamespace(
+        database=db,
+        config_project_id="deverino",
+        session_id=session_id,
+    )
+
+    prompt = compose_system_prompt(identity, config)
+    # Cross-corpus should NOT be in the system prompt (decorator handles it)
+    assert "Related Corpora" not in prompt

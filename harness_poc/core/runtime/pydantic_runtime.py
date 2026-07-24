@@ -467,6 +467,7 @@ def build_runtime(  # noqa: PLR0913
     enable_tools: bool = True,
     blocked_skills: frozenset[str] | None = None,
     skill_catalog: str = "",
+    retrieval_mode: str = "deterministic",
 ) -> PydanticAgentRuntime:
     deps = AgentDeps(
         session_id=session_id,
@@ -474,6 +475,7 @@ def build_runtime(  # noqa: PLR0913
         config=config,
         skill_runner=skill_runner,
         tool_runner=tool_runner,
+        retrieval_mode=[retrieval_mode],
     )
 
     # Augment system prompt with skill catalog if available

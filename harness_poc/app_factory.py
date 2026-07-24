@@ -445,6 +445,7 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
             enable_tools=True,
             blocked_skills=_TUI_BLOCKED_SKILLS,
             skill_catalog=skill_catalog,
+            retrieval_mode=config.cartographer.cross_corpus_retrieval,
         ),
         tools=tools,
         skill_catalog=skill_catalog,
@@ -514,13 +515,10 @@ def compose_system_prompt(identity: Identity, config: HarnessConfig) -> str:
             cycle_n,
             prompt_mode=config.cartographer.prompt_block,
         )
-        cross_body = _render_cross_corpus(identity, config, corpus_key)
         inventory = _render_corpus_inventory(identity, corpus_key)
         post_map = ""
-        if cross_body:
-            post_map += cross_body
         if inventory:
-            post_map += f"\n---{inventory}"
+            post_map = f"\n---{inventory}"
         bindings["sys.context_map"] = map_body + post_map
 
     return assemble_system_prompt(_load_react_spec(config.paths.react_spec), bindings)
