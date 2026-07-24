@@ -159,3 +159,128 @@ class TestRenderBlock:
         entries = [(_make_entry(priority=0.9, summary="Test."), 0.9)]
         block = render_block(entries, mode="deterministic")
         assert "p=0.90" in block
+
+
+
+class TestSemanticRetrieve:
+    """Tests for semantic_retrieve() — cosine similarity ranking logic."""
+
+    def test_returns_entries_ranked_by_similarity(self) -> None:
+        from harness_poc.core.context_map.semantic_retrieval import semantic_retrieve
+
+        db = BlackboardDatabase.from_url("sqlite:///:memory:")
+        related = "deverino:related"
+        entry_a = _make_entry(summary="The auth module uses JWT tokens.")
+        entry_b = _make_entry(summary="React frontend with TypeScript.")
+        db.write_map_and_mark_processed(
+            related, [entry_a, entry_b], token_count=20, event_ids=["e1", "e2"]
+        )
+
+        config = _make_config(related={"deverino:codebase": [related]})
+
+        # Query embedding closer to entry_a than entry_b
+        # Normalized vectors: dot product = cosine similarity
+        query_emb = [1.0] * 768
+        entry_a_emb = [0.9] * 768
+        entry_b_emb = [0.1] * 768
+
+        # Mock retrieval_get_embeddings to return controlled vectors
+        original = db.retrieval_get_embeddings
+        db.retrieval_get_embeddings = lambda _ck: [  # type: ignore[method-assign]
+            (entry_a.entry_id.replace("-", ""), entry_a_emb),
+            (entry_b.entry_id.replace("-", ""), entry_b_emb),
+        ]
+        try:
+            results = semantic_retrieve(db, config, "deverino:codebase", query_emb)
+        finally:
+            db.retrieval_get_embeddings = original  # type: ignore[method-assign]
+
+        assert len(results) == 2
+        # Entry A should rank higher (higher similarity)
+        assert results[0][0].entry_id == entry_a.entry_id
+        assert results[0][1] > results[1][1]
+
+    def test_filters_below_min_similarity(self) -> None:
+        from harness_poc.core.context_map.semantic_retrieval import semantic_retrieve
+
+        db = BlackboardDatabase.from_url("sqlite:///:memory:")
+        related = "deverino:related"
+        entry = _make_entry(summary="Unrelated fact.")
+        db.write_map_and_mark_processed(
+            related, [entry], token_count=10, event_ids=["e1"]
+        )
+
+        config = _make_config(related={"deverino:codebase": [related]}, min_similarity=0.8)
+
+        query_emb = [1.0] * 768
+        low_sim_emb = [0.1] * 768  # dot product ~0.1, below 0.8 threshold
+
+        original = db.retrieval_get_embeddings
+        db.retrieval_get_embeddings = lambda _ck: [  # type: ignore[method-assign]
+            (entry.entry_id.replace("-", ""), low_sim_emb),
+        ]
+        try:
+            results = semantic_retrieve(db, config, "deverino:codebase", query_emb)
+        finally:
+            db.retrieval_get_embeddings = original  # type: ignore[method-assign]
+
+        assert len(results) == 0
+
+    def test_falls_back_to_priority_when_no_embeddings(self) -> None:
+        from harness_poc.core.context_map.semantic_retrieval import semantic_retrieve
+
+        db = BlackboardDatabase.from_url("sqlite:///:memory:")
+        related = "deverino:related"
+        entry = _make_entry(priority=0.9, summary="High priority fact.")
+        db.write_map_and_mark_processed(
+            related, [entry], token_count=10, event_ids=["e1"]
+        )
+
+        config = _make_config(related={"deverino:codebase": [related]})
+
+        # retrieval_get_embeddings returns empty (no embeddings stored)
+        original = db.retrieval_get_embeddings
+        db.retrieval_get_embeddings = lambda _ck: []  # type: ignore[method-assign]
+        try:
+            results = semantic_retrieve(db, config, "deverino:codebase", [0.5] * 768)
+        finally:
+            db.retrieval_get_embeddings = original  # type: ignore[method-assign]
+
+        assert len(results) == 1
+        assert results[0][0].entry_id == entry.entry_id
+        # Fallback entries have priority as score
+        assert results[0][1] == 0.9
+
+    def test_caps_at_semantic_top_k_per_corpus(self) -> None:
+        from harness_poc.core.context_map.semantic_retrieval import semantic_retrieve
+
+        db = BlackboardDatabase.from_url("sqlite:///:memory:")
+        related = "deverino:related"
+        entries = [_make_entry(summary=f"Fact {i}.") for i in range(10)]
+        db.write_map_and_mark_processed(
+            related, entries, token_count=100, event_ids=[f"e{i}" for i in range(10)]
+        )
+
+        config = _make_config(related={"deverino:codebase": [related]}, semantic_top_k=3)
+
+        query_emb = [1.0] * 768
+        embeddings = [
+            (e.entry_id.replace("-", ""), [0.5] * 768) for e in entries
+        ]
+
+        original = db.retrieval_get_embeddings
+        db.retrieval_get_embeddings = lambda _ck: embeddings  # type: ignore[method-assign]
+        try:
+            results = semantic_retrieve(db, config, "deverino:codebase", query_emb)
+        finally:
+            db.retrieval_get_embeddings = original  # type: ignore[method-assign]
+
+        assert len(results) == 3  # capped at semantic_top_k
+
+    def test_returns_empty_when_no_related_corpora(self) -> None:
+        from harness_poc.core.context_map.semantic_retrieval import semantic_retrieve
+
+        db = BlackboardDatabase.from_url("sqlite:///:memory:")
+        config = _make_config(related={})
+        results = semantic_retrieve(db, config, "deverino:codebase", [0.5] * 768)
+        assert results == []

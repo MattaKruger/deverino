@@ -323,6 +323,23 @@ def build_model(  # noqa: PLR0911
             provider=DeepSeekProvider(api_key=api_key),
         )
 
+    if config.provider == "deepinfra":
+        api_key = api_settings.deepinfra_api_key
+        if not api_key:
+            logger.info("No DeepInfra API key configured; using fallback PydanticAI model")
+            return fallback_model or TestModel(call_tools=[])
+        base_url = config.base_url or "https://api.deepinfra.com/v1/openai"
+        logger.debug(
+            "Building DeepInfra-backed PydanticAI model",
+            extra={
+                "model": config.model,
+                "base_url": base_url,
+            },
+        )
+        return OpenAIChatModel(
+            cast("Any", config.model),
+            provider=OpenAIProvider(api_key=api_key, base_url=base_url),
+        )
     # "openai" or any openai-compatible provider
     if config.provider in {"openai", "glm"}:
         api_key = api_settings.glm_api_key if config.provider == "glm" else api_settings.openai_api_key
@@ -370,34 +387,40 @@ def _cross_corpus_decorator_fn(ctx: RunContext[AgentDeps]) -> str:
     )
 
     if mode == "semantic":
-        from harness_poc.core.context_map.retrieval_embedder import (  # noqa: PLC0415
-            RetrievalEmbedder,
-        )
-        from harness_poc.core.context_map.semantic_retrieval import (  # noqa: PLC0415
-            compose_query,
-            render_block,
-            semantic_retrieve,
-        )
-
-        query = compose_query(
-            ctx.messages,
-            n_turns=cc.cross_corpus_query_turns,
-            max_chars=cc.cross_corpus_query_max_chars,
-        )
-        if not query:
-            # No user turns yet — fall back to priority
-            from harness_poc.core.context_map.semantic_retrieval import (  # noqa: PLC0415
-                priority_retrieve,
+        try:
+            from harness_poc.core.context_map.retrieval_embedder import (  # noqa: PLC0415
+                RetrievalEmbedder,
             )
-            entries = priority_retrieve(deps.database, deps.config, active_corpus_key)
-            return render_block(entries, mode="deterministic")
+            from harness_poc.core.context_map.semantic_retrieval import (  # noqa: PLC0415
+                compose_query,
+                render_block,
+                semantic_retrieve,
+            )
 
-        embedder = RetrievalEmbedder()
-        query_embedding = embedder.embed_query(query)
-        entries = semantic_retrieve(
-            deps.database, deps.config, active_corpus_key, query_embedding
-        )
-        return render_block(entries, mode="semantic")
+            query = compose_query(
+                ctx.messages,
+                n_turns=cc.cross_corpus_query_turns,
+                max_chars=cc.cross_corpus_query_max_chars,
+            )
+            if not query:
+                # No user turns yet — fall back to priority
+                from harness_poc.core.context_map.semantic_retrieval import (  # noqa: PLC0415
+                    priority_retrieve,
+                )
+                entries = priority_retrieve(deps.database, deps.config, active_corpus_key)
+                return render_block(entries, mode="deterministic")
+
+            embedder = RetrievalEmbedder(
+                model_name=cc.cross_corpus_retrieval_model,
+            )
+            query_embedding = embedder.embed_query(query)
+            entries = semantic_retrieve(
+                deps.database, deps.config, active_corpus_key, query_embedding
+            )
+            return render_block(entries, mode="semantic")
+        except Exception:
+            logger.debug("Semantic retrieval failed, falling back to priority", exc_info=True)
+
     from harness_poc.core.context_map.semantic_retrieval import (  # noqa: PLC0415
         priority_retrieve,
         render_block,

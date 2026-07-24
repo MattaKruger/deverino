@@ -530,51 +530,6 @@ def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
     return {"role": "system", "content": compose_system_prompt(identity, config)}
 
 
-_MIN_CROSS_CORPUS_PARTS = 2  # Header line + at least one entry to be meaningful
-
-
-def _render_cross_corpus(
-    identity: Identity,
-    config: HarnessConfig,
-    active_corpus_key: str,
-) -> str:
-    """Render cross-corpus enrichment entries from related corpora (Track B §4.3).
-
-    Read-only — entries from related corpora are injected into the prompt
-    but never edited by the active corpus's Cartographer.
-    """
-    cc = config.cartographer
-    if not cc.cross_corpus_enabled:
-        return ""
-
-    related = cc.cross_corpus_related_corpora.get(active_corpus_key)
-    if not related:
-        return ""
-
-    db = identity.database
-    maps = db.get_context_maps(related)
-    if not maps:
-        return ""
-
-    parts: list[str] = ["\n\n# Related Corpora"]
-    for corpus_key, entries in maps.items():
-        cycle = db.get_cycle(corpus_key)
-        filtered = [e for e in entries if e.priority >= cc.cross_corpus_min_priority]
-        filtered.sort(key=lambda e: -e.priority)
-        capped = filtered[: cc.cross_corpus_max_entries]
-        if not capped:
-            continue
-        parts.append(f"\n## {corpus_key} (cycle {cycle})")
-        for entry in capped:
-            summary_one_line = " ".join(entry.summary.split())
-            parts.append(
-                f"  - [entry:{entry.entry_id.replace('-', '')}] "
-                f"(p={entry.priority:.2f}) [{entry.section}] {summary_one_line}"
-            )
-
-    if len(parts) <= _MIN_CROSS_CORPUS_PARTS:
-        return ""
-    return "\n".join(parts)
 
 
 def _render_corpus_inventory(

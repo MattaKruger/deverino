@@ -75,6 +75,7 @@ class TextEmbedder:
     def dim(self) -> int:
         """Return the embedding dimension (hard-coded for the default model)."""
         # Snowflake/snowflake-arctic-embed-l-v2.0 -> 1024 by default.
+        return DEFAULT_DIM
 
     @property
     def device(self) -> str:
