@@ -62,6 +62,7 @@ class BlackboardDatabase:
         self._ensure_context_map_cycles_table()
         self._ensure_sessions_active_corpus_column()
         self.copt_ensure_schema()
+        self.retrieval_ensure_schema()
 
     def wipe_tables(self) -> None:
         """Drop all tables (including orphans) and recreate from metadata."""
@@ -1069,6 +1070,131 @@ class BlackboardDatabase:
             rows = conn.execute(
                 text(
                     "SELECT entry_key, embedding FROM context_map_embeddings WHERE corpus_key = :ck"
+                ),
+                {"ck": corpus_key},
+            ).all()
+        return [(str(row[0]), _deserialize_embedding(str(row[1]))) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Retrieval Embeddings -- pgvector semantic retrieval (separate from CopT)
+    # ------------------------------------------------------------------
+
+    _retrieval_available: bool | None = None
+
+    def retrieval_is_available(self) -> bool:
+        """Return True if semantic retrieval can run (pgvector + table exists)."""
+        if self._retrieval_available is not None:
+            return self._retrieval_available
+        if self._engine.dialect.name != "postgresql":
+            self._retrieval_available = False
+            return False
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        "SELECT EXISTS ("
+                        "  SELECT FROM information_schema.tables "
+                        "  WHERE table_name = 'context_map_retrieval_embeddings'"
+                        ")"
+                    )
+                ).scalar()
+                self._retrieval_available = bool(row)
+        except Exception:
+            self._retrieval_available = False
+        return self._retrieval_available
+
+    def retrieval_ensure_schema(self) -> None:
+        """Create pgvector extension and retrieval embeddings table on PostgreSQL only.
+
+        Follows the same pattern as copt_ensure_schema(). The vector extension
+        is shared with the CopT gate — CREATE EXTENSION IF NOT EXISTS is idempotent.
+        """
+        if self._engine.dialect.name != "postgresql":
+            self._retrieval_available = False
+            return
+        import logging
+
+        _log = logging.getLogger(__name__)
+
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        except Exception:
+            _log.warning(
+                "pgvector extension not available — retrieval embeddings disabled.",
+                exc_info=True,
+            )
+            self._retrieval_available = False
+            return
+
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "CREATE TABLE IF NOT EXISTS context_map_retrieval_embeddings ("
+                        "  corpus_key TEXT NOT NULL,"
+                        "  entry_key TEXT NOT NULL,"
+                        "  embedding vector(768) NOT NULL,"
+                        "  model TEXT NOT NULL DEFAULT 'BAAI/bge-base-en-v1.5',"
+                        "  embedded_at TIMESTAMPTZ NOT NULL DEFAULT now(),"
+                        "  PRIMARY KEY (corpus_key, entry_key)"
+                        ")"
+                    )
+                )
+            self._retrieval_available = True
+        except Exception:
+            _log.warning(
+                "Retrieval embeddings table creation failed — disabled.",
+                exc_info=True,
+            )
+            self._retrieval_available = False
+
+    def retrieval_upsert_embeddings(
+        self,
+        corpus_key: str,
+        entries: list[tuple[str, list[float]]],
+    ) -> None:
+        """Upsert retrieval embeddings for (entry_key, embedding) pairs.
+
+        Deletes all existing embeddings for the corpus first, then inserts
+        the new set. This ensures embeddings are consistent with the current
+        map version (handles entry removal/replacement cleanly).
+        """
+        if not entries or not self.retrieval_is_available():
+            return
+        params = [
+            {"ck": corpus_key, "ek": ek, "emb": _serialize_embedding(emb)}
+            for ek, emb in entries
+        ]
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM context_map_retrieval_embeddings "
+                    "WHERE corpus_key = :ck"
+                ),
+                {"ck": corpus_key},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO context_map_retrieval_embeddings "
+                    "(corpus_key, entry_key, embedding) "
+                    "VALUES (:ck, :ek, :emb)"
+                ),
+                params,
+            )
+
+    def retrieval_get_embeddings(
+        self,
+        corpus_key: str,
+    ) -> list[tuple[str, list[float]]]:
+        """Return all stored (entry_key, embedding) pairs for a corpus."""
+        if not self.retrieval_is_available():
+            return []
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT entry_key, embedding FROM context_map_retrieval_embeddings "
+                    "WHERE corpus_key = :ck"
                 ),
                 {"ck": corpus_key},
             ).all()

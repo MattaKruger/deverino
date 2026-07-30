@@ -33,7 +33,10 @@ flowchart TD
 A full architecture reference (15 diagrams — layering, event system, both
 agent loops, context-map pipeline, retrieval, state consolidation, AHE) lives
 in [`docs/architecture/`](docs/architecture/index.md); preview it with
-`uvx zensical serve`.
+`uvx zensical serve`. The same diagrams are also available as a single
+self-contained page — [`docs/architecture/diagrams.html`](docs/architecture/diagrams.html)
+— open it directly in a browser (it renders Mermaid client-side via CDN, no
+server needed).
 
 ## Quickstart
 
@@ -230,6 +233,13 @@ cartographer:
         - "deverino:benchmarks"
     max_cross_entries: 16
     min_priority: 0.7
+    # Semantic retrieval (optional):
+    # retrieval: semantic          # "semantic" | "deterministic" (default)
+    # retrieval_model: "BAAI/bge-base-en-v1.5"
+    # query_turns: 3               # user turns composed into semantic query
+    # query_max_chars: 4000        # max composed query length
+    # semantic_top_k: 5            # max entries per related corpus in semantic mode
+    # min_similarity: 0.3          # minimum cosine similarity threshold
 ```
 
 The `distiller:` and `cartographer:` blocks configure the two-stage context-map
@@ -374,6 +384,29 @@ fast. `obsolete` entries have no decay curve — they are already-stale by
 definition. The rendered map splits its token budget across sections
 (`section_budget_share`) and can pull in related entries from other corpora
 (`cross_corpus`).
+
+Cross-corpus retrieval ranks those related entries one of two ways, set via
+`cartographer.cross_corpus.retrieval` in `harness.yaml` (default
+`deterministic`):
+
+- **`deterministic`** — the existing priority-based ranking (same scoring as
+  the main map).
+- **`semantic`** — embeds the last `query_turns` user turns with
+  `BAAI/bge-base-en-v1.5` and ranks related-corpus entries by cosine
+  similarity against pre-computed entry embeddings (stored in the
+  `context_map_retrieval_embeddings` table, backfilled by the materializer
+  after every write). Falls back to `deterministic` automatically if
+  embedding fails or no user turns exist yet — this is a per-turn
+  best-effort enrichment, not a hard dependency.
+
+Override per-run with `--corpus-retrieval semantic|deterministic` (CLI or
+`repl`), or toggle live from the TUI:
+
+```text
+/corpus-retrieval               # show the active mode
+/corpus-retrieval semantic
+/corpus-retrieval deterministic
+```
 
 Context maps are keyed by corpus (e.g. `deverino:default`, `deverino:codebase`).
 Use the `list_corpora` tool to discover valid keys before observing or citing

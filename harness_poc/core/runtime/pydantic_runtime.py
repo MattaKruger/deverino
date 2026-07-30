@@ -60,6 +60,9 @@ class AgentDeps:
     on_tool_event: Callable[[str], None] | None = None
     tool_call_counts: dict[str, int] = field(default_factory=dict)
     max_consecutive_tool_rounds: int | None = 50
+    # Mutable container for per-session retrieval mode override.
+    # Uses list[str] for mutability in a frozen dataclass.
+    retrieval_mode: list[str] = field(default_factory=lambda: ["deterministic"])
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,6 +323,23 @@ def build_model(  # noqa: PLR0911
             provider=DeepSeekProvider(api_key=api_key),
         )
 
+    if config.provider == "deepinfra":
+        api_key = api_settings.deepinfra_api_key
+        if not api_key:
+            logger.info("No DeepInfra API key configured; using fallback PydanticAI model")
+            return fallback_model or TestModel(call_tools=[])
+        base_url = config.base_url or "https://api.deepinfra.com/v1/openai"
+        logger.debug(
+            "Building DeepInfra-backed PydanticAI model",
+            extra={
+                "model": config.model,
+                "base_url": base_url,
+            },
+        )
+        return OpenAIChatModel(
+            cast("Any", config.model),
+            provider=OpenAIProvider(api_key=api_key, base_url=base_url),
+        )
     # "openai" or any openai-compatible provider
     if config.provider in {"openai", "glm"}:
         api_key = api_settings.glm_api_key if config.provider == "glm" else api_settings.openai_api_key
@@ -343,6 +363,76 @@ def build_model(  # noqa: PLR0911
 
     msg = f"Unknown LLM provider: {config.provider!r}"
     raise ValueError(msg)
+
+
+def _cross_corpus_decorator_fn(ctx: RunContext[AgentDeps]) -> str:
+    """Dynamic system prompt part — per-turn cross-corpus enrichment.
+
+    Checks the retrieval_mode flag on deps:
+    - "semantic": embed query, cosine similarity ranking
+    - "deterministic": priority-based ranking (same as _render_cross_corpus)
+
+    Returns a rendered cross-corpus block, or empty string when disabled.
+    """
+    deps = ctx.deps
+    cc = deps.config.cartographer
+
+    if not cc.cross_corpus_enabled:
+        return ""
+
+    mode = deps.retrieval_mode[0] if deps.retrieval_mode else "deterministic"
+    active_corpus_key = deps.database.get_session_corpus_key(
+        deps.session_id,
+        default=f"{deps.config.project_id}:codebase",
+    )
+
+    if mode == "semantic":
+        try:
+            from harness_poc.core.context_map.retrieval_embedder import (  # noqa: PLC0415
+                RetrievalEmbedder,
+            )
+            from harness_poc.core.context_map.semantic_retrieval import (  # noqa: PLC0415
+                compose_query,
+                render_block,
+                semantic_retrieve,
+            )
+
+            query = compose_query(
+                ctx.messages,
+                n_turns=cc.cross_corpus_query_turns,
+                max_chars=cc.cross_corpus_query_max_chars,
+            )
+            if not query:
+                # No user turns yet — fall back to priority
+                from harness_poc.core.context_map.semantic_retrieval import (  # noqa: PLC0415
+                    priority_retrieve,
+                )
+                entries = priority_retrieve(deps.database, deps.config, active_corpus_key)
+                return render_block(entries, mode="deterministic")
+
+            embedder = RetrievalEmbedder(
+                model_name=cc.cross_corpus_retrieval_model,
+            )
+            query_embedding = embedder.embed_query(query)
+            entries = semantic_retrieve(
+                deps.database, deps.config, active_corpus_key, query_embedding
+            )
+            return render_block(entries, mode="semantic")
+        except Exception:
+            logger.debug("Semantic retrieval failed, falling back to priority", exc_info=True)
+
+    from harness_poc.core.context_map.semantic_retrieval import (  # noqa: PLC0415
+        priority_retrieve,
+        render_block,
+    )
+    entries = priority_retrieve(deps.database, deps.config, active_corpus_key)
+    return render_block(entries, mode="deterministic")
+
+
+def _register_cross_corpus_decorator(agent: Agent[AgentDeps, str]) -> Agent[AgentDeps, str]:
+    """Register the dynamic cross-corpus system prompt decorator."""
+    agent.system_prompt(dynamic=True)(_cross_corpus_decorator_fn)
+    return agent
 
 
 def build_primary_agent(  # noqa: PLR0913
@@ -375,13 +465,16 @@ def build_primary_agent(  # noqa: PLR0913
                 skip_names=builtin_names,
             )
         )
-    return Agent(
+    agent = Agent(
         model or build_model(llm),
         deps_type=AgentDeps,
         tools=tools,
         system_prompt=_with_tool_policy(system_prompt),
         end_strategy="early",
     )
+
+    # Register dynamic cross-corpus decorator (always on — mode flag controls strategy)
+    return _register_cross_corpus_decorator(agent)
 
 
 def build_runtime(  # noqa: PLR0913
@@ -397,6 +490,7 @@ def build_runtime(  # noqa: PLR0913
     enable_tools: bool = True,
     blocked_skills: frozenset[str] | None = None,
     skill_catalog: str = "",
+    retrieval_mode: str = "deterministic",
 ) -> PydanticAgentRuntime:
     deps = AgentDeps(
         session_id=session_id,
@@ -404,6 +498,7 @@ def build_runtime(  # noqa: PLR0913
         config=config,
         skill_runner=skill_runner,
         tool_runner=tool_runner,
+        retrieval_mode=[retrieval_mode],
     )
 
     # Augment system prompt with skill catalog if available

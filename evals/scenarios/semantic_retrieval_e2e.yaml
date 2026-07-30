@@ -1,0 +1,28 @@
+name: semantic_retrieval_e2e
+description: Spawn a sub-agent, wait for materialization, verify semantic retrieval injects related entries
+
+config_overrides:
+  cartographer:
+    cross_corpus:
+      retrieval: semantic
+
+steps:
+  - input: "/corpus-retrieval"
+    expect_stdout_contains: "semantic"
+  - input: "/spawn architect Examine the database schema in harness_poc/core/storage/models.py and summarize the key tables and their relationships."
+    expect_stdout_contains: "architect"
+  - input: "/result"
+    expect_stdout_contains: ""
+  # Wait for materializer poll cycle (30s default)
+  - input: "/state show session"
+    wait_seconds: 35
+    expect_stdout_contains: "session"
+  - input: "what tables does the blackboard use for state management?"
+    expect_stdout_contains: ""
+
+assertions:
+  - type: db_query
+    query: "get_all_corpus_keys"
+    expect: "len(keys) > 1"
+  - type: retrieval_mode
+    expect: "semantic"

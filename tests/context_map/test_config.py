@@ -139,3 +139,41 @@ def test_cartographer_cross_corpus_auto_discover_defaults_true() -> None:
 def test_cartographer_cross_corpus_auto_discover_false() -> None:
     cfg = load_cartographer_config({"cross_corpus_auto_discover": False})
     assert cfg.cross_corpus_auto_discover is False
+
+
+
+def test_semantic_retrieval_defaults() -> None:
+    """CartographerConfig has sensible defaults for semantic retrieval fields."""
+    from harness_poc.core.context_map.config import CartographerConfig
+
+    config = CartographerConfig()
+    assert config.cross_corpus_retrieval == "deterministic"
+    assert config.cross_corpus_retrieval_model == "BAAI/bge-base-en-v1.5"
+    assert config.cross_corpus_query_turns == 3
+    assert config.cross_corpus_query_max_chars == 4000
+    assert config.cross_corpus_semantic_top_k == 5
+    assert config.cross_corpus_min_similarity == 0.3
+
+
+
+def test_load_cartographer_config_parses_semantic_fields() -> None:
+    """load_cartographer_config parses semantic retrieval fields from raw config."""
+    from harness_poc.core.context_map.config import load_cartographer_config
+
+    raw = {
+        "cross_corpus": {
+            "enabled": True,
+            "retrieval": "semantic",
+            "retrieval_model": "BAAI/bge-base-en-v1.5",
+            "query_turns": 5,
+            "query_max_chars": 3000,
+            "semantic_top_k": 8,
+            "min_similarity": 0.25,
+        },
+    }
+    config = load_cartographer_config(raw)
+    assert config.cross_corpus_retrieval == "semantic"
+    assert config.cross_corpus_query_turns == 5
+    assert config.cross_corpus_query_max_chars == 3000
+    assert config.cross_corpus_semantic_top_k == 8
+    assert config.cross_corpus_min_similarity == 0.25

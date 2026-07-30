@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated
@@ -152,10 +153,19 @@ def main_callback(
             ),
         ),
     ] = None,
+    corpus_retrieval: Annotated[
+        str | None,
+        typer.Option(
+            "--corpus-retrieval",
+            help="Cross-corpus retrieval mode: 'semantic' or 'deterministic'.",
+        ),
+    ] = None,
 ) -> None:
     """Interactive LLM harness proof of concept."""
     if ctx.invoked_subcommand is not None:
         return
+    if corpus_retrieval:
+        os.environ["HARNESS_CORPUS_RETRIEVAL"] = corpus_retrieval
     resolved_corpus = _validate_corpus(corpus)
     app_state = _new_app_state(
         session_id=_resolve_resume(resume, resume_last),
@@ -187,8 +197,17 @@ def repl(
             ),
         ),
     ] = None,
+    corpus_retrieval: Annotated[
+        str | None,
+        typer.Option(
+            "--corpus-retrieval",
+            help="Cross-corpus retrieval mode: 'semantic' or 'deterministic'.",
+        ),
+    ] = None,
 ) -> None:
     """Start the interactive REPL."""
+    if corpus_retrieval:
+        os.environ["HARNESS_CORPUS_RETRIEVAL"] = corpus_retrieval
     resolved_corpus = _validate_corpus(corpus)
     app_state = _new_app_state(
         session_id=_resolve_resume(resume, resume_last),

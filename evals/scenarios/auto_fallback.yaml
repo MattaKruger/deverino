@@ -1,0 +1,26 @@
+name: auto_fallback
+description: Verify semantic mode degrades gracefully when no embeddings exist (fresh session, no materialization)
+
+config_overrides:
+  cartographer:
+    cross_corpus:
+      retrieval: semantic
+
+steps:
+  - input: "/corpus-retrieval"
+    expect_stdout_contains: "semantic"
+  # Send a message immediately — no corpora materialized, no embeddings
+  # The decorator should fall back to priority or return empty, NOT crash
+  - input: "how does the context map pipeline work?"
+    expect_stdout_contains: ""
+  - input: "/corpus-retrieval deterministic"
+    expect_stdout_contains: "deterministic"
+  # Toggle back to semantic — should work without restart
+  - input: "/corpus-retrieval semantic"
+    expect_stdout_contains: "semantic"
+  - input: "what skills are available?"
+    expect_stdout_contains: ""
+
+assertions:
+  - type: retrieval_mode
+    expect: "semantic"

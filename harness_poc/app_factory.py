@@ -445,6 +445,9 @@ def build_runtime_layer(identity: Identity, config: HarnessConfig) -> Runtime:
             enable_tools=True,
             blocked_skills=_TUI_BLOCKED_SKILLS,
             skill_catalog=skill_catalog,
+            retrieval_mode=os.environ.get(
+                "HARNESS_CORPUS_RETRIEVAL", config.cartographer.cross_corpus_retrieval
+            ),
         ),
         tools=tools,
         skill_catalog=skill_catalog,
@@ -514,13 +517,10 @@ def compose_system_prompt(identity: Identity, config: HarnessConfig) -> str:
             cycle_n,
             prompt_mode=config.cartographer.prompt_block,
         )
-        cross_body = _render_cross_corpus(identity, config, corpus_key)
         inventory = _render_corpus_inventory(identity, corpus_key)
         post_map = ""
-        if cross_body:
-            post_map += cross_body
         if inventory:
-            post_map += f"\n---{inventory}"
+            post_map = f"\n---{inventory}"
         bindings["sys.context_map"] = map_body + post_map
 
     return assemble_system_prompt(_load_react_spec(config.paths.react_spec), bindings)
@@ -530,51 +530,6 @@ def _system_message_for(identity: Identity, config: HarnessConfig) -> Message:
     return {"role": "system", "content": compose_system_prompt(identity, config)}
 
 
-_MIN_CROSS_CORPUS_PARTS = 2  # Header line + at least one entry to be meaningful
-
-
-def _render_cross_corpus(
-    identity: Identity,
-    config: HarnessConfig,
-    active_corpus_key: str,
-) -> str:
-    """Render cross-corpus enrichment entries from related corpora (Track B §4.3).
-
-    Read-only — entries from related corpora are injected into the prompt
-    but never edited by the active corpus's Cartographer.
-    """
-    cc = config.cartographer
-    if not cc.cross_corpus_enabled:
-        return ""
-
-    related = cc.cross_corpus_related_corpora.get(active_corpus_key)
-    if not related:
-        return ""
-
-    db = identity.database
-    maps = db.get_context_maps(related)
-    if not maps:
-        return ""
-
-    parts: list[str] = ["\n\n# Related Corpora"]
-    for corpus_key, entries in maps.items():
-        cycle = db.get_cycle(corpus_key)
-        filtered = [e for e in entries if e.priority >= cc.cross_corpus_min_priority]
-        filtered.sort(key=lambda e: -e.priority)
-        capped = filtered[: cc.cross_corpus_max_entries]
-        if not capped:
-            continue
-        parts.append(f"\n## {corpus_key} (cycle {cycle})")
-        for entry in capped:
-            summary_one_line = " ".join(entry.summary.split())
-            parts.append(
-                f"  - [entry:{entry.entry_id.replace('-', '')}] "
-                f"(p={entry.priority:.2f}) [{entry.section}] {summary_one_line}"
-            )
-
-    if len(parts) <= _MIN_CROSS_CORPUS_PARTS:
-        return ""
-    return "\n".join(parts)
 
 
 def _render_corpus_inventory(

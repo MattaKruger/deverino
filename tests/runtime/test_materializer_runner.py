@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from sqlalchemy import Engine
 
@@ -178,3 +178,106 @@ class TestMaterializerPollLoop:
         asyncio.run(runner._poll_once())
 
         assert len(skill_runner.calls) == 1
+
+
+
+class TestRetrievalEmbeddingHook:
+    """Tests for the post-materialization retrieval embedding hook."""
+
+    def test_hook_embeds_entries_after_materialization(self, db_engine: Engine) -> None:
+        db = BlackboardDatabase(db_engine)
+        skill_runner = _ControlledSkillRunner()
+        skill_runner.set_result(
+            "context-map-materializer",
+            _FakeSkillResult(
+                status="success",
+                artifacts={"map_changed": True, "token_count": 0},
+            ),
+        )
+
+        db.append_context_map_event(
+            ContextualInsightDiscovered(
+                session_id="test-hook",
+                corpus_key="deverino:codebase",
+                insight="Test insight for embedding hook.",
+                supporting_events=[],
+                map_section="context_understanding",
+            )
+        )
+
+        runner = MaterializerRunner(
+            db,
+            skill_runner,
+            MagicMock(),
+            session_id="test-hook",  # type: ignore[arg-type]
+        )
+
+        # Mock the embedder to avoid loading the real model
+        with patch.object(runner, "_embed_retrieval_vectors") as mock_hook:
+            asyncio.run(runner._poll_once())
+            mock_hook.assert_called_once_with("deverino:codebase")
+
+    def test_hook_skipped_when_map_not_changed(self, db_engine: Engine) -> None:
+        db = BlackboardDatabase(db_engine)
+        skill_runner = _ControlledSkillRunner()
+        skill_runner.set_result(
+            "context-map-materializer",
+            _FakeSkillResult(
+                status="success",
+                artifacts={"map_changed": False, "token_count": 0},
+            ),
+        )
+
+        db.append_context_map_event(
+            ContextualInsightDiscovered(
+                session_id="test-nochange",
+                corpus_key="deverino:codebase",
+                insight="Test insight.",
+                supporting_events=[],
+                map_section="context_understanding",
+            )
+        )
+
+        config = MagicMock()
+        config.runtime.materializer_freeze_threshold = 10
+        config.runtime.materializer_freeze_seconds = 60
+        runner = MaterializerRunner(
+            db,
+            skill_runner,
+            config,
+            session_id="test-nochange",  # type: ignore[arg-type]
+        )
+
+        with patch.object(runner, "_embed_retrieval_vectors") as mock_hook:
+            asyncio.run(runner._poll_once())
+            mock_hook.assert_not_called()
+
+    def test_hook_does_not_raise_on_embedding_failure(self, db_engine: Engine) -> None:
+        """If the embedder fails, materialization still succeeds."""
+        db = BlackboardDatabase(db_engine)
+        skill_runner = _ControlledSkillRunner()
+
+        db.append_context_map_event(
+            ContextualInsightDiscovered(
+                session_id="test-fail-emb",
+                corpus_key="deverino:codebase",
+                insight="Test insight.",
+                supporting_events=[],
+                map_section="context_understanding",
+            )
+        )
+
+        runner = MaterializerRunner(
+            db,
+            skill_runner,
+            MagicMock(),
+            session_id="test-fail-emb",  # type: ignore[arg-type]
+        )
+
+        with patch.object(
+            runner,
+            "_embed_retrieval_vectors",
+            side_effect=RuntimeError("model load failed"),
+        ):
+            # Should not raise
+            asyncio.run(runner._poll_once())

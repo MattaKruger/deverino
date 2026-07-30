@@ -4,9 +4,8 @@ Provides a caching embedder that lazily loads a SentenceTransformer model on fir
 defaulting to the GPU (CUDA) when available.  All public methods are thread-safe once
 the model is loaded.
 
-With jina-embeddings-v3 (the default), ``embed_query`` encodes search queries
-using the ``retrieval.query`` LoRA adapter, while ``embed_batch`` encodes
-document chunks using ``retrieval.passage``.
+With Snowflake/snowflake-arctic-embed-l-v2.0 (the default), embed_batch encodes
+texts using CLS pooling. No task-specific LoRA adapters are needed.
 """
 
 from __future__ import annotations
@@ -75,7 +74,7 @@ class TextEmbedder:
     @property
     def dim(self) -> int:
         """Return the embedding dimension (hard-coded for the default model)."""
-        # jina-embeddings-v3 -> 1024 by default (MRL supports 32-1024).
+        # Snowflake/snowflake-arctic-embed-l-v2.0 -> 1024 by default.
         return DEFAULT_DIM
 
     @property
@@ -136,9 +135,9 @@ class TextEmbedder:
     ) -> NDArray[np.float32]:
         """Encode a batch of texts, returning a float32 array of shape ``(N, dim)``.
 
-        For jina-embeddings-v3, document passages should use
-        ``prompt_name="retrieval.passage"``. When *prompt_name* is None,
-        no task-specific prompt or LoRA adapter is applied.
+        Snowflake arctic-embed does not use task-specific prompts. The
+        ``prompt_name`` parameter is kept for API compatibility but should
+        be None for this model.
         """
         if not texts:
             return np.empty((0, self.dim), dtype=np.float32)
@@ -159,18 +158,20 @@ class TextEmbedder:
         return embeddings
 
     def embed_query(self, text: str) -> list[float]:
-        """Encode a search query using the retrieval.query LoRA adapter.
+        """Encode a search query to a Python list of floats.
 
-        This is the companion to ``embed_batch(..., prompt_name="retrieval.passage")``.
+        Uses no task-specific prompt. For Snowflake arctic-embed, query and
+        passage encoding use the same path (CLS pooling, no LoRA adapter).
         """
-        vec: NDArray[np.float32] = self.embed_batch([text], prompt_name="retrieval.query")[0]
+        vec: NDArray[np.float32] = self.embed_batch([text])[0]
         return vec.tolist()
 
     def embed_single(self, text: str) -> list[float]:
         """Encode a single text to a Python list of floats.
 
-        Uses no task-specific prompt. Prefer ``embed_query`` for search queries
-        when using a task-LoRA model like jina-embeddings-v3.
+        Uses no task-specific prompt. For Snowflake arctic-embed, query and
+        passage encoding use the same path, so ``embed_single`` and
+        ``embed_query`` are functionally equivalent.
         """
         vec: NDArray[np.float32] = self.embed_batch([text])[0]
         return vec.tolist()
