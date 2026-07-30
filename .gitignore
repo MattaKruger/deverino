@@ -17,3 +17,6 @@ docs/papers_2/
 node_modules/
 .vite/
 dist/
+
+# Zensical build output
+site/

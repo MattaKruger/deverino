@@ -1,0 +1,95 @@
+# Zensical configuration for the Deverino architecture docs.
+#
+# Uses the mkdocs.yml format, which Zensical reads natively. This format is
+# chosen over zensical.toml because the Mermaid superfences custom_fence relies
+# on YAML !!python/name: tags that have no clean TOML equivalent.
+#
+# Preview:  uvx zensical serve      (http://localhost:8000, auto-reload)
+# Build:    uvx zensical build      (output -> site/)
+
+# Project information
+site_name: Deverino Architecture
+site_description: >-
+  Architecture reference for the Deverino LLM-agent harness — core infrastructure,
+  agent loops, event system, retrieval, and durable state.
+
+# Configuration
+theme:
+  name: material
+  variant: modern
+  features:
+    - navigation.indexes
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: lucide/sun-moon
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: lucide/sun
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: orange
+      toggle:
+        icon: lucide/moon-star
+        name: Switch to system preference
+  icon:
+    logo: lucide/network
+
+# Scope the site to the architecture docs only.
+docs_dir: docs/architecture
+
+# Plugins
+plugins:
+  - search
+  - tags
+
+# Extensions
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Page tree
+nav:
+  - Overview: index.md
+  - Core Infrastructure Diagrams: core-infrastructure-diagrams.md
+  - Agentic Architecture: agentic-architecture.md
+  - Retrieval Design: retrieval-design.md
+  - V2 Architecture: v2-architecture.md
