@@ -32,11 +32,13 @@ flowchart TD
 
 A full architecture reference (15 diagrams — layering, event system, both
 agent loops, context-map pipeline, retrieval, state consolidation, AHE) lives
-in [`docs/architecture/`](docs/architecture/index.md); preview it with
-`uvx zensical serve`. The same diagrams are also available as a single
-self-contained page — [`docs/architecture/diagrams.html`](docs/architecture/diagrams.html)
-— open it directly in a browser (it renders Mermaid client-side via CDN, no
-server needed).
+in [`docs/architecture/core-infrastructure-diagrams.md`](docs/architecture/core-infrastructure-diagrams.md)
+— renders inline on GitHub. The same content is also served as a browsable
+site via [`docs/architecture/`](docs/architecture/index.md) (preview with
+`uvx zensical serve`) or as a standalone HTML page,
+[`docs/architecture/diagrams.html`](docs/architecture/diagrams.html) — open
+that one locally in a browser, since GitHub shows raw HTML source rather than
+rendering it.
 
 ## Quickstart
 
