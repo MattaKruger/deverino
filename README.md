@@ -1,18 +1,39 @@
 # Deverino
 
-Deverino is a Python 3.14 proof-of-concept LLM agent harness. It combines a
-Textual chat TUI, a Typer CLI, an event-sourced async runtime, project-local
-skills, declarative workflows and pipelines, PostgreSQL-backed state,
-Vespa-backed document retrieval, an index-time skill compiler, a FastAPI
-dashboard with a Vue front-end, and a task-based evaluation framework.
-
-The project is intentionally experimental, but the runtime pieces are concrete:
-agents and tools communicate through typed durable events, skills use explicit
-permission metadata, and document search returns cited chunks from a Vespa
-schema built for hybrid retrieval. It also includes a PEEK-inspired context map:
-an event-sourced orientation cache that is materialized in the background and
-injected into the system prompt when available. An Agent Harness Evolution
+Deverino is a Python 3.14 proof-of-concept LLM agent harness — a Textual chat
+TUI, Typer CLI, event-sourced async runtime, PostgreSQL-backed blackboard
+state, Vespa-backed document retrieval, an index-time skill compiler, a
+FastAPI + Vue dashboard, and a task-based evaluation framework. Agents and
+tools communicate through typed durable events, skills carry explicit
+permission metadata, and a PEEK-inspired context map keeps a fixed-budget
+orientation cache injected into the system prompt. An Agent Harness Evolution
 (AHE) loop turns runtime telemetry into harness-level improvement proposals.
+
+```mermaid
+flowchart TD
+    User([User])
+    subgraph Harness["Deverino Harness (harness_poc)"]
+        Entry["Entry / UI: main, cli, repl, tui, app_factory"]
+        Core["core/ runtime + v2 orchestration"]
+    end
+    PG[(PostgreSQL Blackboard + pgvector)]
+    Vespa[(Vespa Search Index)]
+    LLM["LLM Providers: Anthropic / OpenAI / DeepSeek / GLM"]
+    FS[("Project Filesystem: skills, system_skills, personas, docs")]
+    LF["Logfire (optional cloud)"]
+    User --> Entry
+    Entry --> Core
+    Core --> PG
+    Core --> Vespa
+    Core --> LLM
+    Core --> FS
+    Core -.-> LF
+```
+
+A full architecture reference (15 diagrams — layering, event system, both
+agent loops, context-map pipeline, retrieval, state consolidation, AHE) lives
+in [`docs/architecture/`](docs/architecture/index.md); preview it with
+`uvx zensical serve`.
 
 ## Quickstart
 
@@ -220,7 +241,7 @@ compiler (see [Skill Compiler](#skill-compiler)).
 API keys are read from environment variables or a project-root `.env` file:
 
 | Provider    | Env var             |
-| ----------- | ------------------- |
+| ----------- | -------------------- |
 | `deepseek`  | `DEEPSEEK_API_KEY`  |
 | `openai`    | `OPENAI_API_KEY`    |
 | `anthropic` | `ANTHROPIC_API_KEY` |
@@ -231,47 +252,46 @@ LLM responses so local tests and UI flows can still run.
 
 ## Document Retrieval
 
-Document retrieval is backed by Vespa. PostgreSQL stores source metadata,
-content hashes, chunk counts, and indexing status; Vespa stores and searches the
-chunk documents.
+Vespa stores and searches document chunks; PostgreSQL stores source metadata,
+content hashes, chunk counts, and indexing status.
 
-The current retrieval stack includes:
-
-- `RetrievalConfig` in `harness.yaml`
-- metadata tables for document sources and chunks
-- `DocumentIndexer` with content-hash skipping, ignored-directory handling, and
-  path allowlist checks
-- `LiveVespaDocumentClient` for health checks, feeding, deletion, and search
-- a Vespa application package under `vespa/document_retrieval/`
-- `index_documents` and `search_documents` skills
-- a dedicated `documents index` CLI command
-
-Supported source formats include text-like project files such as `.md`, `.txt`,
-`.rst`, `.yaml`, `.json`, `.toml`, `.py`, and `.pdf`. PDF files are extracted to
-text with page markers before chunking.
-
-Index a PDF:
-
-```bash
-uv run harness-poc documents index docs/papers/2605.20173.pdf
+```mermaid
+flowchart TD
+    subgraph Ingest["Ingest (startup auto-index / CLI)"]
+        resolve["_resolve_files: glob + ignore filters + ext allowlist"]
+        hash["sha256 change detection vs DbDocumentSource.content_hash"]
+        chunk["chunking: text sliding window / PDF pymupdf->docling->remote OCR"]
+        embed["TextEmbedder: snowflake-arctic-embed-l-v2.0 (1024-d, GPU fp16, normalized)"]
+        feed["LiveVespaDocumentClient.feed_chunks: app.syncio.feed_data_point"]
+        meta["persist DbDocumentSource / DbDocumentChunk"]
+        state["index_project_state (keyword-only, embedding=[])"]
+        resolve --> hash --> chunk --> embed --> feed --> meta
+        state --> feed
+    end
+    subgraph Query["Query (search skill / CLI)"]
+        req["SearchRequest {query, mode, hits, source_id?, kind?}"]
+        qbody["_build_query_body: keyword / semantic / hybrid (default)"]
+        vespa["Vespa search: ranking.profile keyword|semantic|hybrid"]
+        norm["_normalize_hit -> SearchResult"]
+        req --> qbody --> vespa --> norm
+    end
+    V[(Vespa)]
+    DB[(Blackboard)]
+    feed --> V
+    meta --> DB
+    vespa --> V
+    norm -->|"tool/skill output"| Model["LLM / agent"]
 ```
 
-Index a directory of PDFs:
+Supported formats: text-like project files (`.md`, `.txt`, `.rst`, `.yaml`,
+`.json`, `.toml`, `.py`) and `.pdf` (extracted to text with page markers before
+chunking).
 
 ```bash
-uv run harness-poc documents index docs --glob "*.pdf"
-```
-
-Force reindexing even when content hashes have not changed:
-
-```bash
-uv run harness-poc documents index docs/papers/2605.20173.pdf --force
-```
-
-Skip generated or non-prose directories while indexing:
-
-```bash
-uv run harness-poc documents index docs --exclude-dir docs/acdl
+uv run harness-poc documents index docs/papers/2605.20173.pdf         # single file
+uv run harness-poc documents index docs --glob "*.pdf"                # directory of PDFs
+uv run harness-poc documents index docs/papers/2605.20173.pdf --force # ignore content-hash cache
+uv run harness-poc documents index docs --exclude-dir docs/acdl       # skip a directory
 ```
 
 From the TUI, ask the agent to use retrieval skills directly:
@@ -285,93 +305,89 @@ Search results are formatted as cited chunks such as `docs/example.md#chunk-2`.
 
 ## PEEK Context Map
 
-Deverino implements an event-sourced version of the PEEK context map idea: a
-small, fixed-budget orientation cache that helps the agent remember how to
-navigate a corpus without stuffing full retrieval traces into every prompt.
+An event-sourced version of the PEEK context map: a small, fixed-budget
+orientation cache that helps the agent navigate a corpus without stuffing full
+retrieval traces into every prompt, decoupled from the foreground chat loop and
+materialized by a background poller.
 
-The implementation keeps the PEEK pipeline shape while decoupling it from the
-foreground chat loop:
-
-```text
-agent/tool activity
-  -> typed context-map events in PostgreSQL
-  -> Distiller (LLM)  — extracts observations from event batches
-  -> Cartographer (deterministic) — priority queue with budget enforcement
-  -> Evictor (deterministic) — removes lowest-priority entries on overflow
-  -> compact context_map row, materialized via background poller
-  -> next app/session prompt includes the stored map
+```mermaid
+flowchart TD
+    evts["ContextMapEvent[] (from event store, pending)"]
+    curmap["current map (MapEntry[], down-sampled)"]
+    subgraph Distill["run_distiller (LLM, pydantic-ai)"]
+        d1["Agent(output_type=DistilledBatch)"]
+        d2["bounded retry on Timeout/ValidationError"]
+        d3["validate source_event_ids against events"]
+        d4["safe fallback -> []"]
+        d1 --> d2 --> d3 --> d4
+    end
+    distilled["DistillerEntry[] (typed observations, cited)"]
+    subgraph Cart["deterministic_cartographer (pure, 5 stages)"]
+        s0["Stage 0: explicit removals (obsolete)"]
+        s1["Dedup + merge (strict superset)"]
+        s2["Priority: base + recency - staleness"]
+        s3["Staleness eviction"]
+        s4["Budget enforcement (section + global)"]
+        s0 --> s1 --> s2 --> s3 --> s4
+    end
+    result["CartographerResult {new_map, evictions, cycle_n}"]
+    render["render_context_map (structured / json / none)"]
+    prompt["format_context_window -> system prompt block"]
+    fb["evictions/insertions -> events (feed AHE + calibration)"]
+    evts --> Distill
+    curmap --> Distill
+    Distill --> distilled
+    distilled --> Cart
+    curmap --> Cart
+    Cart --> result
+    result --> render
+    render --> prompt
+    result -.-> fb
+    fb -.-> evts
 ```
 
-Current context-map components:
+Key components:
 
-- typed Pydantic event models in `harness_poc/core/events/context_map_events.py`
-- pipeline schema in `harness_poc/core/context_map/schema.py`
-  (`DistillerEntry`, `DistilledBatch`, `MapEntry`, `EvictionRecord`,
-  `CartographerResult`)
-- PostgreSQL tables `context_map_events` and `context_map`
-- LLM-driven `Distiller` in `harness_poc/core/context_map/distiller.py`
-  with retry/repair and structured output
-- deterministic `Cartographer` in `harness_poc/core/context_map/cartographer.py`
-  that scores entries by `priority_weight × recency × (1 − staleness)`
-- deterministic Evictor (in the same module) that drops the lowest-priority
-  entries when the token budget is exceeded
-- `context-map-materializer` project skill that orchestrates one full
-  Distiller → Cartographer → Evictor pass for a corpus key
-- `MaterializerRunner`, started by the TUI and main async runtime, which polls
-  pending corpus keys
-- `append_event` system skill for manually appending typed events
-- `observe` project skill — emits structured observations with 9 types
-  (entity, schema, insight, dispute, boundary, constant, result, architecture,
-  obsolete)
-- **automatic post-turn observation extraction**: signal-tool turns
-  (e.g. `semble_search`, `read_file`, `search_documents`,
-  `consolidate_state`) are summarized by a background classifier and fed
-  through `observe` without the agent having to ask. See
-  `pydantic_runtime.py:extract_observations_from_turn`.
-- `search_documents` and `search_failed` events from retrieval skills
-- prompt injection of the stored context map during app-state creation
+| Component | Location |
+| --- | --- |
+| Typed event models | `harness_poc/core/events/context_map_events.py` |
+| Pipeline schema (`DistillerEntry`, `MapEntry`, `CartographerResult`, ...) | `harness_poc/core/context_map/schema.py` |
+| PostgreSQL tables | `context_map_events`, `context_map` |
+| LLM `Distiller` (retry/repair, structured output) | `harness_poc/core/context_map/distiller.py` |
+| Deterministic `Cartographer` (scores by `priority_weight × recency × (1 − staleness)`) + Evictor | `harness_poc/core/context_map/cartographer.py` |
+| `context-map-materializer` skill (one full pass per corpus key) | `skills/` |
+| `MaterializerRunner` (polls pending corpus keys) | started by TUI / main async runtime |
+| `observe` skill (9 observation types) + automatic post-turn extraction | `pydantic_runtime.py:extract_observations_from_turn` |
 
-The materializer avoids repeated LLM calls when a corpus is stable. Each skill
-run reports whether the persisted map actually changed; after
-`runtime.materializer_freeze_threshold` consecutive no-change cycles, the runner
-sets `context_map.freeze_until` for `runtime.materializer_freeze_seconds`. A
-second heuristic, `materializer_copt_threshold` (change-over-prior-time),
-freezes corpora whose edit volume has dropped below a ratio of the prior window.
-Pending events are left unprocessed during a freeze and are picked up after it
+The materializer skips repeated LLM calls on stable corpora: after
+`materializer_freeze_threshold` consecutive no-change cycles it freezes the
+corpus for `materializer_freeze_seconds`, and `materializer_copt_threshold`
+freezes corpora whose edit volume has dropped relative to the prior window.
+Pending events are left unprocessed during a freeze and picked up once it
 expires.
 
-Map entries (`MapEntry` in `core/context_map/schema.py`) carry stable
-8-character `entry_id` values, observation type, summary, source event IDs,
-materialization count, cycle bounds, and a token estimate. Priority is
-recomputed each cycle from configurable `priority_weights`, recency bonus, and
-staleness penalty. **Decay is per-type** — eight observation types (dispute,
-schema, insight, architecture, boundary, entity, result, constant) each have
-their own `staleness_penalty`, `staleness_floor`, `recency_bonus`, and
-`recency_cap` in `harness.yaml`, so long-lived architectural facts decay slowly
-while volatile results age out fast. (`obsolete` entries have no decay curve —
-they are treated as already-stale.) The rendered map splits its token budget
-across sections (`section_budget_share`) and can pull in related entries from
-other corpora (`cross_corpus`).
+Each of the 8 observation types (dispute, schema, insight, architecture,
+boundary, entity, result, constant) has its own `staleness_penalty`,
+`staleness_floor`, `recency_bonus`, and `recency_cap` in `harness.yaml`, so
+long-lived architectural facts decay slowly while volatile results age out
+fast. `obsolete` entries have no decay curve — they are already-stale by
+definition. The rendered map splits its token budget across sections
+(`section_budget_share`) and can pull in related entries from other corpora
+(`cross_corpus`).
 
-Context maps are keyed by corpus, using the configured project id. App startup
-currently injects the `deverino:default` map when present; `search_documents`
-emits document-retrieval events under `deverino:codebase`. Use the `list_corpora`
-tool to discover valid corpus keys before observing or citing into a corpus.
+Context maps are keyed by corpus (e.g. `deverino:default`, `deverino:codebase`).
+Use the `list_corpora` tool to discover valid keys before observing or citing
+into a corpus.
 
-Priority weights can be calibrated from observed reference/eviction rates. The
-`cartographer calibrate` CLI command reads `MapEntryReferenced`,
-`MapEntryEvicted`, and `MapEntryInserted` events from the event log over a
-configurable window and computes target weights deterministically.
+Priority weights can be calibrated from observed reference/eviction rates:
 
 ```bash
-# Dry run — print the target weights and deltas
-uv run harness-poc cartographer calibrate --window-days 14
-
-# Apply — write new weights to harness.yaml
-uv run harness-poc cartographer calibrate --apply
+uv run harness-poc cartographer calibrate --window-days 14   # dry run: print target weights
+uv run harness-poc cartographer calibrate --apply             # write new weights to harness.yaml
 ```
 
-The manual event skill accepts explicit corpus keys:
+Manually append a typed event, or run the materializer directly instead of
+waiting for the background poller:
 
 ```text
 /skill append_event {
@@ -383,12 +399,7 @@ The manual event skill accepts explicit corpus keys:
     "context":"Coordinates file chunking, Vespa feed, and PostgreSQL metadata."
   }
 }
-```
 
-Run the materializer directly when you do not want to wait for the background
-poller:
-
-```text
 /skill context-map-materializer {"corpus_key":"deverino:default","token_budget":1024}
 ```
 
@@ -586,115 +597,50 @@ Useful slash commands:
 
 ## Architecture
 
-```text
-harness_poc/
-├── cli.py                  # Typer CLI
-├── repl.py                 # TUI command handling and direct skill dispatch
-├── tui.py                  # Textual chat application
-├── tui_vim.py              # Vim modal editing for the TUI
-├── repl_completion.py      # Slash-command completion
-├── app_factory.py          # Runtime wiring into AppState
-├── console.py              # Rich console helpers
-├── dashboard_theme.py      # Terminal dashboard theme
-├── api/                    # FastAPI dashboard + chat back-end
-│   ├── __init__.py         # create_app / create_app_from_config
-│   ├── routes.py           # read-only blackboard + skill-compile endpoints
-│   └── chat.py             # chat router
-├── core/
-│   ├── config.py           # YAML/.env config loading
-│   ├── logging.py          # Logging configuration
-│   ├── permissions.py      # Permission model
-│   ├── acdl/               # ACDL parser, AST, executor, and CLI
-│   ├── ahe/                # Agent Harness Evolution (telemetry, diagnose, propose)
-│   ├── eval/               # Evaluation framework (task, judge, runner, refine)
-│   ├── observe/            # Structured observability (log_tap, timing, trace)
-│   ├── events/             # Typed event hierarchy and async pub/sub
-│   │   ├── events.py       # Event dataclasses and registry
-│   │   ├── event_bus.py    # Sync/async pub/sub
-│   │   ├── event_store.py  # Durable event persistence
-│   │   ├── event_log_observer.py # Event log tailing
-│   │   └── context_map_events.py # PEEK-style context-map event models
-│   ├── context_map/        # Deterministic cartographer pipeline
-│   │   ├── schema.py       # DistillerEntry, MapEntry, EvictionRecord
-│   │   ├── distiller.py    # LLM extraction with retry/repair
-│   │   ├── cartographer.py # Deterministic priority queue + evictor
-│   │   ├── calibrate.py    # priority_weights calibration
-│   │   ├── render.py       # Map → prompt-fragment rendering
-│   │   ├── sections.py     # Section layout helpers
-│   │   └── prompts/        # Distiller prompt templates
-│   ├── execution/          # Declarative execution engines
-│   │   ├── pipeline_runner.py    # Wave-based DAG execution
-│   │   ├── workflow_runner.py    # YAML workflow execution
-│   │   └── materializer_runner.py # Background context-map materializer poller
-│   ├── observability/      # Telemetry and dashboards
-│   │   ├── dashboard.py    # Summary and live dashboard data fetchers
-│   │   └── logfire_subscriber.py # Logfire event forwarding
-│   ├── processors/         # LEGACY v1 workers (used by `goal` without --refine)
-│   │   ├── llm_worker.py
-│   │   ├── tool_worker.py
-│   │   ├── circuit_breaker.py
-│   │   └── processor_supervisor.py
-│   ├── retrieval/          # Document retrieval stack
-│   │   ├── retrieval.py    # Domain models and chunking
-│   │   ├── document_index.py # File/PDF indexing into retrieval chunks
-│   │   ├── vespa_client.py # pyvespa adapter
-│   │   └── pdf_converter.py # PDF-to-text extraction
-│   ├── runtime/            # LLM execution and agent loop
-│   │   ├── goal_runner.py  # Autonomous ReAct loop
-│   │   ├── pydantic_runtime.py # PydanticAI streaming/tool runtime
-│   │   ├── llm_client.py   # Provider-agnostic LLM client
-│   │   ├── message_history.py  # Conversation history management
-│   │   ├── reducers.py     # Snapshot derivation from event history
-│   │   └── token_accounting.py # Token budget tracking
-│   ├── skills/             # Skill discovery, compilation, and execution
-│   │   ├── skill_runner.py # SKILL.md discovery/execution
-│   │   ├── skill_catalog.py # Skill registry
-│   │   ├── skill_compiler.py # 6-stage pseudocode → SkillBundle pipeline
-│   │   ├── skill_bundle.py  # Compiled SkillBundle / TypedContract models
-│   │   ├── skill_context.py # SkillContext/SkillResult types
-│   │   ├── skill_preprocessing.py # Argument preprocessing
-│   │   └── skill_scaffolder.py # `skill create` scaffold generator
-│   ├── storage/            # PostgreSQL blackboard and state
-│   │   ├── database.py     # BlackboardDatabase and metadata access
-│   │   ├── db_engine.py    # SQLAlchemy engine setup
-│   │   ├── models.py       # ORM table definitions
-│   │   ├── state.py        # Session/project state helpers
-│   │   └── blackboard_proxy.py # Skill-facing blackboard facade
-│   └── tools/              # Built-in tool infrastructure
-│       ├── tool_runner.py  # Tool discovery/execution + input guards
-│       ├── guards.py       # Guard pipeline run before tool execution
-│       ├── tool_context.py # ToolContext type
-│       └── tool_result.py  # ToolResult type
-├── v2/                     # Active orchestration layer (react/pipeline modes)
-│   ├── subscribers/        # ReAct bus workers: llm_worker, tool_worker, circuit_breaker, goal_evaluator, pipeline_runner
-│   ├── contracts/          # Typed protocols: context_map_pipeline, event_runtime, sub_agent_spawner
-│   ├── handlers/           # delegate_task_handler (sub-agent lifecycle)
-│   ├── execution_engine.py, workflow_orchestrator.py, context_engine.py
-│   └── wiring.py           # build_v2_runtime — assembles subscribers per mode
-├── system_tools/           # Built-in LLM-callable primitives
-│   ├── file_tools.py       # read_file, write_file, patch, apply_diff, search_files, view_file, search_in_file
-│   ├── container_spawn.py, container_exec.py, container_destroy.py
-│   ├── execute_python.py
-│   ├── read_memory.py
-│   ├── knowledge_tools.py  # skills_list, skill_view, skill_manage (progressive disclosure)
-│   ├── corpus_tools.py     # list_corpora
-│   ├── read_project_state.py, set_project_fact.py, append_session_state.py
-│   ├── acdl_tools.py       # acdl_inspect
-│   └── inspect_context.py  # inspect_own_context
-├── system_skills/          # System agent skills (delegate_task, evaluate_goal, evaluate_output, consolidate_state, orchestrate, ahe_evolve, ...)
-└── system_prompts/         # SOUL.md (and SOUL-compact.md) primary system prompt
+Six layers, dependency direction generally downward: Entry/UI → Orchestration →
+Runtime → Capabilities & Intelligence → State/Events, cross-cut by
+`config.py` / `permissions.py` / `logging.py`. The full layered diagram is in
+[`docs/architecture`](docs/architecture/core-infrastructure-diagrams.md#2-layered-architecture-l2).
 
-skills/                     # Project-local tools, skills, and knowledge skills
-workflows/                  # YAML workflow definitions
-pipelines/                  # YAML pipeline DAG definitions
-personas/                   # Prompt templates for sub-agents
-subagents/                  # Sub-agent persona YAML (architect, code_reviewer, ...)
-agents/roles/               # Per-role skill/prompt assets
-evals/                      # Eval task definitions, baselines, and results
-dashboard-ui/               # Vue 3 dashboard front-end
-acdl-visualizer/            # Static HTML/JS ACDL spec visualizer
-vespa/document_retrieval/   # Vespa app package for doc_chunk retrieval
+Repository layout:
+
+```text
+harness_poc/              # main package — cli.py, repl.py, tui.py, app_factory.py, api/, core/, v2/, system_tools/, system_skills/, system_prompts/
+skills/                   # project-local tools, skills, knowledge docs
+workflows/, pipelines/    # YAML state machines / DAGs
+personas/, subagents/, agents/roles/   # sub-agent prompt + role assets
+evals/                    # eval task definitions, baselines, results
+dashboard-ui/             # Vue 3 dashboard front-end
+vespa/document_retrieval/ # Vespa app package for doc_chunk retrieval
+docs/architecture/        # full diagram reference (Zensical site)
 ```
+
+`harness_poc/core/` subpackages:
+
+| Subpackage | Purpose |
+| --- | --- |
+| `acdl/` | System-prompt composition DSL — parser, AST, executor, CLI |
+| `ahe/` | Agent Harness Evolution — telemetry, diagnose, propose |
+| `context_map/` | Deterministic cartographer pipeline — schema, distiller, cartographer, calibrate, render |
+| `eval/` | Task-based evaluation framework — task, judge, runner, refine |
+| `events/` | Typed event hierarchy + async pub/sub — `EventBus`, `EventStore` |
+| `execution/` | Pipeline / workflow / materializer runners |
+| `observability/`, `observe/` | Dashboards, Logfire forwarding, structured tracing |
+| `processors/` | Legacy v1 workers (used by `goal` without `--refine`) |
+| `retrieval/` | Vespa document retrieval — chunking, indexing, `pyvespa` adapter, PDF extraction |
+| `runtime/` | `GoalRunner`, `PydanticAgentRuntime`, LLM client, message history, token accounting |
+| `skills/` | Skill discovery, 6-stage compiler, execution context |
+| `storage/` | PostgreSQL blackboard — engine, ORM models, state helpers, skill-facing proxy |
+| `tools/` | Built-in tool runner + guard pipeline |
+
+`harness_poc/v2/` (active orchestration layer):
+
+| Subpackage | Purpose |
+| --- | --- |
+| `subscribers/` | ReAct bus workers — `llm_worker`, `tool_worker`, `circuit_breaker`, `goal_evaluator`, `pipeline_runner` |
+| `contracts/` | Typed protocols — `context_map_pipeline`, `event_runtime`, `sub_agent_spawner` |
+| `handlers/` | `delegate_task_handler` — sub-agent lifecycle |
+| `execution_engine.py`, `workflow_orchestrator.py`, `context_engine.py`, `wiring.py` | Orchestration engines + composition root (`build_v2_runtime`) |
 
 ## Runtime Model
 
@@ -707,39 +653,22 @@ AgentInputAdded
   -> circuit breaker watches token/failure budgets and emits StreamPaused
 ```
 
-This loop runs in one of two layers, chosen by `AppState.active_mode`:
+This loop runs in one of two layers, chosen by `AppState.active_mode` (diagram:
+[The Two Agent Loops](docs/architecture/core-infrastructure-diagrams.md#6-the-two-agent-loops)):
 
-- **v2 (`harness_poc/v2/`, active)** — `react` (the default) and `pipeline` modes
-  wire `v2/subscribers/` plus the execution-engine / workflow-orchestrator /
-  context-engine. v2 builds on the shared `core/` foundation rather than forking
-  it. Plain REPL/TUI input runs the v2 react loop; `/mode chat` is an escape
+- **v2** (`harness_poc/v2/`, active) — `react` (the default) and `pipeline`
+  modes. Plain REPL/TUI input runs the v2 react loop; `/mode chat` is an escape
   hatch that streams directly through `PydanticAgentRuntime` with native tools.
-  Cross-component boundaries are codified as typed protocols in `v2/contracts/`,
-  and concrete handlers (e.g. `delegate_task_handler`) live in `v2/handlers/`.
-- **v1 (`core/processors/`, legacy)** — the same worker shape as free functions,
-  still used by `harness-poc goal` (without `--refine`). v2's subscribers are a
-  superset (they carry the context-map citation tracking and skill cancellation).
+  Cross-component boundaries are typed protocols in `v2/contracts/`, with
+  concrete handlers (e.g. `delegate_task_handler`) in `v2/handlers/`.
+- **v1** (`core/processors/`, legacy) — the same worker shape as free
+  functions, still used by `harness-poc goal` (without `--refine`). v2 is a
+  strict superset (adds context-map citation tracking and skill cancellation).
 
-Events are Pydantic models persisted through `EventStore` and published through
-`EventBus`. Reducers derive session snapshots from durable events so workers can
-rebuild state without holding private cross-loop mutable state. The system prompt
-itself is composed from the executable `deverino_react.acdl` spec (see
-`core/acdl/executor.py`).
-
-The context-map subsystem uses its own event log in the blackboard.
-Tool and skill activity (plus the auto-observe post-turn hook) appends
-typed orientation events. The background materializer runs a two-stage
-pipeline: an LLM Distiller extracts observations into `DistillerEntry`
-records, then a deterministic Python Cartographer scores and evicts
-entries against a token budget. The materialized map is loaded into
-future system prompts. This map is a cache, not a source of truth; if
-materialization fails, events remain unprocessed and are retried on
-the next poll. Stable maps can be temporarily frozen to save Distiller
-LLM calls.
-
-Pipeline agent nodes and `harness-poc goal --refine` use the `GoalRunner` path,
-which includes semantic retry detection, context-window compression, budget
-enforcement, and `evaluate_goal` interception.
+Pipeline agent nodes and `harness-poc goal --refine` use the `GoalRunner` path
+instead, with semantic retry detection, context-window compression, budget
+enforcement, and `evaluate_goal` interception. The system prompt itself is
+composed from the executable `deverino_react.acdl` spec (`core/acdl/executor.py`).
 
 ## Tools, Skills, And Knowledge
 
@@ -753,53 +682,30 @@ Deverino separates four kinds of callable/project knowledge:
 - **Knowledge skills** are markdown instruction documents with `type: knowledge`;
   they are loaded on demand as context, not executed.
 
-Selected built-in tools:
+Run `uv run harness-poc skill list` / `uv run harness-poc tool list` for the
+full, current inventory. Selected built-in tools:
 
 | Name | Purpose |
 | --- | --- |
-| `read_file`, `write_file`, `patch`, `apply_diff` | Workspace file read/edit |
-| `view_file`, `search_in_file` | Targeted line-range view and in-file search |
-| `search_files` | ripgrep content/file search (gitignore-aware) |
-| `container_spawn`, `container_exec`, `container_destroy` | Docker/Podman sandbox management |
-| `execute_python` | Run Python in a session-scoped container |
-| `read_memory` | Read blackboard memory |
-| `skills_list`, `skill_view`, `skill_manage` | Progressive disclosure + management of knowledge skills |
-| `read_project_state`, `set_project_fact`, `append_session_state` | Durable project + session state |
-| `list_corpora` | Inventory context-map corpora and pending events |
-| `append_event` | Append typed context-map events |
-| `inspect_own_context` | Return the agent's own assembled system prompt |
-| `acdl_inspect` | Parse an ACDL spec file and return a structured summary |
+| `read_file`, `write_file`, `patch`, `apply_diff`, `view_file`, `search_in_file`, `search_files` | Workspace read/edit/search |
+| `container_spawn`, `container_exec`, `container_destroy`, `execute_python` | Sandboxed execution |
+| `read_memory`, `read_project_state`, `set_project_fact`, `append_session_state` | Blackboard state access |
+| `skills_list`, `skill_view`, `skill_manage` | Progressive disclosure of knowledge skills |
+| `list_corpora`, `append_event` | Context-map corpus + event management |
+| `inspect_own_context`, `acdl_inspect` | Prompt / spec introspection |
 
 Selected tool/agent/knowledge skills (project-local in `skills/` unless noted):
 
 | Name | Kind | Purpose |
 | --- | --- | --- |
-| `semble_search` | tool | Semantic code search (semble) |
-| `web_search` | tool | LangSearch-backed web search |
-| `index_documents` | tool | Feed project documents into Vespa |
-| `search_documents` | tool | Search indexed Vespa chunks |
-| `observe` | tool | Record structural observations for the context map |
-| `context-map-materializer` | skill | Materialize context-map events into a prompt cache |
-| `review_work` | skill | Review the current working tree |
-| `trace_session` | skill | Trace an event-sourced session |
-| `inspect_db` | skill | Inspect the blackboard database |
-| `find_error_pattern` | skill | Cluster and surface recurring error patterns |
-| `delegate_task` (system) | skill | Spawn a persona-specific sub-agent |
-| `evaluate_goal` (system) | skill | Structured goal completion/blockage signal |
-| `evaluate_output` (system) | skill | Judge output against an objective |
-| `consolidate_state` (system) | skill | Preview, propose, or approve state consolidation |
-| `orchestrate` (system) | skill | Multi-step task orchestration |
-| `ahe_evolve` (system) | skill | Run an AHE evolution cycle |
-| `summarize_memory` | skill | Summarize a blackboard memory key |
-| `reflect_on_result` | skill | Judge whether a result satisfies an objective |
-| `spec_writer` | skill | Gather requirements and draft implementation specs |
-| `create_rubrics` | skill | Generate benchmark rubrics from behaviour descriptions |
-| `paper-catalog` | skill | Catalog indexed papers |
-| `paper-claim-verification` | skill | Verify design-doc paper citations against indexed papers |
-| `developer-pedagogy` | knowledge | Project knowledge about developer preferences and constraints |
-| `deverino-react-acdl` | knowledge | ACDL description of the Deverino ReAct loop |
-| `acdl-syntax`, `acdl-tooling` | knowledge | ACDL grammar quickstart and tooling |
-| `deterministic-cartographer` | knowledge | Design rationale for the deterministic Cartographer |
+| `semble_search`, `web_search` | tool | Code / web search |
+| `index_documents`, `search_documents` | tool | Vespa document ingestion + search |
+| `observe` | tool | Record context-map observations (9 types) |
+| `context-map-materializer` | skill | Materialize context-map events into the prompt cache |
+| `delegate_task`, `evaluate_goal`, `evaluate_output`, `consolidate_state`, `orchestrate`, `ahe_evolve` | system skill | Sub-agent dispatch, goal/output judging, state consolidation, AHE cycle |
+| `review_work`, `trace_session`, `inspect_db`, `find_error_pattern`, `reflect_on_result`, `spec_writer`, `create_rubrics` | skill | Working-tree review, session tracing, DB inspection, error clustering, result judging, spec drafting, rubric generation |
+| `paper-catalog`, `paper-claim-verification` | skill | Paper indexing + citation verification |
+| `developer-pedagogy`, `deverino-react-acdl`, `acdl-syntax`, `acdl-tooling`, `deterministic-cartographer` | knowledge | Project/domain knowledge, loaded on demand |
 
 ## Workflows And Pipelines
 
